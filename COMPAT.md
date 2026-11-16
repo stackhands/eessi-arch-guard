@@ -176,7 +176,7 @@ All values come from `os.environ` copied at L1751 unless a row says the helper r
 
 | Message | Shape | Lines |
 |---|---|---|
-| Request | `{"v": 1, "env": {name: value}, "eessi": str, "modules": [str], "lmod": str, "pin": str}`; every string is a "wire" string: one Latin-1 character per byte of the real value (`os.fsencode(x).decode("latin-1")`). `v` is written but not checked by the helper. `pin` is the waitpkg-fallback subdirectory or empty; a missing `pin` reads as empty, and one that fails `safe_rel_subdir` makes the request malformed. | L967-976, L895-906, L909-927 |
+| Request | `{"v": 1, "env": {name: value}, "eessi": str, "modules": [str], "lmod": str, "pin": str}`; every string is a "wire" string: one Latin-1 character per byte of the real value (`os.fsencode(x).decode("latin-1")`). `v` is written but not checked by the helper. `pin` is the waitpkg-fallback subdirectory or empty; a missing `pin` reads as empty, and one that fails `safe_rel_subdir` makes the request malformed. So does an `env` value that is not a string. `NaN`, `Infinity` and `-Infinity`, which `json.loads` would read, are refused as not JSON: exit 1 with `eessi-arch-guard: restore failed: NaN is not JSON` and the like. | L967-976, L895-906, L909-927 |
 | Reply, failure | `{"ok": false, "missing": [...], "error": str}` (no `env` key) | L916, L936-952 |
 | Reply, success | `{"ok": true, "env": {wire name: wire value}, "missing": [], "error": ""}` | L954 |
 | Parent-side validation of reply | `missing` entries kept only when `str` and `module_name_ok`; `ok` falsy gives failure with `one_line(str(error), 300)`; `env` must be a dict; empty stdout or non-zero exit gives failure with stderr text | L1002-1024 |
@@ -325,6 +325,7 @@ The rows above describe the Python guard at 0.2.0. The Zig build in `zig/` keeps
 | `--version` | the version | the same version, then the build: `VERSION (TARGET, MODE, zig ZIG_VERSION, COMMIT)`; COMMIT comes from `-Dcommit`, `unknown` without it |
 | restore helper | `python3 -I -X utf8 eessi_arch_guard.py --restore` | the same binary with `--restore`; the request and reply keep their JSON shape |
 | a request to `--restore` that is not UTF-8, not JSON or not an object | exit 1 with the Python exception text | exit 1 with a fixed text naming which of the three it was |
+| a request to `--restore` nesting arrays or objects deeper than 32, where the guard's own requests nest two deep | read | refused as not JSON, exit 1 |
 | the chained prolog's stdin | inherited | `/dev/null` |
 | the config file | checked with `lstat`, then read by path | the same checks with `lstat`, then opened without following a link and checked again on the open file; a file swapped in between is ignored; at most 1 MiB is read |
 | a config read error | the `OSError` text | `PATH: ErrorName` |
@@ -337,13 +338,6 @@ The rows above describe the Python guard at 0.2.0. The Zig build in `zig/` keeps
 | a cache file with a leading-zero number, NaN, Infinity, or nesting deeper than 32 | `NaN` and `Infinity` accepted, the rest refused | all refused, and the decision is made again |
 | a cpuinfo line whose name is `flags` only under Unicode case folding (`flagſ`) | a flags line | not a flags line |
 
-## Unintended differences
-
-The two builds differ here without meaning to, and no row above allows it. In each row the Zig build departs from the rows above, which makes it a bug in the Zig build. Each was seen with Python 3.12.3 and the Zig build at 0.2.0.
-
-| case | Python guard | Zig build |
-|---|---|---|
-| a `--restore` request whose `env` holds a value that is not a string; the guard's own requests hold only strings | takes `str()` of any JSON value: `null` is `None`, `true` is `True`, a number as Python prints it (`1E5` is `100000.0`), a list or object as Python's repr; `NaN` and `Infinity` are accepted | `null`, `true` and `false` as the Python guard, a number as the JSON writes it, a list or object refused with `restore request is malformed`; `NaN` and `Infinity` refused with exit 1 and `eessi-arch-guard: restore failed: the request is not JSON` |
 ## Bugs both builds share
 
 | case | both builds |

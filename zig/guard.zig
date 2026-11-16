@@ -1247,15 +1247,9 @@ fn doRestore(c: *Ctx, payload: json.Value, raised: *[]const u8) HelperError!Repl
     }
     var module_env: Map = .empty;
     for (env_v.object) |mem| {
+        if (mem.value != .string) return malformed();
         const k = json.decodeWire(a, mem.key) catch return malformed();
-        const v = switch (mem.value) {
-            .string => |s| json.decodeWire(a, s) catch return malformed(),
-            // str(value) of a non-string JSON value.
-            .null => "None",
-            .bool => |b| if (b) "True" else "False",
-            .number => |n| n,
-            else => return malformed(),
-        };
+        const v = json.decodeWire(a, mem.value.string) catch return malformed();
         module_env.put(a, k, v) catch main_mod.oom();
     }
     if (pin.len > 0 and !text.safeRelSubdir(pin)) return malformed();

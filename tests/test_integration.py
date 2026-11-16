@@ -1128,6 +1128,43 @@ class IntegrationTests(unittest.TestCase):
         self.assertEqual(reply["error"], "restore request is malformed")
         self.assertEqual(harness.log_lines(self.site.log), [])
 
+    def test_restore_helper_refuses_env_values_that_are_not_strings(self):
+        # The guard's own requests hold only strings: another value in env
+        # makes the request malformed, and NaN and Infinity, which are not
+        # JSON, stop the helper.
+        env = harness.base_env(self.site, ZEN2, ["R/4.4.2"])
+        request = json.dumps(
+            {
+                "v": 1,
+                "env": {**env, "EXTRA": "@VALUE@"},
+                "eessi": "EESSI/2025.06",
+                "modules": ["R/4.4.2"],
+                "lmod": env["LMOD_CMD"],
+            }
+        )
+
+        def restore(value):
+            return subprocess.run(
+                [*harness.GUARD_ARGV, "--restore"],
+                input=request.replace('"@VALUE@"', value),
+                capture_output=True,
+                text=True,
+                env=env,
+                check=False,
+            )
+
+        malformed = {"ok": False, "missing": [], "error": "restore request is malformed"}
+        for value in ("null", "true", "false", "1", "1E5", "[]", '["x"]', "{}", '{"x": "y"}'):
+            proc = restore(value)
+            self.assertEqual(proc.returncode, 0, (value, proc.stderr))
+            self.assertEqual(json.loads(proc.stdout), malformed, value)
+        for value in ("NaN", "Infinity", "-Infinity"):
+            proc = restore(value)
+            self.assertEqual(proc.returncode, 1, (value, proc.stdout))
+            self.assertEqual(proc.stdout, "", value)
+            self.assertRegex(proc.stderr, r"\Aeessi-arch-guard: restore failed: .* is not JSON\n\Z")
+        self.assertEqual(harness.log_lines(self.site.log), [])
+
     def test_kvm_sapphirerapids_falls_back_to_skylake_when_that_tree_exists(self):
         spr = "x86_64/intel/sapphirerapids"
         skylake = "x86_64/intel/skylake_avx512"

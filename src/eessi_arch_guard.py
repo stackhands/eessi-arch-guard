@@ -1248,14 +1248,14 @@ def do_restore(payload: Mapping[str, object]) -> Dict[str, object]:
         return {"ok": False, "missing": [], "error": "restore request is malformed"}
     if not isinstance(lmod_cmd, str) or not isinstance(pin, str):
         return {"ok": False, "missing": [], "error": "restore request is malformed"}
+    if not all(isinstance(value, str) for value in env.values()):
+        return {"ok": False, "missing": [], "error": "restore request is malformed"}
     try:
         eessi = from_wire(eessi)
         lmod_cmd = from_wire(lmod_cmd)
         pin = from_wire(pin)
         modules = [from_wire(name) if isinstance(name, str) else name for name in modules]
-        module_env = {
-            from_wire(str(key)): from_wire(str(value)) for key, value in env.items()
-        }
+        module_env = {from_wire(key): from_wire(value) for key, value in env.items()}
     except UnicodeError:
         return {"ok": False, "missing": [], "error": "restore request is malformed"}
     if pin and not safe_rel_subdir(pin):
@@ -1290,13 +1290,18 @@ def do_restore(payload: Mapping[str, object]) -> Dict[str, object]:
     return {"ok": True, "env": _wire_map(current), "missing": [], "error": ""}
 
 
+def _not_json(name: str) -> float:
+    # json.loads reads NaN, Infinity and -Infinity, which JSON does not have.
+    raise ValueError("%s is not JSON" % name)
+
+
 def restore_main() -> int:
     """The ``--restore`` helper: a JSON request on stdin, the JSON result on stdout.
 
     Returns 0; on an error it writes the reason to stderr and returns 1.
     """
     try:
-        payload = json.loads(sys.stdin.buffer.read().decode("utf-8"))
+        payload = json.loads(sys.stdin.buffer.read().decode("utf-8"), parse_constant=_not_json)
         sys.stdout.write(json.dumps(do_restore(payload)))
         return 0
     except Exception as exc:
