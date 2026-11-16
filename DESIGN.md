@@ -6,7 +6,7 @@ This file records which program should do that, and which shapes were rejected.
 
 ## Decision
 
-A Slurm **TaskProlog** is still the place that can fix the environment. It is the wrong place to re-derive a shell and print the whole result as `export` lines. The prolog stays. The mechanism in the appendix A prototype does not.
+A Slurm **TaskProlog** is still the place that can fix the environment. It is the wrong place to re-derive a shell and print the whole result as `export` lines. The prolog stays. The mechanism of the prototype, under "What was rejected", does not.
 
 The program:
 
