@@ -20,7 +20,7 @@ Checked on Slurm `master` `src/slurmd/slurmstepd/task.c` (public source) and, se
 * A non-zero wait status is returned after that parse, and `exec_task` then exits. Exports from a failing prolog are applied, and the task still dies. This program returns non-zero only when a chained prolog did.
 * `_make_tmpdir` runs after the prologs, and only for local task 0. A per-job `TMPDIR` may not exist yet. The cache falls back to `/tmp`. The prolog omits `TMPDIR` from the delta.
 
-`srun --export=ALL,X=y` was not re-read in this repository. The design treats an `X` already in the environment as the value that remains. Opt-out belongs in the submitting environment.
+`srun --export=ALL,X=y` leaves an `X` already in the environment in place: on Slurm 23.11.4, with `EESSI_ARCH_GUARD=1` set, `--export=ALL,EESSI_ARCH_GUARD=0` gave the task `1`. Opt-out belongs in the submitting environment.
 
 ## Closed alternatives
 

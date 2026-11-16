@@ -36,7 +36,7 @@ Checked on Slurm `master` `src/slurmd/slurmstepd/task.c` (public source, not a s
 - A non-zero wait status is returned after that parse, and `exec_task` then `_exit`s. Exports from a failing prolog are applied, and the task still dies.
 - `_make_tmpdir` runs after the prologs, and only for local task 0. A per-job `TMPDIR` may not exist yet. Falling back to `/tmp` is the right cache location. The prolog must not itself export `TMPDIR`: that would change the directory Slurm creates.
 
-`srun --export=ALL,X=y` was not re-read in this repo. The design treats the existing statement as true: an `X` already in the environment is not overridden. Opt-out has to be in the submitting environment. It cannot be smuggled in as `--export=ALL,EESSI_ARCH_GUARD=0` when the variable is already set.
+`srun --export=ALL,X=y` does not override an `X` already in the environment: on Slurm 23.11.4, with `EESSI_ARCH_GUARD=1` set, `--export=ALL,EESSI_ARCH_GUARD=0` gave the task `1`. Opt-out has to be in the submitting environment. It cannot be smuggled in as `--export=ALL,EESSI_ARCH_GUARD=0` when the variable is already set.
 
 The site's Slurm version is not known here; see Out of scope. Master behaving this way is not evidence about the installed daemon.
 
