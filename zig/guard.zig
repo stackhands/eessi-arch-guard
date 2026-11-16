@@ -93,8 +93,7 @@ fn onTerm(_: linux.SIG) callconv(.c) void {
     const l = active_limit orelse return;
     l.terminated.store(true, .seq_cst);
     if (l.committing.load(.seq_cst)) return;
-    const pgid = l.child_pgid.load(.seq_cst);
-    if (pgid > 0) _ = linux.kill(-pgid, .KILL);
+    common.proc.killGroup(l.child_pgid.load(.seq_cst), .KILL);
 }
 
 fn installLimit(l: *Limit) void {
