@@ -105,6 +105,40 @@ def eb_key(prefix: str, name: str) -> str:
     return prefix + EB_NAME.sub("", base).upper()
 
 
+def module_paths() -> bool:
+    # EESSI_TEST_MODULE_PATHS=1: MODULEPATH as the EESSI module itself keeps
+    # it. Its unload removes only the tree it computes again from
+    # EESSI_ARCHDETECT_OPTIONS, and its load prepends.
+    return os.environ.get("EESSI_TEST_MODULE_PATHS") == "1"
+
+
+def eessi_unload_tree():
+    options = os.environ.get("EESSI_ARCHDETECT_OPTIONS") or os.environ.get(
+        "EESSI_ARCHDETECT_OPTIONS_OVERRIDE", ""
+    )
+    prefix = os.environ.get("EESSI_PREFIX", "")
+    os_type = os.environ.get("EESSI_OS_TYPE", "linux")
+    for candidate in options.split(":"):
+        tree = os.path.join(prefix, "software", os_type, candidate)
+        if candidate and os.path.isdir(os.path.join(tree, "software")):
+            return tree
+    return None
+
+
+def purged_modulepath() -> str:
+    if not module_paths():
+        return ""
+    entries = [entry for entry in os.environ.get("MODULEPATH", "").split(":") if entry]
+    tree = eessi_unload_tree()
+    if tree is None:
+        sys.stderr.write(
+            "Lmod Warning: Software directory check for the detected architecture failed\n"
+        )
+        return ":".join(entries)
+    emit("unset EESSI_ARCHDETECT_OPTIONS")
+    return ":".join(entry for entry in entries if not entry.startswith(tree + os.sep))
+
+
 def do_purge() -> int:
     log("argv " + " ".join(sys.argv[1:]))
     log("purge")
@@ -114,7 +148,7 @@ def do_purge() -> int:
     base = os.environ.get("EESSI_TEST_BASE_PATH", "/usr/bin:/bin")
     emit("export LOADEDMODULES=''")
     emit("export _LMFILES_=''")
-    emit("export MODULEPATH=''")
+    emit("export MODULEPATH='%s'" % purged_modulepath())
     emit("export PATH='%s'" % base)
     emit("export _ModuleTable001_=''")
     for key in (
@@ -162,6 +196,12 @@ def do_load_eessi(version_name: str) -> int:
     if accel_modules:
         paths.append(accel_modules)
     paths.append(cpu_modules)
+    if module_paths():
+        paths.extend(
+            entry
+            for entry in os.environ.get("MODULEPATH", "").split(":")
+            if entry and entry not in paths
+        )
     base = os.environ.get("EESSI_TEST_BASE_PATH", "/usr/bin:/bin")
     cpu_bin = os.path.join(prefix, "software", os_type, cpu, "bin")
     emit("export EESSI_VERSION='%s'" % version)

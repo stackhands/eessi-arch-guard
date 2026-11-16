@@ -905,6 +905,29 @@ class IntegrationTests(unittest.TestCase):
         source = harness.GUARD.read_text(encoding="utf-8")
         self.assertNotIn(icelake, source)
 
+    def test_pinned_reload_drops_the_loaded_module_paths(self):
+        # The EESSI module unloads the tree it computes from
+        # EESSI_ARCHDETECT_OPTIONS, so the purge has to see the task's value
+        # and only the loads after it see the pin.
+        spr = "x86_64/intel/sapphirerapids"
+        icelake = "x86_64/intel/icelake"
+        for cpu in (spr, icelake):
+            self.site.add_cpu(cpu)
+            self.site.add_module(cpu, "R/4.4.2")
+        self._copy_cpuinfo("sapphirerapids-kvm-no-waitpkg.cpuinfo")
+        env = harness.base_env(self.site, ZEN2, ["R/4.4.2"], gpu="none")
+        env["EESSI_ARCHDETECT_OPTIONS"] = ZEN2
+        env["EESSI_TEST_MODULE_PATHS"] = "1"
+        proc = harness.run_guard(env)
+        changes, _printed = _assert_prolog(proc)
+        self.assertEqual(changes["EESSI_SOFTWARE_SUBDIR"], icelake)
+        self.assertEqual(changes["EESSI_SOFTWARE_SUBDIR_OVERRIDE"], icelake)
+        self.assertEqual(changes["EESSI_ARCHDETECT_OPTIONS"], icelake)
+        self.assertEqual(
+            changes["MODULEPATH"],
+            os.path.join(self.site.prefix, "software", "linux", icelake, "modules", "all"),
+        )
+
     def test_kvm_sapphirerapids_falls_back_to_skylake_when_that_tree_exists(self):
         spr = "x86_64/intel/sapphirerapids"
         skylake = "x86_64/intel/skylake_avx512"
