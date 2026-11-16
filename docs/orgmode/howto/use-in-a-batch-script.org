@@ -93,7 +93,12 @@ after the =eval= line, and the second variable is unset when the modules already
 
 ** If it fails
 
-With =--strict= and no private workspace, on the same stack, the guard exits 78 and prints the marker of the failure:
+With =--strict= and no private workspace, on the same stack, the guard exits 78 and prints the marker of the failure.
+=docs/examples/strict_workspace.py= shows it, and then checks that the reload runs once the workspace of step 4 exists:
+
+#+begin_src bash
+python3 docs/examples/strict_workspace.py
+#+end_src
 
 #+begin_example
 case: strict-no-workspace

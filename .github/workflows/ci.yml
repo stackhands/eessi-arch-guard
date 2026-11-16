@@ -90,6 +90,7 @@ jobs:
           python docs/examples/failure_cases.py verbose
           python docs/examples/failure_cases.py bad-timeout
           python docs/examples/shell_demo.py
+          python docs/examples/strict_workspace.py
           python docs/examples/accelerator.py mismatch
           python docs/examples/accelerator.py missing-module
           bash docs/examples/check_install.sh
