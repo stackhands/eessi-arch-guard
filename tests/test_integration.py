@@ -342,6 +342,58 @@ class IntegrationTests(unittest.TestCase):
         self.assertIn("OnlyZen4/1.0", printed[0])
         self.assertIn("environment left as it was", printed[0])
 
+    def test_module_exposed_by_an_earlier_module_loads_after_it(self):
+        # EESSI-extend puts the user's installation tree on MODULEPATH. One
+        # `module load` call finds every name before it loads any, so a
+        # module from that tree loads only after EESSI-extend has.
+        extend = "EESSI-extend/2025.06-easybuild"
+        pigz = "pigz/2.8-GCCcore-14.2.0"
+        user = {}
+        for cpu in (ZEN2, ZEN4):
+            user[cpu] = os.path.join(self.site.root, "user", cpu, "modules", "all")
+            self.site.add_module(cpu, extend)
+            modulefile = os.path.join(
+                self.site.prefix, "software", "linux", cpu, "modules", "all", extend + ".lua"
+            )
+            with open(modulefile, "a", encoding="utf-8") as handle:
+                handle.write('prepend_path("MODULEPATH", "%s")\n' % user[cpu])
+            os.makedirs(os.path.join(user[cpu], "pigz"))
+            with open(os.path.join(user[cpu], pigz + ".lua"), "w", encoding="utf-8") as handle:
+                handle.write("-- %s\n" % pigz)
+        env = self._cpu_env(ZEN4, "zen2", modules=(extend, pigz))
+        env["MODULEPATH"] = user[ZEN4] + ":" + env["MODULEPATH"]
+        proc = harness.run_guard(env)
+        changes, printed = _assert_prolog(proc)
+        self.assertNotIn("EESSI_ARCH_GUARD_FAILED", changes)
+        self.assertEqual(changes["EESSI_SOFTWARE_SUBDIR"], ZEN2)
+        self.assertEqual(changes["MODULEPATH"].split(":")[0], user[ZEN2])
+        self.assertNotIn(ZEN4, changes["MODULEPATH"])
+        self.assertIn(ZEN2, changes["EBROOTPIGZ"])
+        self.assertTrue(printed)
+
+    def test_missing_module_after_the_first_32_is_named(self):
+        names = ["P%02d/1" % index for index in range(40)]
+        for name in names:
+            self.site.add_module(ZEN4, name)
+            if name != names[35]:
+                self.site.add_module(ZEN2, name)
+        env = self._cpu_env(ZEN4, "zen2", modules=names)
+        proc = harness.run_guard(env)
+        changes, printed = _assert_prolog(proc)
+        self.assertNotIn("EESSI_SOFTWARE_SUBDIR", changes)
+        self.assertIn("; not available for this target: %s; " % names[35], printed[0])
+
+    def test_missing_list_stops_after_32(self):
+        names = ["P%02d/1" % index for index in range(40)]
+        for name in names:
+            self.site.add_module(ZEN4, name)
+        env = self._cpu_env(ZEN4, "zen2", modules=names)
+        proc = harness.run_guard(env)
+        _changes, printed = _assert_prolog(proc)
+        listed = " ".join(names[:32])
+        self.assertIn("not available for this target: %s (stopped after 32);" % listed, printed[0])
+        self.assertNotIn(names[32], printed[0])
+
     def test_stderr_injection_stays_out_of_prolog_directives(self):
         self.site.add_module(ZEN4, "OnlyZen4/1.0")
         env = self._cpu_env(ZEN4, "zen2", modules=("OnlyZen4/1.0",))

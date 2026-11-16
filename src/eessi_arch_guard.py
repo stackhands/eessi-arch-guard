@@ -1149,27 +1149,28 @@ def pinned_env(env: Mapping[str, str], pin: str) -> Dict[str, str]:
     return pinned
 
 
-def _diagnose(
-    original: Mapping[str, str],
-    lmod_cmd: str,
-    eessi: str,
-    modules: Sequence[str],
-    pin: str,
-) -> List[str]:
-    missing = []
-    for name in list(modules)[:DIAGNOSE_LIMIT]:
-        current, _err = apply_lmod(original, lmod_cmd, ["--force", "purge"])
-        if current is None:
+def _load_in_order(
+    current: Dict[str, str], lmod_cmd: str, modules: Sequence[str]
+) -> Tuple[Dict[str, str], List[str], str]:
+    """Load the modules one Lmod call each, in order, past any that fail.
+
+    One call finds every name before it loads any, so a module from a tree
+    an earlier module adds (EESSI-extend and the user's installations) loads
+    only in a later call. Stops at DIAGNOSE_LIMIT failures; the error is the
+    first failure's.
+    """
+    missing: List[str] = []
+    first_err = ""
+    for name in modules:
+        nxt, err = apply_lmod(current, lmod_cmd, ["load", name])
+        if nxt is None:
             missing.append(name)
+            first_err = first_err or err
+            if len(missing) == DIAGNOSE_LIMIT:
+                break
             continue
-        current, _err = apply_lmod(pinned_env(current, pin), lmod_cmd, ["load", eessi])
-        if current is None:
-            missing.append(name)
-            continue
-        current, _err = apply_lmod(current, lmod_cmd, ["load", name])
-        if current is None:
-            missing.append(name)
-    return missing
+        current = nxt
+    return current, missing, first_err
 
 
 def to_wire(value: str) -> str:
@@ -1228,12 +1229,13 @@ def do_restore(payload: Mapping[str, object]) -> Dict[str, object]:
     if modules:
         nxt, err = apply_lmod(current, lmod_cmd, ["load", *modules])
         if nxt is None:
-            missing = _diagnose(module_env, lmod_cmd, eessi, modules, pin)
-            return {
-                "ok": False,
-                "missing": missing,
-                "error": one_line(err or "module load failed", 300),
-            }
+            nxt, missing, err = _load_in_order(current, lmod_cmd, modules)
+            if missing:
+                return {
+                    "ok": False,
+                    "missing": missing,
+                    "error": one_line(err or "module load failed", 300),
+                }
         current = nxt
     return {"ok": True, "env": _wire_map(current), "missing": [], "error": ""}
 
@@ -1451,7 +1453,7 @@ def decide(
     if not result.ok or result.env is None:
         if result.missing:
             names = " ".join(result.missing)
-            if len(loaded.others) > DIAGNOSE_LIMIT:
+            if len(result.missing) >= DIAGNOSE_LIMIT and len(loaded.others) > len(result.missing):
                 names += " (stopped after %s)" % DIAGNOSE_LIMIT
             why = "not available for this target: " + names
         else:

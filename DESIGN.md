@@ -91,7 +91,7 @@ These were rejected before this repo existed. The new information does not reviv
 | archdetect missing, non-zero, empty, or unsafe output | Same loud failure. Empty or non-zero **accelpath** is "no accelerator" (the EESSI wrapper exports that as an empty `EESSI_ACCEL_SUBDIR`; exit 2 and 3 are the script's no-GPU paths). Unsafe accel stdout is a failure, not "no GPU". |
 | `waitpkg` missing on a march that includes it | That candidate is skipped. The next installed candidate is loaded. `EESSI_SOFTWARE_SUBDIR_OVERRIDE` is set to it. |
 | Module name fails the grammar | Loud failure. Restore is not started. |
-| A module has no build for this target | Loud failure. Nothing from the restore is applied. Each module is probed so the message can name more than the first Lmod error. Probing stops after 32. |
+| A module has no build for this target | Loud failure. Nothing from the restore is applied. When one load of all the modules fails, they are loaded again one call each, in order, so a module from a tree an earlier module adds (EESSI-extend and the user's installations) still loads, and the message names every module that fails rather than the first Lmod error. The list stops after 32. |
 | A changed variable cannot be expressed as a prolog line | Loud failure. No partial delta. |
 | Any unexpected exception | One skip line, exit 0. |
 | The decision is still running at the deadline | `->timeout`, the waited-on process group is SIGKILLed, exit 0, nothing cached. |
