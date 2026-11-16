@@ -156,6 +156,13 @@ exit: 0
 target already matches this node
 ```
 
+Slurm discards a TaskProlog's stderr, so under the prolog the reason never reaches the job. A task whose prolog stayed silent still has the environment the prolog saw; run the guard by hand there:
+
+```console
+$ EESSI_ARCH_GUARD=0 EESSI_ARCH_GUARD_VERBOSE=1 srun -n1 eessi-arch-guard
+EESSI_ARCH_GUARD=0
+```
+
 ## The decision ran out of time
 
 `--timeout 0` is rejected. The guard warns, keeps the default of 60 seconds, and exits 0:

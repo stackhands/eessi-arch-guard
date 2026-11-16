@@ -29,7 +29,7 @@
 | --- | --- |
 | `EESSI_ARCH_GUARD=0` | Silent opt-out. Place it in the submitting environment. |
 | `EESSI_ARCH_GUARD_MISSING=ignore` | Silent when no candidate has a software directory. |
-| `EESSI_ARCH_GUARD_VERBOSE=1` | Skip and match reasons go to stderr. |
+| `EESSI_ARCH_GUARD_VERBOSE=1` | Skip and match reasons go to stderr. Slurm discards a TaskProlog's stderr; run the guard by hand inside a task to read them. |
 | `EESSI_SOFTWARE_SUBDIR_OVERRIDE` | Set on entry: skip detection. Set by a waitpkg fallback during the reload. |
 | `EESSI_ARCHDETECT_OPTIONS_OVERRIDE` | Set on entry: skip detection. |
 | `EESSI_ACCELERATOR_TARGET_OVERRIDE` | Skip the accelerator comparison. The CPU walk still runs. |
