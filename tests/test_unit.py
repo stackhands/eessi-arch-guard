@@ -655,6 +655,18 @@ class UnitTests:
         assert outcome.kind == "failed"
         assert outcome.changes["EESSI_ARCH_GUARD_FAILED"].endswith("->timeout")
 
+    def test_cache_key_changes_with_the_bind_list_and_the_visible_gpu(self):
+        left = _env(SLURM_CPU_BIND_LIST="cpu[0]")
+        right = dict(left)
+        right["SLURM_CPU_BIND_LIST"] = "cpu[1]"
+        assert guard.cache_digest(left) != guard.cache_digest(right)
+        gpu = dict(left)
+        gpu["CUDA_VISIBLE_DEVICES"] = "0"
+        other = dict(gpu)
+        other["CUDA_VISIBLE_DEVICES"] = "1"
+        assert guard.cache_digest(gpu) != guard.cache_digest(other)
+        assert guard.cache_digest(left) == guard.cache_digest(dict(left))
+
     def test_cpu_bind_list_accepts_a_mask_a_list_and_a_hostlist(self):
         assert guard.parse_cpu_spec("0x2") == frozenset({1})
         assert guard.parse_cpu_spec("0-1,4") == frozenset({0, 1, 4})

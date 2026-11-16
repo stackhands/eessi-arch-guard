@@ -1349,12 +1349,56 @@ pub fn decide(c: *Ctx, env: Map, shell: bool) Stop!Outcome {
 
 // ---- the cache ---------------------------------------------------------
 
+const gpu_scope_keys = [_][]const u8{
+    "CUDA_VISIBLE_DEVICES", "ROCR_VISIBLE_DEVICES", "GPU_DEVICE_ORDINAL",
+    "SLURM_STEP_GPUS",      "SLURM_GPUS_ON_NODE",
+};
+
+fn taskScopeKey(arena: Allocator, env: Map) []const u8 {
+    const allowed = taskCpuIds(arena, env) orelse return "";
+    var any = false;
+    var cpu: usize = 0;
+    while (cpu < cpu_id_max) : (cpu += 1) if (allowed.has(cpu)) {
+        any = true;
+        break;
+    };
+    if (!any) return "-";
+    var out: std.ArrayList(u8) = .empty;
+    var first = true;
+    cpu = 0;
+    while (cpu < cpu_id_max) : (cpu += 1) {
+        if (!allowed.has(cpu)) continue;
+        if (!first) out.append(arena, ',') catch return "";
+        first = false;
+        out.print(arena, "{d}", .{cpu}) catch return "";
+    }
+    return out.toOwnedSlice(arena) catch "";
+}
+
+fn gpuScopeKey(arena: Allocator, env: Map) []const u8 {
+    var out: std.ArrayList(u8) = .empty;
+    var first = true;
+    for (gpu_scope_keys) |k| {
+        const v = env.get(k) orelse continue;
+        if (!first) out.append(arena, 0) catch return "";
+        first = false;
+        out.appendSlice(arena, k) catch return "";
+        out.append(arena, '=') catch return "";
+        out.appendSlice(arena, v) catch return "";
+    }
+    return out.toOwnedSlice(arena) catch "";
+}
+
 fn cacheDigest(c: *Ctx, env: Map) []const u8 {
     var h = std.crypto.hash.sha2.Sha256.init(.{});
     for (key_fields, 0..) |k, i| {
         if (i > 0) h.update("\x00");
         h.update(env.get(k) orelse empty);
     }
+    h.update("\x00");
+    h.update(taskScopeKey(c.arena, env));
+    h.update("\x00");
+    h.update(gpuScopeKey(c.arena, env));
     var out: [32]u8 = undefined;
     h.final(&out);
     const hex = std.fmt.bytesToHex(out, .lower);

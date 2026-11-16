@@ -1511,8 +1511,37 @@ def decide(
     return Outcome(delta, message, "reloaded", None)
 
 
+_GPU_SCOPE_KEYS = (
+    "CUDA_VISIBLE_DEVICES",
+    "ROCR_VISIBLE_DEVICES",
+    "GPU_DEVICE_ORDINAL",
+    "SLURM_STEP_GPUS",
+    "SLURM_GPUS_ON_NODE",
+)
+
+
+def task_scope_key(env: Mapping[str, str]) -> str:
+    """Canonical processors for the cache key. ``-`` is an empty intersection."""
+    allowed = task_cpu_ids(env)
+    if allowed is None:
+        return ""
+    if not allowed:
+        return "-"
+    return ",".join(str(cpu) for cpu in sorted(allowed))
+
+
+def gpu_scope_key(env: Mapping[str, str]) -> str:
+    """Accelerator visibility the cache must not share across tasks."""
+    return "\0".join(
+        "%s=%s" % (name, env[name]) for name in _GPU_SCOPE_KEYS if name in env
+    )
+
+
 def cache_digest(env: Mapping[str, str]) -> str:
-    inputs = "\0".join(env.get(key, "") for key in KEY_FIELDS)
+    parts = [env.get(key, "") for key in KEY_FIELDS]
+    parts.append(task_scope_key(env))
+    parts.append(gpu_scope_key(env))
+    inputs = "\0".join(parts)
     return hashlib.sha256(inputs.encode("utf-8", "surrogateescape")).hexdigest()[:16]
 
 
