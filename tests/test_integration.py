@@ -341,6 +341,35 @@ class IntegrationTests(unittest.TestCase):
         self.assertIn("OnlyZen4/1.0", printed[0])
         self.assertIn("environment left as it was", printed[0])
 
+    def test_module_exposed_by_an_earlier_module_loads_after_it(self):
+        # EESSI-extend puts the user's installation tree on MODULEPATH. One
+        # `module load` call finds every name before it loads any, so a
+        # module from that tree loads only after EESSI-extend has.
+        extend = "EESSI-extend/2025.06-easybuild"
+        pigz = "pigz/2.8-GCCcore-14.2.0"
+        user = {}
+        for cpu in (ZEN2, ZEN4):
+            user[cpu] = os.path.join(self.site.root, "user", cpu, "modules", "all")
+            self.site.add_module(cpu, extend)
+            modulefile = os.path.join(
+                self.site.prefix, "software", "linux", cpu, "modules", "all", extend + ".lua"
+            )
+            with open(modulefile, "a", encoding="utf-8") as handle:
+                handle.write('prepend_path("MODULEPATH", "%s")\n' % user[cpu])
+            os.makedirs(os.path.join(user[cpu], "pigz"))
+            with open(os.path.join(user[cpu], pigz + ".lua"), "w", encoding="utf-8") as handle:
+                handle.write("-- %s\n" % pigz)
+        env = self._cpu_env(ZEN4, "zen2", modules=(extend, pigz))
+        env["MODULEPATH"] = user[ZEN4] + ":" + env["MODULEPATH"]
+        proc = harness.run_guard(env)
+        changes, printed = _assert_prolog(proc)
+        self.assertNotIn("EESSI_ARCH_GUARD_FAILED", changes)
+        self.assertEqual(changes["EESSI_SOFTWARE_SUBDIR"], ZEN2)
+        self.assertEqual(changes["MODULEPATH"].split(":")[0], user[ZEN2])
+        self.assertNotIn(ZEN4, changes["MODULEPATH"])
+        self.assertEqual(changes["LOADEDMODULES"], "EESSI/2025.06:%s:%s" % (extend, pigz))
+        self.assertTrue(printed)
+
     def test_stderr_injection_stays_out_of_prolog_directives(self):
         self.site.add_module(ZEN4, "OnlyZen4/1.0")
         env = self._cpu_env(ZEN4, "zen2", modules=("OnlyZen4/1.0",))

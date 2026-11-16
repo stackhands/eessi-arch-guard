@@ -14,6 +14,7 @@ import sys
 import time
 
 EB_NAME = re.compile(r"[^A-Za-z0-9]")
+MODULEPATH_LINE = re.compile(r'prepend_path\("MODULEPATH", "([^"]+)"\)')
 
 
 def log(line: str) -> None:
@@ -98,6 +99,11 @@ def find_module(name: str):
         if os.path.isfile(path):
             return path
     return ""
+
+
+def exposed_paths(path: str):
+    with open(path, encoding="utf-8") as handle:
+        return [match.group(1) for match in MODULEPATH_LINE.finditer(handle.read())]
 
 
 def eb_key(prefix: str, name: str) -> str:
@@ -208,6 +214,14 @@ def do_load(names) -> int:
     prefix = os.environ["EESSI_PREFIX"]
     os_type = os.environ.get("EESSI_OS_TYPE", "linux")
     cpu = os.environ.get("EESSI_SOFTWARE_SUBDIR", "")
+    # Every name is found before any loads, as in one Lmod call; a
+    # MODULEPATH a module file prepends helps only the calls after it.
+    modulepath = [entry for entry in os.environ.get("MODULEPATH", "").split(":") if entry]
+    for name in names:
+        for entry in reversed(exposed_paths(find_module(name))):
+            if entry in modulepath:
+                modulepath.remove(entry)
+            modulepath.insert(0, entry)
     bins = []
     for name in names:
         soft = os.path.join(
@@ -219,7 +233,7 @@ def do_load(names) -> int:
     log("load " + " ".join(names))
     emit("export LOADEDMODULES='%s'" % ":".join(loaded + list(names)))
     emit("export PATH='%s:%s'" % (":".join(bins), os.environ.get("PATH", "")))
-    emit("export MODULEPATH='%s'" % os.environ.get("MODULEPATH", ""))
+    emit("export MODULEPATH='%s'" % ":".join(modulepath))
     emit("export EESSI_SOFTWARE_SUBDIR='%s'" % cpu)
     accel = os.environ.get("EESSI_ACCEL_SUBDIR", "")
     emit("export EESSI_ACCEL_SUBDIR='%s'" % accel)
