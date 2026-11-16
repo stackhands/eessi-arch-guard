@@ -384,37 +384,6 @@ def render_bytes(
     return b"".join(chunks)
 
 
-def render(
-    changes: Mapping[str, Optional[str]],
-    message: Optional[str],
-    shell: bool,
-    announce: bool,
-) -> str:
-    """Prolog or shell text. Prolog values are literal; shell values are quoted."""
-    lines = []
-    for key in sorted(changes):
-        if ENV_NAME_RE.fullmatch(key) is None:
-            raise ValueError("refusing to emit an unsafe name")
-        value = changes[key]
-        if value is None:
-            lines.append("unset " + key)
-            continue
-        if not isinstance(value, str):
-            raise ValueError("refusing to emit a non-text value")
-        if shell:
-            lines.append("export %s=%s" % (key, shlex.quote(value)))
-        else:
-            if not value_emit_ok(value, multiline=False):
-                raise ValueError("refusing to emit an unsafe prolog value")
-            lines.append("export %s=%s" % (key, value))
-    text = ""
-    if lines:
-        text = "\n".join(lines) + "\n"
-    if message and announce and not shell:
-        text += "print " + one_line(message) + "\n"
-    return text
-
-
 def parse_loaded_modules(env: Mapping[str, str]) -> LoadedModules:
     raw = env.get("LOADEDMODULES", "")
     names = [part for part in raw.split(":") if part]
@@ -1597,10 +1566,6 @@ def parse_config_bytes(blob: bytes) -> Tuple[Dict[str, str], Tuple[str, ...]]:
     return settings, tuple(bad)
 
 
-def parse_chain_config(text: str) -> Optional[str]:
-    return config_chain(parse_config(text))
-
-
 def config_chain(settings: Optional[Mapping[str, str]]) -> Optional[str]:
     if not settings:
         return None
@@ -1635,24 +1600,6 @@ def site_config(script_path: str) -> Tuple[Optional[Dict[str, str]], Optional[st
             )
         return settings, None
     return None, None
-
-
-def configured_chain(script_path: str) -> Tuple[Optional[str], Optional[str]]:
-    """Return (chain, warning). A user-owned config is not a chain source."""
-    settings, warning = site_config(script_path)
-    if settings is None:
-        return None, warning
-    chain = config_chain(settings)
-    if chain and _chain_path_ok(chain):
-        return chain, warning
-    if chain:
-        text = "eessi-arch-guard: config chain is not an absolute executable: %s" % one_line(
-            chain, 200
-        )
-        if warning:
-            text = warning + " " + text
-        return None, text
-    return None, warning
 
 
 def run_chain(path: str, env: Mapping[str, str]) -> Tuple[int, bytes, bytes]:

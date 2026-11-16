@@ -107,9 +107,9 @@ class UnitTests:
         assert guard.ACCEL_RE.fullmatch("accel/nvidia/cc90\nexport X=1") is None
 
     def test_prolog_value_is_literal(self):
-        text = guard.render({"FOO": "cost $5 `id` \"q\""}, None, shell=False, announce=False)
-        assert text == "export FOO=cost $5 `id` \"q\"\n"
-        changes, printed = apply_task_prolog(text)
+        raw = guard.render_bytes({"FOO": "cost $5 `id` \"q\""}, None, shell=False, announce=False)
+        assert raw == b"export FOO=cost $5 `id` \"q\"\n"
+        changes, printed = apply_task_prolog(raw.decode("ascii"))
         assert changes == {"FOO": "cost $5 `id` \"q\""}
         assert printed == []
 
@@ -139,9 +139,11 @@ class UnitTests:
 
     def test_shell_quote_round_trip(self):
         value = "cost $5 `id` $(touch /tmp/nope) 'q'\nexport LD_PRELOAD=/evil"
-        text = guard.render({"FOO": value}, "hello\nexport PWNED=1", shell=True, announce=True)
+        text = os.fsdecode(
+            guard.render_bytes({"FOO": value}, "hello\nexport PWNED=1", shell=True, announce=True)
+        )
         assert "print " not in text
-        # The message is not on stdout in shell mode; render leaves it to the caller.
+        # The message is not on stdout in shell mode; render_bytes leaves it to the caller.
         script = 'eval "$1"; printf %s "$FOO"; printf "\\0%s" "${LD_PRELOAD-unset}"'
         import subprocess
 
@@ -157,7 +159,9 @@ class UnitTests:
         assert preload == b"unset"
 
     def test_print_newline_cannot_become_export(self):
-        text = guard.render({}, "hello\nexport LD_PRELOAD=/evil.so", shell=False, announce=True)
+        text = os.fsdecode(
+            guard.render_bytes({}, "hello\nexport LD_PRELOAD=/evil.so", shell=False, announce=True)
+        )
         assert text.count("\n") == 1
         assert text.startswith("print ")
         changes, printed = apply_task_prolog(text)
@@ -244,7 +248,9 @@ class UnitTests:
         )
         assert outcome.kind == "failed"
         assert set(outcome.changes) == {"EESSI_ARCH_GUARD_FAILED"}
-        text = guard.render(outcome.changes, outcome.message, shell=False, announce=True)
+        text = os.fsdecode(
+            guard.render_bytes(outcome.changes, outcome.message, shell=False, announce=True)
+        )
         changes, _printed = apply_task_prolog(text)
         assert "EVIL" not in changes
         assert set(changes) == {"EESSI_ARCH_GUARD_FAILED"}
@@ -266,7 +272,9 @@ class UnitTests:
         )
         assert calls == []
         assert outcome.kind == "failed"
-        text = guard.render(outcome.changes, outcome.message, shell=False, announce=True)
+        text = os.fsdecode(
+            guard.render_bytes(outcome.changes, outcome.message, shell=False, announce=True)
+        )
         changes, _printed = apply_task_prolog(text)
         assert "LD_PRELOAD" not in changes
 
@@ -372,13 +380,12 @@ class UnitTests:
         text = "# comment\nchain = /bin/true\ntimeout = 60\n"
         assert guard.parse_config(text) == {"chain": "/bin/true", "timeout": "60"}
         assert guard.config_chain(guard.parse_config(text)) == "/bin/true"
-        assert guard.parse_chain_config(text) == "/bin/true"
         blob = b"chain = /bin/true\n# caf\xe9\ntimeout = 1\xff\n"
         settings, bad = guard.parse_config_bytes(blob)
         assert settings["chain"] == "/bin/true"
         assert "timeout" in bad
         assert settings["timeout"].encode("utf-8", "surrogateescape") == b"1\xff"
-        assert guard.parse_chain_config("other = 1\n") is None
+        assert guard.config_chain(guard.parse_config("other = 1\n")) is None
         assert guard.config_chain(None) is None
         assert guard.config_chain({}) is None
         handle = tempfile.NamedTemporaryFile("w", delete=False)

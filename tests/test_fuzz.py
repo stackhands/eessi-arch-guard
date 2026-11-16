@@ -80,7 +80,9 @@ class FuzzTests:
                 assert delta is None
                 continue
             assert delta is not None
-            text = guard.render(delta, "note\nexport PWNED=1", shell=False, announce=True)
+            text = os.fsdecode(
+                guard.render_bytes(delta, "note\nexport PWNED=1", shell=False, announce=True)
+            )
             _slurm_safe(text, delta)
             changes, printed = apply_task_prolog(text)
             assert "PWNED" not in changes
@@ -100,7 +102,9 @@ class FuzzTests:
             for _ in range(20):
                 values.append(_random_text(rng, 16).replace("\0", ""))
             for value in values:
-                text = guard.render({"FOO": value}, None, shell=True, announce=False)
+                text = os.fsdecode(
+                    guard.render_bytes({"FOO": value}, None, shell=True, announce=False)
+                )
                 proc = subprocess.run(
                     [
                         "bash",

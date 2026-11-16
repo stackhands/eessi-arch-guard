@@ -226,7 +226,7 @@ All values come from `os.environ` copied at L1745 unless a row says the helper r
 | `module_name_ok` | `isinstance(name, str)`, `0 < len(name) <= 256` (`MAX_MODULE_NAME`, L105), and fullmatch of either regex above | direct | accepted module name | L225-233 |
 | `EESSI_MODULE_RE` | `^EESSI/{_MOD_SEGMENT}$` | `fullmatch` | the one EESSI entry | L98, L426, L930 |
 | `parse_loaded_modules` rules | split `LOADEDMODULES` on `:`, drop empty parts; none left: error `LOADEDMODULES is empty` (maps to `restore-failed`); any `module_name_ok` failure: error `unsafe-module-name`; entries starting `EESSI/` must number exactly one and match `EESSI_MODULE_RE`, else error `eessi-module-name` (maps to `restore-failed`); other names keep order | direct | loaded list | L418-429 |
-| `ENV_NAME_RE` | `^[A-Za-z_][A-Za-z0-9_]*$` | `fullmatch` | environment variable names in delta, render, cache | L99, L291, L361, L396, L1295 |
+| `ENV_NAME_RE` | `^[A-Za-z_][A-Za-z0-9_]*$` | `fullmatch` | environment variable names in delta, render, cache | L99, L291, L361, L1295 |
 | `ACCEL_RE` | `^accel/(?:nvidia/cc[0-9]+\|amd/gfx[0-9a-f]+)$` written as `^accel/(?:nvidia/cc[0-9]+|amd/gfx[0-9a-f]+)$` | `fullmatch` after `strip()` | accelpath output | L100, L750 |
 | `_PATH_SEGMENT_RE` | `^[A-Za-z0-9_.+-]+$` | `fullmatch` per segment | segments of a relative subdirectory | L101, L242 |
 | `safe_rel_subdir(value)` | false if empty, starts with `/`, or contains `\`; split on `/`; every segment must not be `.` or `..` and must match `_PATH_SEGMENT_RE` (so empty segments, `//` and trailing `/` fail) | direct | `EESSI_OS_TYPE`, each cpupath candidate | L236-244 |
@@ -275,8 +275,8 @@ All tests live under `eessi-arch-guard/tests/`. `harness.py` L14-18 supports `TO
 | `safe_rel_subdir` | test_unit.py | `test_cpu_candidate_rejects_traversal` (L94), `test_select_first_directory` (L682) |
 | `ACCEL_RE` | test_unit.py | `test_accel_grammar` (L102) |
 | `ENV_NAME_RE` | test_integration.py (inside `_assert_prolog`, L45-53), test_fuzz.py (L57 test) | `test_hostile_exports_cannot_inject` (L57) |
-| `render` (string renderer, not used by `main`) | test_unit.py | `test_prolog_value_is_literal` (L109), `test_shell_quote_round_trip` (L140), `test_print_newline_cannot_become_export` (L159), `test_unsafe_restore_value_publishes_nothing_else` (L237), `test_bad_module_name_does_not_restore` (L252) |
-| `render` | test_fuzz.py | `test_hostile_exports_cannot_inject` (L57), `test_shell_mode_does_not_execute_payloads` (L90) |
+| `render_bytes` | test_unit.py | `test_prolog_value_is_literal` (L109), `test_shell_quote_round_trip` (L140), `test_print_newline_cannot_become_export` (L159), `test_unsafe_restore_value_publishes_nothing_else` (L237), `test_bad_module_name_does_not_restore` (L252) |
+| `render_bytes` | test_fuzz.py | `test_hostile_exports_cannot_inject` (L57), `test_shell_mode_does_not_execute_payloads` (L90) |
 | `render_bytes`, `PROLOG_LINE_MAX` | test_unit.py | `test_export_line_over_the_slurm_17_11_cap_is_refused` (L422) |
 | `message_bytes`, `_fit_encoded`, `PROLOG_LINE_MAX` | test_unit.py | `test_message_trim_keeps_a_character_boundary` (L394) |
 | `environment_delta` | test_unit.py | `test_newline_value_aborts_delta` (L116), `test_newline_name_aborts_delta` (L124), `test_soft_drop_keeps_the_rest` (L132), `test_slurm_never_emit` (L167) |
@@ -292,8 +292,7 @@ All tests live under `eessi-arch-guard/tests/`. `harness.py` L14-18 supports `TO
 | `cached_decide`, `main`, `Outcome` | test_unit.py | `test_main_exception_exits_zero` (L338), `test_interrupt_exits_zero` (L352), `test_untrusted_lock_bypasses_the_cache` (L508) |
 | `_write_cache`, `_read_cache`, `cache_file_path` | test_unit.py | `test_interrupted_cache_write_leaves_no_temporary_file` (L433), `test_cache_read_needs_an_owned_private_regular_file` (L467), `test_cache_read_does_not_block_on_a_fifo` (L483), `test_cached_changes_obey_the_never_touch_list` (L498) |
 | `cache_file_path`, `_write_cache`, `Outcome` | test_integration.py | `test_tmpdir_absent_uses_tmp_mode_0600` (L199), `test_cache_symlink_is_not_followed` (L226), `test_hung_gpu_query_is_stopped_and_not_cached` (L587), `test_lock_wait_ends_at_the_limit` (L636), `test_limit_does_not_undo_a_cached_decision` (L695) |
-| `parse_config`, `parse_config_bytes`, `parse_chain_config`, `config_chain`, `_config_untrusted` | test_unit.py | `test_chain_config_parser_and_untrusted_file` (L371) |
-| `configured_chain`, `parse_chain_config` (no test beyond the above; `configured_chain` is dead code in `main`) | test_unit.py | `test_chain_config_parser_and_untrusted_file` (L371) |
+| `parse_config`, `parse_config_bytes`, `config_chain`, `_config_untrusted` | test_unit.py | `test_chain_config_parser_and_untrusted_file` (L371) |
 | `to_wire`, `from_wire` | test_unit.py | `test_wire_round_trip_keeps_the_byte` (L530) |
 | `parse_timeout`, `resolve_timeout`, `parse_args`, `DEFAULT_TIMEOUT`, `TIMEOUT_MAX` | test_unit.py | `test_timeout_values` (L549) |
 | `DecisionLimit`, `_ACTIVE`, `_Terminated`, `run_captured` | test_unit.py | `test_signal_while_a_child_starts_still_kills_it` (L569) |
@@ -313,7 +312,7 @@ All tests live under `eessi-arch-guard/tests/`. `harness.py` L14-18 supports `TO
 |---|---|---|
 | `docs/reference/cli.md` out of date | Shows usage without `--strict`, and says `--version` prints `0.1.1`; the source `HELP` includes `--strict` and `__version__` is `0.1.2`. The source is authoritative. | L32, L141-154; docs/reference/cli.md |
 | VERBOSE wording | Docs say "skip and match reasons"; code writes only `outcome.detail` (skip, noop, and the restore error on failures). | L1792-1793 |
-| Dead code | `configured_chain` (L1634-1649) and `parse_chain_config` (L1594-1595) are not called from `_main`; the live chain path is L1748-1765. Unreachable branch L292-293. `render` (L387-415) is not called from `main`; `render_bytes` is. | as listed |
+| Dead code | Unreachable branch L292-293. | as listed |
 | Emergency channel | `_emergency` always prints a `print` line in prolog mode regardless of `SLURM_LOCALID`. | L1729 |
 | Cache key lacks mode | Prolog and shell mode share a cache file; a cached entry violating the current mode's `value_emit_ok` is silently recomputed. | L1224-1226, L1341 |
 | `render_bytes` dry run | The decision runs `render_bytes` itself (prolog mode) to detect over-long lines; a cached outcome is not re-checked, so an over-long cached line raises `ValueError` in `_main` and becomes an emergency skip (exit 0, or 78 under strict). | L1211-1220, L1782-1788 |
