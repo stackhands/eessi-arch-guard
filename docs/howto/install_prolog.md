@@ -21,7 +21,7 @@ TaskProlog=/usr/local/sbin/eessi-arch-guard
 + head -n 1 /usr/local/sbin/eessi-arch-guard
 #!/usr/bin/python3 -I
 + /usr/local/sbin/eessi-arch-guard --version
-0.1.1
+0.2.0
 ```
 
 Leave the file in place on a production host. The script removes it only so the example is repeatable.
@@ -34,12 +34,12 @@ The same script then creates a virtualenv, runs `pip install .`, and checks the 
 + python3 -m venv <venv>
 + <venv>/bin/python -m pip install .
 + <venv>/bin/python -c 'import importlib.metadata; print(importlib.metadata.version("eessi-arch-guard"))'
-0.1.1
+0.2.0
 console: <venv>/bin/eessi-arch-guard
 console import: from eessi_arch_guard import main
 console -I flag: absent
 + <venv>/bin/eessi-arch-guard --version
-0.1.1
+0.2.0
 ```
 
 The console script is the right binary for [`--shell`](shell_batch.md) on a login node. It is started without `-I`. `TaskProlog` stays on the installed file, whose shebang passes `-I`.

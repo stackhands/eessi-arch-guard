@@ -311,11 +311,9 @@ All tests live under `eessi-arch-guard/tests/`. `harness.py` L14-18 supports `TO
 
 | Item | Detail | Lines |
 |---|---|---|
-| `docs/reference/cli.md` out of date | Shows usage without `--strict`, and says `--version` prints `0.1.1`; the source `HELP` includes `--strict` and `__version__` is `0.1.2`. The source is authoritative. | L32, L141-154; docs/reference/cli.md |
 | VERBOSE wording | Docs say "skip and match reasons"; code writes only `outcome.detail` (skip, noop, and the restore error on failures). | L1792-1793 |
 | Dead code | `configured_chain` (L1634-1649) and `parse_chain_config` (L1594-1595) are not called from `_main`; the live chain path is L1748-1765. Unreachable branch L292-293. `render` (L387-415) is not called from `main`; `render_bytes` is. | as listed |
 | Emergency channel | `_emergency` always prints a `print` line in prolog mode regardless of `SLURM_LOCALID`. | L1729 |
-| Cache key lacks mode | Prolog and shell mode share a cache file; a cached entry violating the current mode's `value_emit_ok` is silently recomputed. | L1224-1226, L1341 |
 | `render_bytes` dry run | The decision runs `render_bytes` itself (prolog mode) to detect over-long lines; a cached outcome is not re-checked, so an over-long cached line raises `ValueError` in `_main` and becomes an emergency skip (exit 0, or 78 under strict). | L1211-1220, L1782-1788 |
 | `TIMEOUT_MAX` is platform-dependent | `threading.TIMEOUT_MAX` is 9223372036.0 here; the number appears in warning text. | L118, L1529, L1538 |
 | Not determined | The behaviour of the real `eessi_archdetect.sh` (only the stub in `tests/stubs/` was read); behaviour of real Lmod output; the docs for tutorial/howto pages under `docs/howto`, `docs/tutorial`, `docs/topics/{concepts,design,detection}.md` were not read line by line. | n/a |

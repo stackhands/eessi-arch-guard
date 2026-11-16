@@ -8,7 +8,7 @@ The loaded stack is EESSI 2025.06 plus `R/4.4.2`, recorded for `x86_64/amd/zen4`
 
 ```console
 $ python3 src/eessi_arch_guard.py --version
-0.1.1
+0.2.0
 ```
 
 ## Run the guard on the mismatched stack
