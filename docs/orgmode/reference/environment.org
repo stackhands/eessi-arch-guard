@@ -33,6 +33,8 @@ The module of the European Environment for Scientific Software Installations (EE
 | =EESSI_ARCH_GUARD_FAILED=                                                                                     | A successful reload removes it.                                                                                                                                                                                                                      |
 | =BASH_ENV=, =ENV=, =SHELLOPTS=, =BASHOPTS=, =BASH_XTRACEFD=, =PS4=                                            | Removed from the environment of every =bash= the guard starts, so no startup file or trace runs in it.                                                                                                                                               |
 
+On this page an absolute path starts with =/=, has no =..= part, and holds no newline, carriage return or NUL.
+
 ** Controls
 
 | Variable                            | Effect                                                                                                                                                                                                                         |
