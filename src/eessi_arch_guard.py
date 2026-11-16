@@ -658,6 +658,286 @@ def read_cpu_flags(path: str) -> frozenset:
     return common
 
 
+# sched_getaffinity and cpuset lists name processors in this range. A bind
+# mask with a bit past it is ignored rather than applied in part.
+_CPU_ID_MAX = 4096
+_CPU_LIST_RE = re.compile(r"\d+(?:-\d+)?(?:,\d+(?:-\d+)?)*")
+_CPU_HOSTLIST_RE = re.compile(
+    r"(?:cpu)?\[(\d+(?:-\d+)?(?:,\d+(?:-\d+)?)*)\]", re.IGNORECASE
+)
+_PROCESSOR_LINE_RE = re.compile(r"(?i)^processor[ \t]*:[ \t]*(\d+)\s*$")
+_FLAG_KEYS = frozenset(("flags", "features", "isa"))
+_IDENTITY_KEYS = frozenset(
+    (
+        "vendor_id",
+        "cpu_family",
+        "model",
+        "model_name",
+        "cpu_implementer",
+        "cpu_part",
+        "mvendorid",
+    )
+)
+
+
+def parse_cpu_spec(text: str) -> Optional[frozenset]:
+    """CPUs in a hex mask, a ``0-3,8`` list, or a ``cpu[0-3]`` hostlist.
+
+    None means the text is not one of those forms. A mask with a bit at or
+    past ``_CPU_ID_MAX`` is None too: applying the low bits alone would hide
+    a processor the mask named.
+    """
+    raw = (text or "").strip()
+    if not raw:
+        return None
+    if raw.lower().startswith("0x"):
+        try:
+            mask = int(raw, 16)
+        except ValueError:
+            return None
+        if mask < 0:
+            return None
+        found = set()
+        bit = 0
+        while mask and bit < _CPU_ID_MAX:
+            if mask & 1:
+                found.add(bit)
+            mask >>= 1
+            bit += 1
+        if mask:
+            return None
+        return frozenset(found)
+    host = _CPU_HOSTLIST_RE.fullmatch(raw)
+    body = host.group(1) if host else raw.replace(" ", "")
+    if _CPU_LIST_RE.fullmatch(body) is None:
+        return None
+    found = set()
+    for part in body.split(","):
+        if "-" in part:
+            left, right = part.split("-", 1)
+            start, end = int(left), int(right)
+            if end < start or end >= _CPU_ID_MAX:
+                return None
+            found.update(range(start, end + 1))
+        else:
+            cpu = int(part)
+            if cpu >= _CPU_ID_MAX:
+                return None
+            found.add(cpu)
+    return frozenset(found)
+
+
+def _read_text(path: str, limit: int = 65536) -> Optional[str]:
+    try:
+        with open(path, "rb") as handle:
+            blob = handle.read(limit)
+    except OSError:
+        return None
+    return blob.decode("utf-8", "replace")
+
+
+def cgroup_cpus() -> Optional[frozenset]:
+    """Processors in this process's cgroup cpuset, walking up to an effective list."""
+    text = _read_text("/proc/self/cgroup")
+    if not text:
+        return None
+    directories = []
+    for line in text.splitlines():
+        parts = line.split(":", 2)
+        if len(parts) != 3:
+            continue
+        hier, controllers, path = parts
+        if not path.startswith("/"):
+            path = "/" + path
+        if hier == "0" and controllers == "":
+            directories.append("/sys/fs/cgroup" + path)
+        elif "cpuset" in controllers.split(","):
+            directories.append("/sys/fs/cgroup/cpuset" + path)
+            directories.append("/sys/fs/cgroup" + path)
+    for start in directories:
+        directory = start
+        for _ in range(64):
+            if not directory.startswith("/sys/fs/cgroup"):
+                break
+            raw = _read_text(os.path.join(directory, "cpuset.cpus.effective"))
+            if raw is not None and raw.strip():
+                parsed = parse_cpu_spec(raw.strip())
+                if parsed is not None:
+                    return parsed
+            parent = os.path.dirname(directory.rstrip("/"))
+            if parent == directory:
+                break
+            directory = parent
+    return None
+
+
+def sched_cpus() -> Optional[frozenset]:
+    """Processors in this process's affinity mask, below ``_CPU_ID_MAX``."""
+    try:
+        found = os.sched_getaffinity(0)
+    except (AttributeError, OSError):
+        return None
+    return frozenset(cpu for cpu in found if cpu < _CPU_ID_MAX)
+
+
+def bind_cpus(env: Mapping[str, str]) -> Optional[frozenset]:
+    """``SLURM_CPU_BIND_LIST``, or the mask at the end of ``SLURM_CPU_BIND``."""
+    listed = (env.get("SLURM_CPU_BIND_LIST") or "").strip()
+    if listed:
+        return parse_cpu_spec(listed)
+    verbose = (env.get("SLURM_CPU_BIND") or "").strip()
+    if ":" not in verbose:
+        return None
+    return parse_cpu_spec(verbose.rsplit(":", 1)[-1].strip())
+
+
+def task_cpu_ids(env: Mapping[str, str]) -> Optional[frozenset]:
+    """Intersection of affinity, cpuset, and the Slurm bind list.
+
+    None when none of the three can be read. An empty set means the three
+    disagree: the task is not allowed to run on any processor they share.
+    """
+    parts = []
+    for item in (sched_cpus(), cgroup_cpus(), bind_cpus(env)):
+        if item is not None:
+            parts.append(item)
+    if not parts:
+        return None
+    allowed = set(parts[0])
+    for item in parts[1:]:
+        allowed &= item
+    return frozenset(allowed)
+
+
+def _cpuinfo_field(line: str) -> Optional[Tuple[str, str, str]]:
+    stripped = line.strip()
+    if ":" not in stripped:
+        return None
+    key, value = stripped.split(":", 1)
+    norm = "_".join(key.split()).lower()
+    return norm, key.strip(), value.strip()
+
+
+def scope_cpuinfo(text: str, allowed: Optional[frozenset]) -> Optional[str]:
+    """Cpuinfo limited to ``allowed``, or None when ``text`` already is.
+
+    No ``processor`` lines means the file is not a per-CPU cpuinfo (an
+    ``lscpu`` snapshot or a test stub's ``eessi_arch_matches`` line) and is
+    left alone. Kept processors that do not share a vendor, model, and flag
+    set are collapsed to one record whose flags are the intersection, so a
+    consumer that reads only the last record cannot see a richer CPU than
+    every processor the task may run.
+    """
+    if allowed is None:
+        return None
+    blocks: List[dict] = []
+    current: Optional[dict] = None
+    for line in text.splitlines():
+        match = _PROCESSOR_LINE_RE.match(line.strip())
+        if match:
+            if current is not None:
+                blocks.append(current)
+            current = {"id": int(match.group(1)), "lines": [line]}
+        elif current is not None:
+            current["lines"].append(line)
+    if current is not None:
+        blocks.append(current)
+    if not blocks:
+        return None
+    kept = [block for block in blocks if block["id"] in allowed]
+
+    def fields_of(block: dict) -> List[Tuple[str, str, str]]:
+        found = []
+        for line in block["lines"]:
+            field = _cpuinfo_field(line)
+            if field is not None and field[0] != "processor":
+                found.append(field)
+        return found
+
+    def value_map(fields: Sequence[Tuple[str, str, str]]) -> Dict[str, str]:
+        out: Dict[str, str] = {}
+        for norm, _raw, value in fields:
+            out.setdefault(norm, value)
+        return out
+
+    parsed = [fields_of(block) for block in kept]
+    if kept and len(kept) == len(blocks):
+        maps = [value_map(item) for item in parsed]
+        if all(item == maps[0] for item in maps[1:]):
+            return None
+    if not kept:
+        return "processor : 0\nflags :\n"
+    first = parsed[0]
+    raw_of: Dict[str, str] = {}
+    for norm, raw, _value in first:
+        raw_of.setdefault(norm, raw)
+    maps = [value_map(item) for item in parsed]
+
+    def unanimous(norm: str) -> Optional[str]:
+        values = []
+        for item in maps:
+            if norm not in item:
+                return None
+            values.append(item[norm])
+        if any(item != values[0] for item in values[1:]):
+            return None
+        return values[0]
+
+    def intersection(norm: str) -> str:
+        common: Optional[set] = None
+        for item in maps:
+            tokens = set(item.get(norm, "").split())
+            common = tokens if common is None else common & tokens
+        if not common:
+            return ""
+        return " ".join(sorted(common))
+
+    lines = ["processor : %s" % kept[0]["id"]]
+    seen = set()
+    for norm, _raw, _value in first:
+        if norm in seen:
+            continue
+        seen.add(norm)
+        if norm in _FLAG_KEYS:
+            lines.append("%s : %s" % (raw_of[norm], intersection(norm)))
+            continue
+        value = unanimous(norm)
+        if value is None:
+            continue
+        lines.append("%s : %s" % (raw_of[norm], value))
+    return "\n".join(lines) + "\n"
+
+
+def _prepare_cpuinfo(env: Mapping[str, str]) -> Tuple[str, Optional[str], Mapping[str, str]]:
+    """Path archdetect should read, a temp file to remove, and the child environment.
+
+    ``EESSI_PROC_CPUINFO`` set by the caller is still scoped to the task's
+    processors. A file with no ``processor`` lines is used as it stands.
+    """
+    explicit = env.get("EESSI_PROC_CPUINFO") or ""
+    path = explicit if explicit else "/proc/cpuinfo"
+    allowed = task_cpu_ids(env)
+    if allowed is None:
+        return path, None, env
+    try:
+        with open(path, "rb") as handle:
+            blob = handle.read(_CPUINFO_READ_MAX + 1)
+    except OSError:
+        return path, None, env
+    text = blob[:_CPUINFO_READ_MAX].decode("utf-8", "replace")
+    scoped = scope_cpuinfo(text, allowed)
+    if scoped is None:
+        return path, None, env
+    fd, tmp = tempfile.mkstemp(prefix="eessi-arch-guard-cpu-")
+    try:
+        os.write(fd, scoped.encode("utf-8"))
+    finally:
+        os.close(fd)
+    child = dict(env)
+    child["EESSI_PROC_CPUINFO"] = tmp
+    return tmp, tmp, child
+
+
 def march_of(candidate: str) -> str:
     leaf = candidate.rsplit("/", 1)[-1]
     return leaf.replace("-", "_")
@@ -689,25 +969,35 @@ def probe_cpu(env: Mapping[str, str]) -> CpuProbe:
     script = os.path.join(init, "eessi_archdetect.sh")
     if not os.path.isfile(script):
         return CpuProbe("error", "", (), "eessi_archdetect.sh is not available")
+    cpuinfo_path, cleanup, child = _prepare_cpuinfo(env)
     try:
-        proc = _run_bash([script, "-a", "cpupath"], env)
-    except OSError as exc:
-        return CpuProbe("error", "", (), "could not run archdetect: %s" % exc)
-    if proc.returncode != 0:
-        err = proc.stderr.decode("utf-8", "replace").splitlines()
-        detail = err[0] if err else "exit %s" % proc.returncode
-        return CpuProbe("error", "", (), one_line(detail, 200))
-    stdout = proc.stdout.decode("utf-8", "replace")
-    parsed = parse_cpu_line(stdout)
-    if parsed is None:
-        return CpuProbe("error", "", (), "cpupath output is not a single line")
-    candidates = [item for item in parsed if item]
-    if not candidates:
-        return CpuProbe("error", "", (), "cpupath returned no candidates")
-    for candidate in candidates:
-        if not safe_rel_subdir(candidate):
-            return CpuProbe("error", "", tuple(candidates), "cpupath returned an unsafe candidate")
-    flags = read_cpu_flags(env.get("EESSI_PROC_CPUINFO") or "/proc/cpuinfo")
+        try:
+            proc = _run_bash([script, "-a", "cpupath"], child)
+        except OSError as exc:
+            return CpuProbe("error", "", (), "could not run archdetect: %s" % exc)
+        if proc.returncode != 0:
+            err = proc.stderr.decode("utf-8", "replace").splitlines()
+            detail = err[0] if err else "exit %s" % proc.returncode
+            return CpuProbe("error", "", (), one_line(detail, 200))
+        stdout = proc.stdout.decode("utf-8", "replace")
+        parsed = parse_cpu_line(stdout)
+        if parsed is None:
+            return CpuProbe("error", "", (), "cpupath output is not a single line")
+        candidates = [item for item in parsed if item]
+        if not candidates:
+            return CpuProbe("error", "", (), "cpupath returned no candidates")
+        for candidate in candidates:
+            if not safe_rel_subdir(candidate):
+                return CpuProbe(
+                    "error", "", tuple(candidates), "cpupath returned an unsafe candidate"
+                )
+        flags = read_cpu_flags(cpuinfo_path)
+    finally:
+        if cleanup:
+            try:
+                os.unlink(cleanup)
+            except OSError:
+                pass
     compatible = [item for item in candidates if candidate_supports_cpu(item, flags)]
 
     def installed(items: Sequence[str]) -> str:
