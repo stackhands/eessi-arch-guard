@@ -27,7 +27,7 @@ Checked on Slurm `master` `src/slurmd/slurmstepd/task.c` (public source) and, se
 | Approach | What happens |
 | --- | --- |
 | CVMFS variant symlink per node | Module roots and `DT_RPATH` are absolute per target. The task opens the submitting node's files. Confirmed from `init/modules/EESSI/2023.06.lua` at software-layer-scripts `26441ca`. |
-| Re-check inside the EESSI module file | Lmod evaluates the file at load and returns. |
+| Re-check inside the EESSI module file | The file runs when a `module` command loads it, and nothing loads it in a task before `execve`. Loading it again re-runs it, but the other loaded modules go inactive. |
 | Lmod hook on every `module` command | The hook runs for module commands. A bare exec never calls one. It would also run on every load for a check that happens once per task. |
 | `BASH_ENV` as the carrier | A bare `srun` of a binary never sources it. Lmod already uses `BASH_ENV`. The reload shell removes it. |
 | `--export=NONE` as a site default | Job scripts lose the environment they were written against. A user can still pass it on one command. |

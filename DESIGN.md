@@ -1,6 +1,6 @@
 # Design: eessi-arch-guard
 
-The EESSI module picks a CPU target once, at load time, and an accelerator target the same way. Both are written into `MODULEPATH` and into every path later modules export. Slurm sends that environment to the job. A task that lands on another CPU or GPU then runs the submitting machine's binaries: illegal instruction, a silent slow path, or a missing GPU tree. `module load EESSI/<version>` inside the job does nothing, because Lmod does not re-read a module that is already loaded. `module reload`, unload/load, and swap leave the other modules inactive. The sequence that works is: list the loaded modules, `module --force purge`, `module load EESSI/<version>` by its full name, then load the others in that order.
+The EESSI module picks a CPU target once, at load time, and an accelerator target the same way. Both are written into `MODULEPATH` and into every path later modules export. Slurm sends that environment to the job. A task that lands on another CPU or GPU then runs the submitting machine's binaries: illegal instruction, a silent slow path, or a missing GPU tree. `module load EESSI/<version>` inside the job runs the EESSI module again (checked on Lmod 9.4.5) and moves `MODULEPATH` to the tree its own detection picks, but Lmod then marks the other loaded modules inactive. `module reload`, unload/load, and swap leave the other modules inactive too. The sequence that works is: list the loaded modules, `module --force purge`, `module load EESSI/<version>` by its full name, then load the others in that order.
 
 This file records which program should do that, and which shapes were rejected.
 
@@ -70,7 +70,7 @@ These were rejected before this repo existed. The new information does not reviv
 | Alternative | Still rejected? | What changed |
 |---|---|---|
 | CVMFS variant symlink per node | Yes | EESSI module roots and `DT_RPATH` are absolute per target. Confirmed by reading `init/modules/EESSI/2023.06.lua` at software-layer-scripts `26441ca` (later versions are pointers at that file). |
-| Re-check inside the EESSI module file | Yes | Lmod does not re-evaluate a loaded module. The same lua file selects the target at load and returns. |
+| Re-check inside the EESSI module file | Yes | The lua file selects the target when a `module` command loads it, and nothing loads it in a task before `execve`. Loading it again does re-run it, but the other loaded modules go inactive. |
 | Lmod hook on every `module` command | Yes | A hook does not run for a bare exec. It would also run on every load for a case that happens once per task. |
 | `BASH_ENV` as the fix | Yes, more strongly | It misses `srun` of a binary, it runs for every bash, and Lmod already uses `BASH_ENV`. New: the prototype's own reload shell sources it. The guard strips it and does not use it as a carrier. |
 | `--export=NONE` as a site default | Yes | It drops the inherited environment scripts depend on. It remains user advice. New, taken from the existing Slurm note and not re-verified here: `--export=ALL,X=y` does not override an `X` that is already set, so a one-variable override is not a fix either. |
