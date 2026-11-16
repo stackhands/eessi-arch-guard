@@ -1,6 +1,8 @@
 const std = @import("std");
 const zon = @import("build.zig.zon");
 
+/// The static binary, stripped unless built for debugging, with the
+/// commit -Dcommit names; and the steps docs, test and suite.
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{ .default_target = .{ .abi = .musl, .cpu_model = .baseline } });
     const optimize = b.standardOptimizeOption(.{ .preferred_optimize_mode = .ReleaseSafe });

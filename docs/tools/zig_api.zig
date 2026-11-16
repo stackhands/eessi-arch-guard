@@ -93,6 +93,8 @@ fn fail(comptime fmt: []const u8, args: anytype) noreturn {
     std.process.exit(2);
 }
 
+/// Read the options, empty the --out directory, and write there one page
+/// per file reached from --root, and the index.
 pub fn main(init: std.process.Init) !void {
     const arena = init.arena.allocator();
     const args = try init.minimal.args.toSlice(arena);
