@@ -2008,7 +2008,7 @@ def _emergency(exc: BaseException, shell: bool) -> None:
         encoded = message_bytes(message) + b"\n"
         if shell:
             write_fd(2, encoded)
-        else:
+        elif _announce(os.environ, shell):
             write_fd(1, b"print " + encoded)
     except Exception:
         return

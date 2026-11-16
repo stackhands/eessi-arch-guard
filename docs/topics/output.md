@@ -58,4 +58,4 @@ One deadline covers the lock wait, both archdetect runs, and the restore helper.
 
 The parent removes the helper's work directory when the helper exits, including when the deadline kills it.
 
-An unexpected exception becomes one skip line (`eessi-arch-guard: skipped, ...`) and exit 0. In prolog mode that line is a `print` directive. In `--shell` it goes to stderr.
+An unexpected exception becomes one skip line (`eessi-arch-guard: skipped, ...`) and exit 0. In prolog mode that line is a `print` directive, and like the message it comes only from the task whose `SLURM_LOCALID` is `0` or unset. In `--shell` it goes to stderr.

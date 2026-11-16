@@ -1,0 +1,1 @@
+The skip line after an unexpected failure comes from local task 0 only, as the reload message does, so a step with many tasks on a node shows it once. Both builds read `SLURM_LOCALID` for it; under `--shell` it still goes to stderr.
