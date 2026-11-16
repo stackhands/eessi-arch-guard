@@ -18,7 +18,7 @@ The prolog exits 0 in every row. A chained prolog's non-zero status is the excep
 | A module has no build for this target | `<was>-><now>` | One `print` line naming the missing modules, up to 32. Nothing from the restore is applied. |
 | The restore cannot run: no private workspace, or the helper does not start or gives no usable reply | `<was>->restore-failed` | One `print` line, `restore failed (<cause>)`. Nothing from the restore is applied. |
 | A changed value cannot be a prolog line | `<was>->unsafe-environment` | No partial delta. |
-| Unexpected exception | unchanged, plus a skip line | One `print` or stderr line, exit 0. |
+| Unexpected exception | unchanged, plus a skip line | One `print` line from local task 0, or one stderr line with `--shell`; exit 0. |
 | Deadline exhausted | `<subdir>->timeout` | The waited-on process group is killed. The result is not cached. |
 | `SIGTERM` during the decision | `<subdir>->terminated` | The same kill. The result is not cached. |
 | `EESSI_ARCH_GUARD_VERBOSE=1` | unchanged | Skip and match reasons go to stderr. |

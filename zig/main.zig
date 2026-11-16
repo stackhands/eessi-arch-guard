@@ -46,8 +46,10 @@ const help_text =
 
 // ---- the exit-0 guarantee ------------------------------------------------
 
-/// Set before anything can fail: where the skip line goes and what to exit.
+/// Set before anything can fail: where the skip line goes, whether this
+/// task prints it, and what to exit.
 var emergency_shell = false;
+var emergency_announce = true;
 var emergency_strict = false;
 
 fn emergencyWrite(kind: []const u8, detail: []const u8) void {
@@ -63,11 +65,24 @@ fn emergencyWrite(kind: []const u8, detail: []const u8) void {
     if (emergency_shell) {
         cli.put(2, clean[0..n]);
         cli.put(2, "\n");
-    } else {
+    } else if (emergency_announce) {
         cli.put(1, "print ");
         cli.put(1, clean[0..n]);
         cli.put(1, "\n");
     }
+}
+
+/// _announce for a prolog: SLURM_LOCALID unset or exactly "0". Read from the
+/// raw block, without allocating; the first entry of a name wins, as in
+/// envmap.fromEnvp.
+fn localTaskZero(envp: proc.Envp) bool {
+    const prefix = "SLURM_LOCALID=";
+    var i: usize = 0;
+    while (envp[i]) |p| : (i += 1) {
+        const entry = std.mem.span(p);
+        if (std.mem.startsWith(u8, entry, prefix)) return std.mem.eql(u8, entry[prefix.len..], "0");
+    }
+    return true;
 }
 
 /// Output a chained prolog gave and that is not yet written: Python's main
@@ -489,6 +504,7 @@ fn realMain(arena: Allocator, argv0: []const u8, argv: []const []const u8, envp:
 }
 
 pub fn main(init: std.process.Init.Minimal) u8 {
+    emergency_announce = localTaskZero(init.environ.block.slice.ptr);
     var arena_state = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     const arena = arena_state.allocator();
     const all = init.args.toSlice(arena) catch emergencyExit("MemoryError", "out of memory");
@@ -514,6 +530,17 @@ test "parseArgs" {
     try std.testing.expectEqualStrings("5", a.timeout.?);
     const b = parseArgs(&.{"--timeout"});
     try std.testing.expectEqualStrings("", b.timeout.?);
+}
+
+test "localTaskZero reads the first SLURM_LOCALID" {
+    const first = [_:null]?[*:0]const u8{ "PATH=/bin", "SLURM_LOCALID=0", "SLURM_LOCALID=3" };
+    const other = [_:null]?[*:0]const u8{"SLURM_LOCALID=3"};
+    const blank = [_:null]?[*:0]const u8{"SLURM_LOCALID="};
+    const unset = [_:null]?[*:0]const u8{"PATH=/bin"};
+    try std.testing.expect(localTaskZero(&first));
+    try std.testing.expect(!localTaskZero(&other));
+    try std.testing.expect(!localTaskZero(&blank));
+    try std.testing.expect(localTaskZero(&unset));
 }
 
 test "pyFloat follows Python's float()" {

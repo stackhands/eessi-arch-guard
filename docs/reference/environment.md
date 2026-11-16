@@ -20,7 +20,7 @@
 | `PATH` | Part of the cache key. The helper sees `/usr/bin:/bin` only. |
 | `SLURM_JOB_ID` | Required for the cache file. Unset means every task computes its own result. |
 | `SLURM_STEP_ID` | Cache component. Unset is stored as `batch`. |
-| `SLURM_LOCALID` | `0` or unset receives the `print` line. |
+| `SLURM_LOCALID` | `0` or unset receives the `print` line, a skip line included. |
 | `TMPDIR` | Cache directory when it is absolute and exists. In strict mode it must be private and owned by the invoking user, or an existing configured private state directory is selected. Omitted from the delta. |
 
 ## Controls
