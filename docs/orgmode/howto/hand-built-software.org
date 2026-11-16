@@ -1,0 +1,77 @@
+#+TITLE: Run a program you built yourself on more than one node type
+#+OPTIONS: toc:nil todo:nil num:nil author:nil title:nil
+#+STARTUP: content
+
+* Run a program you built yourself on more than one node type
+
+Use this when a program you compiled against modules of the European Environment for Scientific Software Installations (EESSI) runs on more than one CPU type.
+The guard reloads modules; it cannot change a program that is already linked.
+A program linked against EESSI libraries records their directories as its run path, and those directories name the CPU target of the node it was linked on, so a binary linked on zen4 loads zen4 libraries on every node and can stop with an illegal instruction on zen2.
+Build once per node type, and pick the build on the node that runs it.
+
+** Before you start
+
+- The guard as the site's =TaskProlog=, or as your own, as in [[file:use-as-a-user-task-prolog.org][Use the guard without changing the site TaskProlog]].
+- The source of your program; this guide uses =prog.c=, which links GSL.
+
+** Steps
+
+1. On each node type, in an allocation there, load EESSI and the build environment, and build into a directory named after the target:
+
+   #+begin_src bash
+   salloc -p cpu -w node017 -n 4 -t 00:30:00
+   module load EESSI/2026.06 GSL/2.8-GCC-15.2.0 buildenv/default-foss-2026.1
+   p="$HOME/opt/prog/$EESSI_SOFTWARE_SUBDIR"
+   mkdir -p "$p/bin"
+   gcc -O2 prog.c -lgsl -lgslcblas -o "$p/bin/prog"
+   #+end_src
+
+   =buildenv= loads last, so its compiler wrappers record a run path for every loaded library, and the program runs without =LD_LIBRARY_PATH=.
+   Leave out =-march=native=, which ties the program's own code to the build node as well.
+   [[https://github.com/stackhands/eb-local][eb-local]] sets up the same build environment with =eval "$(eb-local dev GSL/2.8-GCC-15.2.0)"=.
+   Repeat the step on a zen2 node.
+
+2. In the batch script, start the program through a shell in each task, with single quotes, so that =EESSI_SOFTWARE_SUBDIR= expands after the guard has run on that task's node:
+
+   #+begin_src bash
+   srun bash -c 'exec "$HOME/opt/prog/$EESSI_SOFTWARE_SUBDIR/bin/prog"'
+   #+end_src
+
+   =srun "$HOME/opt/prog/$EESSI_SOFTWARE_SUBDIR/bin/prog"= expands on the batch node and starts its build on every node.
+
+3. Without the guard as a task prolog, run its shell mode in the task first:
+
+   #+begin_src bash
+   srun bash -c 'eval "$(/usr/bin/python3 -I /usr/local/sbin/eessi-arch-guard --shell)" && exec "$HOME/opt/prog/$EESSI_SOFTWARE_SUBDIR/bin/prog"'
+   #+end_src
+
+4. To stop at once on a node type with no build:
+
+   #+begin_src bash
+   srun bash -c 'p="$HOME/opt/prog/$EESSI_SOFTWARE_SUBDIR/bin/prog"; [ -x "$p" ] || { echo "no build for $EESSI_SOFTWARE_SUBDIR" >&2; exit 1; }; exec "$p"'
+   #+end_src
+
+** Check that it worked
+
+The run path of each build names its own target:
+
+#+begin_src bash
+readelf -d "$HOME/opt/prog/x86_64/amd/zen4/bin/prog" | grep -E 'RPATH|RUNPATH'
+#+end_src
+
+Every directory in it lies under =.../software/linux/x86_64/amd/zen4/=, and those of the zen2 build under =.../software/linux/x86_64/amd/zen2/=.
+In a job across both node types, each task runs the build of its own node; =srun bash -c 'echo "$(hostname) $EESSI_SOFTWARE_SUBDIR"'= shows the target each task chose.
+
+** If it fails
+
+| Message or symptom                     | Cause                                                                                                                                            | What to do                                                                 |
+|----------------------------------------+--------------------------------------------------------------------------------------------------------------------------------------------------+----------------------------------------------------------------------------|
+| =Illegal instruction= on one node type | The task ran a build for another target: the path expanded on the batch node, or the build used =-march=native= or was linked on the wrong node. | Quote the path as in step 2, and rebuild on that node type.                |
+| =no build for x86_64/amd/zen2=         | Step 4 found no build for the node.                                                                                                              | Build on that node type, as in step 1.                                     |
+| The run path names another target      | The build ran where EESSI had been loaded for another node.                                                                                      | Load EESSI inside the allocation, or rely on the guard there, and rebuild. |
+
+** Related
+
+- [[file:use-as-a-user-task-prolog.org][Use the guard without changing the site TaskProlog]]
+- [[file:use-in-a-batch-script.org][Run the guard in a batch script]]
+- [[file:../explanation/design.org][Why the guard works the way it does]]

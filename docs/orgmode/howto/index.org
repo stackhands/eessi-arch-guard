@@ -12,4 +12,9 @@ The title names the task.
    :maxdepth: 1
 
    install-the-prolog
+   configure
+   use-as-a-user-task-prolog
+   use-in-a-batch-script
+   hand-built-software
+   read-a-failure
 #+end_export

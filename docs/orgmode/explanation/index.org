@@ -12,4 +12,6 @@ Nothing here is a step to follow.
    :maxdepth: 1
 
    how-it-decides
+   design
+   output-modes
 #+end_export

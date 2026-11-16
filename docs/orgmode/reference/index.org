@@ -11,6 +11,11 @@ Each page states facts in the order the thing itself has them.
 .. toctree::
    :maxdepth: 1
 
+   cli
+   configuration
+   environment
+   failures
+   cpu-flags
    compatibility
    api
 #+end_export

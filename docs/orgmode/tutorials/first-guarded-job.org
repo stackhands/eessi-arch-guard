@@ -155,6 +155,8 @@ removed: docs/examples/_work
 ** Next steps
 
 - [[file:../howto/install-the-prolog.org][Install the prolog]] on a cluster.
+- [[file:../howto/read-a-failure.org][Correct a failed reload]], for each message the guard can print.
 - [[file:../explanation/how-it-decides.org][How the guard decides]] what a node's target is.
+- [[file:../reference/cli.org][The eessi-arch-guard command]], for every option.
 
 Checked with Python 3.12.3 and eessi-arch-guard at commit a418152 on 2026-11-16.

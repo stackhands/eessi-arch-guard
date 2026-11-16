@@ -1,0 +1,120 @@
+#+TITLE: Run the guard in a batch script
+#+OPTIONS: toc:nil todo:nil num:nil author:nil title:nil
+#+STARTUP: content
+
+* Run the guard in a batch script
+
+Use this when a batch job inherits modules loaded on a node of another CPU type and the site has not installed the guard as its =TaskProlog=.
+The guard's shell mode prints the reload as =export= and =unset= lines, which the batch script applies to itself.
+
+** Before you start
+
+- The guard on the compute nodes: installed by the site at =/usr/local/sbin/eessi-arch-guard=, or your own copy, as in step 1 of [[file:use-as-a-user-task-prolog.org][Use the guard without changing the site TaskProlog]].
+- A batch script for =bash=.
+
+** Steps
+
+1. Put this line at the top of the batch script, after the =#SBATCH= lines and before the first command that uses a module:
+
+   #+begin_src bash
+   eval "$(/usr/bin/python3 -I /usr/local/sbin/eessi-arch-guard --shell)"
+   #+end_src
+
+   =/usr/bin/python3 -I= starts the guard with the system's Python, not one a loaded module put first on =PATH=.
+   The guard's message goes to stderr, so the command substitution captures only the assignments.
+
+2. Start the job steps after that line, so that they inherit the corrected environment:
+
+   #+begin_src bash
+   srun ./a.out
+   #+end_src
+
+   The =eval= changes only the shell that runs it, so a step gets the corrected environment when this shell starts it after that line, and not with =srun --export=NONE=.
+
+3. To stop the job when the guard cannot load the modules for the node, use =--strict= and test its status instead:
+
+   #+begin_src bash
+   if delta="$(/usr/bin/python3 -I /usr/local/sbin/eessi-arch-guard --strict --shell)"; then
+       eval "$delta"
+   else
+       exit "$?"
+   fi
+   #+end_src
+
+   With =--strict=, the guard exits 78 after a failed reload, and the script exits with that status before the payload runs.
+
+4. For =--strict=, create a private workspace once, because the guard does not create one:
+
+   #+begin_src bash
+   mkdir -p -m 700 ~/.local/state/eessi-arch-guard
+   #+end_src
+
+   The guard takes =EESSI_ARCH_GUARD_WORKDIR= when it is set, then =TMPDIR= when it is private, then =eessi-arch-guard= under =XDG_STATE_HOME= or =~/.local/state=.
+   A per-job =TMPDIR= of mode 700 is private; a shared =/tmp= is not.
+
+** Check that it worked
+
+=docs/examples/shell_demo.py= in the repository builds a small stack loaded for zen4 on a node it presents as zen2, runs =--shell=, and applies the output in =bash --noprofile --norc=.
+=$PREFIX= stands for its temporary directory.
+
+#+begin_src bash
+python3 docs/examples/shell_demo.py
+#+end_src
+
+#+begin_example
+case: shell
+command: python3 -I src/eessi_arch_guard.py --shell
+exit: 0
+--- stdout ---
+export EBROOTR=$PREFIX/prefix/software/linux/x86_64/amd/zen2/software/R/4.4.2
+export EESSI_ACCEL_SUBDIR=''
+export EESSI_ARCH_GUARD_RELOADED='x86_64/amd/zen4->x86_64/amd/zen2'
+export EESSI_SOFTWARE_SUBDIR=x86_64/amd/zen2
+export MODULEPATH=$PREFIX/prefix/software/linux/x86_64/amd/zen2/modules/all
+export PATH=$PREFIX/prefix/software/linux/x86_64/amd/zen2/software/R/4.4.2/bin:$PREFIX/prefix/software/linux/x86_64/amd/zen2/bin:$PREFIX/bin:/usr/bin:/bin
+export _LMFILES_=''
+export _ModuleTable001_=table-for-x86_64-amd-zen2
+--- stderr ---
+eessi-arch-guard: reloaded modules for x86_64/amd/zen2 (loaded for x86_64/amd/zen4)
+--- eval ---
+x86_64/amd/zen2
+x86_64/amd/zen4->x86_64/amd/zen2
+#+end_example
+
+The lines after =--- eval ---= are =EESSI_SOFTWARE_SUBDIR= and =EESSI_ARCH_GUARD_RELOADED= in the shell after the =eval=: the node's target, and the change from the target the modules were loaded for.
+There is no =print= line, which belongs to the =TaskProlog= protocol.
+In your job, the same check is
+
+#+begin_src bash
+printenv EESSI_SOFTWARE_SUBDIR EESSI_ARCH_GUARD_RELOADED
+#+end_src
+
+after the =eval= line, and the second variable is unset when the modules already matched the node.
+
+** If it fails
+
+With =--strict= and no private workspace, on the same stack, the guard exits 78 and prints the marker of the failure:
+
+#+begin_example
+case: strict-no-workspace
+command: python3 -I src/eessi_arch_guard.py --strict --shell
+exit: 78
+--- stdout ---
+export EESSI_ARCH_GUARD_FAILED='x86_64/amd/zen4->restore-failed'
+--- stderr ---
+eessi-arch-guard: restore failed (restore workspace unavailable: strict mode needs an existing private job or state workspace); environment left as it was
+#+end_example
+
+| Message                                                                                                                                                             | Cause                                                                                                | What to do                                                   |
+|---------------------------------------------------------------------------------------------------------------------------------------------------------------------+------------------------------------------------------------------------------------------------------+--------------------------------------------------------------|
+| =eessi-arch-guard: restore failed (restore workspace unavailable: strict mode needs an existing private job or state workspace); environment left as it was=        | =--strict= found no private workspace.                                                               | Create one, as in step 4.                                    |
+| =eessi-arch-guard: restore failed (restore workspace unavailable: EESSI_ARCH_GUARD_WORKDIR is not an existing private owned directory); environment left as it was= | =EESSI_ARCH_GUARD_WORKDIR= names a directory that is missing, not yours, or open to group or others. | Point it at a directory of yours with mode 700, or unset it. |
+| =eessi-arch-guard: this node is NOW, the modules were loaded for WAS; not available for this target: NAMES; environment left as it was=                             | A loaded module has no build for this node's target.                                                 | [[file:read-a-failure.org][Correct a failed reload]].                                     |
+
+Every message of the guard is listed in [[file:../reference/failures.org][Messages and markers]].
+
+** Related
+
+- [[file:use-as-a-user-task-prolog.org][Use the guard without changing the site TaskProlog]], for =srun= steps
+- [[file:../explanation/output-modes.org][Prolog lines and shell lines]]
+- [[file:../reference/cli.org][The eessi-arch-guard command]]

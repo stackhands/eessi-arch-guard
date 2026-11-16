@@ -1,0 +1,55 @@
+#+TITLE: CPU flags
+#+OPTIONS: toc:nil todo:nil num:nil author:nil title:nil
+#+STARTUP: content
+
+* CPU flags
+
+The processor flags each x86_64 target of the European Environment for Scientific Software Installations (EESSI) needs, and which of them =eessi_archdetect.sh= and eessi-arch-guard check.
+
+** The waitpkg check
+
+=eessi_archdetect.sh= gives a CPU a target when the CPU has the flags of that target's line in =eessi_arch_x86.spec=.
+The guard drops a candidate whose last path part, with =-= read as =_=, is one of these, when a processor the task may run on lacks =waitpkg=:
+
+#+begin_example
+alderlake arrowlake arrowlake_s clearwaterforest diamondrapids grandridge graniterapids
+graniterapids_d novalake pantherlake sapphirerapids sierraforest tremont
+#+end_example
+
+- They are the GCC =-march= targets whose instruction set includes =PTA_WAITPKG= in =gcc/config/i386/i386.h=: those of GCC 15.2.0, and =novalake= from GCC 16.
+- The flags are those of the =flags= lines of =/proc/cpuinfo=, or of =EESSI_PROC_CPUINFO=, limited to the processors the task may run on; a flag counts only when every one of them has it.
+  When the file cannot be read, no processor has the flag.
+- No other flag is checked beyond the specification.
+
+** Flags the specification leaves unchecked
+
+GCC's =-march= for a target uses more flags than its specification line asks for.
+A CPU that lacks one of the others still gets that target, =waitpkg= aside.
+The lists name each target's flags under GCC 15.2.0 by their =/proc/cpuinfo= names; where those differ from GCC's, =pni= is SSE3, =abm= is LZCNT, =bmi1= is BMI, =pclmulqdq= is PCLMUL, =rdrand= is RDRND, =3dnowprefetch= is PREFETCHW and =sha_ni= is SHA.
+=avx512vbmi= and =avx512ifma= have no underscore.
+=PTA_64BIT=, =PTA_NO_SAHF= and =PTA_EVEX512= have no flag in =/proc/cpuinfo= and are left out, as is =avx10_1=, which =graniterapids= gains after GCC 15.2.0.
+
+- =icelake= is compared with =-march=icelake-server=.
+- =graniterapids= has no specification line of its own: =eessi_archdetect.sh= turns a =sapphirerapids= match into =graniterapids= for a CPU of family 6, model 173 or 174, so the flags checked are those of =sapphirerapids=.
+- =graniterapids-d= has no specification line; its one flag beyond =graniterapids= is =amx_complex=.
+- =alderlake=, =tremont=, =sierraforest=, =grandridge=, =arrowlake=, =arrowlake-s=, =clearwaterforest=, =pantherlake=, =diamondrapids= and =novalake= have no specification line, and =eessi_archdetect.sh= does not choose them from flags.
+  When a candidate names one of them, the guard checks =waitpkg= and none of its other flags.
+
+| Target            | =-march=          | Specification flags                                                         | Other flags of the =-march=                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+|-------------------+-------------------+-----------------------------------------------------------------------------+-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| =haswell=         | =haswell=         | =avx2 fma=                                                                  | abm, avx, bmi1, bmi2, cx16, f16c, fsgsbase, fxsr, hle, mmx, movbe, pclmulqdq, pni, popcnt, rdrand, sse, sse2, sse4_1, sse4_2, ssse3, xsave, xsaveopt                                                                                                                                                                                                                                                                                                                                                                                |
+| =skylake_avx512=  | =skylake-avx512=  | =avx2 fma avx512f avx512bw avx512cd avx512dq avx512vl=                      | 3dnowprefetch, abm, adx, aes, avx, bmi1, bmi2, clflushopt, clwb, cx16, f16c, fsgsbase, fxsr, hle, mmx, movbe, pclmulqdq, pku, pni, popcnt, rdrand, rdseed, sgx, sse, sse2, sse4_1, sse4_2, ssse3, xsave, xsavec, xsaveopt, xsaves                                                                                                                                                                                                                                                                                                   |
+| =cascadelake=     | =cascadelake=     | those of =skylake_avx512= and =avx512_vnni=                                 | 3dnowprefetch, abm, adx, aes, avx, bmi1, bmi2, clflushopt, clwb, cx16, f16c, fsgsbase, fxsr, hle, mmx, movbe, pclmulqdq, pku, pni, popcnt, rdrand, rdseed, sgx, sse, sse2, sse4_1, sse4_2, ssse3, xsave, xsavec, xsaveopt, xsaves                                                                                                                                                                                                                                                                                                   |
+| =icelake=         | =icelake-server=  | those of =cascadelake= and =avx512_vbmi2=                                   | 3dnowprefetch, abm, adx, aes, avx, avx512_bitalg, avx512_vpopcntdq, avx512ifma, avx512vbmi, bmi1, bmi2, clflushopt, clwb, cx16, f16c, fsgsbase, fxsr, gfni, hle, mmx, movbe, pclmulqdq, pconfig, pku, pni, popcnt, rdpid, rdrand, rdseed, sgx, sha_ni, sse, sse2, sse4_1, sse4_2, ssse3, vaes, vpclmulqdq, wbnoinvd, xsave, xsavec, xsaveopt, xsaves                                                                                                                                                                                |
+| =sapphirerapids=  | =sapphirerapids=  | =avx2 fma avx512f avx512bw avx512cd avx512dq avx512vl avx512_bf16 amx_tile= | 3dnowprefetch, abm, adx, aes, amx_bf16, amx_int8, avx, avx512_bitalg, avx512_fp16, avx512_vbmi2, avx512_vnni, avx512_vpopcntdq, avx512ifma, avx512vbmi, avx_vnni, bmi1, bmi2, cldemote, clflushopt, clwb, cx16, enqcmd, f16c, fsgsbase, fxsr, gfni, hle, mmx, movbe, movdir64b, movdiri, pclmulqdq, pconfig, pku, pni, popcnt, ptwrite, rdpid, rdrand, rdseed, serialize, sgx, sha_ni, sse, sse2, sse4_1, sse4_2, ssse3, tsxldtrk, uintr, vaes, vpclmulqdq, waitpkg, wbnoinvd, xsave, xsavec, xsaveopt, xsaves                      |
+| =graniterapids=   | =graniterapids=   | those of =sapphirerapids=                                                   | 3dnowprefetch, abm, adx, aes, amx_bf16, amx_fp16, amx_int8, avx, avx512_bitalg, avx512_fp16, avx512_vbmi2, avx512_vnni, avx512_vpopcntdq, avx512ifma, avx512vbmi, avx_vnni, bmi1, bmi2, cldemote, clflushopt, clwb, cx16, enqcmd, f16c, fsgsbase, fxsr, gfni, hle, mmx, movbe, movdir64b, movdiri, pclmulqdq, pconfig, pku, pni, popcnt, prefetchi, ptwrite, rdpid, rdrand, rdseed, serialize, sgx, sha_ni, sse, sse2, sse4_1, sse4_2, ssse3, tsxldtrk, uintr, vaes, vpclmulqdq, waitpkg, wbnoinvd, xsave, xsavec, xsaveopt, xsaves |
+| =graniterapids-d= | =graniterapids-d= | none                                                                        | those of =graniterapids=, and amx_complex                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| =zen2=            | =znver2=          | =avx2 fma=                                                                  | 3dnowprefetch, abm, adx, aes, avx, bmi1, bmi2, clflushopt, clwb, clzero, cx16, f16c, fsgsbase, fxsr, mmx, movbe, mwaitx, pclmulqdq, pni, popcnt, rdpid, rdrand, rdseed, sha_ni, sse, sse2, sse4_1, sse4_2, sse4a, ssse3, wbnoinvd, xsave, xsavec, xsaveopt, xsaves                                                                                                                                                                                                                                                                  |
+| =zen3=            | =znver3=          | those of =zen2= and =vaes=                                                  | 3dnowprefetch, abm, adx, aes, avx, bmi1, bmi2, clflushopt, clwb, clzero, cx16, f16c, fsgsbase, fxsr, mmx, movbe, mwaitx, pclmulqdq, pku, pni, popcnt, rdpid, rdrand, rdseed, sha_ni, sse, sse2, sse4_1, sse4_2, sse4a, ssse3, vpclmulqdq, wbnoinvd, xsave, xsavec, xsaveopt, xsaves                                                                                                                                                                                                                                                 |
+| =zen4=            | =znver4=          | those of =zen3= and =avx512f avx512ifma=                                    | 3dnowprefetch, abm, adx, aes, avx, avx512_bf16, avx512_bitalg, avx512_vbmi2, avx512_vnni, avx512_vpopcntdq, avx512bw, avx512cd, avx512dq, avx512vbmi, avx512vl, bmi1, bmi2, clflushopt, clwb, clzero, cx16, f16c, fsgsbase, fxsr, gfni, mmx, movbe, mwaitx, pclmulqdq, pku, pni, popcnt, rdpid, rdrand, rdseed, sha_ni, sse, sse2, sse4_1, sse4_2, sse4a, ssse3, vpclmulqdq, wbnoinvd, xsave, xsavec, xsaveopt, xsaves                                                                                                              |
+| =zen5=            | =znver5=          | those of =zen4= and =avx512_vp2intersect avx_vnni movdiri=                  | 3dnowprefetch, abm, adx, aes, avx, avx512_bf16, avx512_bitalg, avx512_vbmi2, avx512_vnni, avx512_vpopcntdq, avx512bw, avx512cd, avx512dq, avx512vbmi, avx512vl, bmi1, bmi2, clflushopt, clwb, clzero, cx16, f16c, fsgsbase, fxsr, gfni, mmx, movbe, movdir64b, mwaitx, pclmulqdq, pku, pni, popcnt, prefetchi, rdpid, rdrand, rdseed, sha_ni, sse, sse2, sse4_1, sse4_2, sse4a, ssse3, vpclmulqdq, wbnoinvd, xsave, xsavec, xsaveopt, xsaves                                                                                        |
+
+** See also
+
+- [[file:../explanation/how-it-decides.org][How the guard decides]]
+- [[py:eessi_arch_guard.WAITPKG_MARCHES]], [[py:eessi_arch_guard.candidate_supports_cpu]] and [[py:eessi_arch_guard.read_cpu_flags]]

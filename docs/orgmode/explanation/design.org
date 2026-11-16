@@ -1,0 +1,106 @@
+#+TITLE: Why a task prolog runs the reload
+#+OPTIONS: toc:nil todo:nil num:nil author:nil title:nil
+#+STARTUP: content
+
+* Why a task prolog runs the reload
+
+Why does eessi-arch-guard reload the modules of the European Environment for Scientific Software Installations (EESSI) in a Slurm =TaskProlog=, through a helper process, and why does a reload that fails still let the task start?
+
+** The problem
+
+A task's program is chosen before any code of the user's runs.
+A batch script can purge and load its modules again, but only for its own shell, and =srun ./a.out= starts the program with no shell at all.
+The one place that runs on the compute node, as the job's user, with the task's environment, before the program starts, and for the batch step as well, is the =TaskProlog=.
+Nothing earlier in the job knows both the node's CPU and the GPUs the task's cgroup lets it see.
+
+A =TaskProlog= talks to Slurm through text on its stdout, which =slurmstepd= reads line by line:
+
+- =export NAME=value= sets a variable to the text after the equals sign as it is: =$= and backticks mean nothing there, and a newline starts the next line, so a value holding a newline can add a directive of its own;
+- =unset NAME= removes a variable, and =print TEXT= writes a line to the task's output;
+- a status other than 0 ends the task, after Slurm has applied the lines read so far.
+
+The first version of the guard ran the reload in a shell and printed that shell's whole environment as =export= lines.
+That shape is where the bugs reviewed in it came from:
+
+- =bash --noprofile --norc= still runs the file =BASH_ENV= names before its command, as bash 5.2.21 does, and adds that file's output to its own;
+- a module name with a newline in it, passed on unquoted, became a second directive;
+- a node without a software directory gave an empty result, and the job kept the binaries of the other node without a word;
+- a value with a newline was left out while the others were exported, so =MODULEPATH= could move and =_ModuleTable*= or =PS1= stay behind;
+- an error while printing could exit with a status other than 0, which ends the task;
+- the cache file took the process's umask, and its lock file was opened through a symbolic link.
+
+** How eessi-arch-guard handles it
+
+The guard keeps the =TaskProlog= and changes what runs in it.
+
+*** What Slurm does with the prolog
+
+These were read in =src/slurmd/slurmstepd/task.c= on Slurm's =master= branch, and seen with Slurm 23.11.4 started by hand in one virtual machine, where the prolog ran for an =srun= step and for a batch step:
+
+- =exec_task= starts the =TaskProlog= for the batch step too; its checks of =!step->batch= concern the switch plugin and MPI.
+- The prolog runs with =SLURM_SCRIPT_CONTEXT=prolog_task=.
+- A status other than 0 is acted on after the output is parsed: the exports of a failing prolog are applied, and the task is ended all the same.
+- =_make_tmpdir= runs after the prologs, and for local task 0 only, so a per-job =TMPDIR= may not exist yet when the guard runs.
+  The guard never exports =TMPDIR=, which would change the directory Slurm creates, and keeps its cache in =/tmp= when =TMPDIR= does not exist yet.
+
+*** A helper does the reload
+
+The reload runs in a second process: the same file, started again by the same Python with =-I -X utf8 FILE --restore=, or the Zig binary started again with =--restore=.
+Its environment holds only =PATH=/usr/bin:/bin=, =LANG=C=, =LC_ALL=C=, and =HOME=, =TMPDIR= and =EESSI_ARCH_GUARD_WORKDIR=, which name a new private directory.
+The task's environment reaches it as data on stdin, each byte as one Latin-1 character, and =-X utf8= turns that text back into the same bytes for Lmod, so a path that is not UTF-8 stays the path Lmod opens.
+The module names go to =LMOD_CMD= as arguments, after they pass the check in [[file:../reference/environment.org][Environment variables]], never as text in a shell command.
+Its shell is =bash --noprofile --norc=, started without =BASH_ENV=, =ENV=, =SHELLOPTS=, =BASHOPTS=, =BASH_XTRACEFD= and =PS4=, and it reports the environment it ends with as =env -0=, never as text the prolog prints.
+[[py:eessi_arch_guard.call_restore]] starts the helper, and [[py:eessi_arch_guard.restore_main]] is the helper.
+
+*** The prolog prints the difference
+
+The guard compares the environment the helper ends with to the task's, and prints only the names whose values changed, apart from the names it never touches.
+Every value has to fit a prolog line; one that does not fails the whole reload, so the task never gets half of the new environment.
+[[file:output-modes.org][Prolog lines and shell lines]] describes those rules, and [[py:eessi_arch_guard.environment_delta]] computes the difference.
+
+*** A failure is loud, and the task still starts
+
+A reload that cannot be made sets =EESSI_ARCH_GUARD_FAILED=, prints one line that says why, and exits 0.
+A status other than 0 would end the task, and a job that would have run on the wrong tree runs, with the failure visible in its output and its environment.
+=--strict= is for a wrapper of the user's that wants a status: with it, a failed decision exits 78.
+Slurm starts a =TaskProlog= without arguments, so as the site's prolog the guard always exits 0 after a failed reload.
+
+The site's own prolog, when it has one, runs before the guard.
+Slurm gives a =TaskProlog= no arguments and the job controls the environment, so the guard takes that prolog only from a file owned by root, or from a wrapper the site writes, as in [[file:../howto/configure.org][Configure the guard]].
+
+** What was considered and turned down
+
+- /Printing the reload shell's whole environment./
+  That was the first version, and each bug above came from it.
+  A helper whose output is data, and a list of names to leave alone, rule out those kinds of bug; mending each one inside a loop that prints a shell's output leaves the next parser bug on the same path.
+- /Setting a flag and letting the job reload./
+  A flag does nothing for a program =srun= starts without a shell.
+  =--shell= stays for a user whose site has not installed the prolog, with the same gap as any shell wrapper.
+- /Printing only the paths./
+  Modules set =EBROOT*=, =EBVERSION*= and names of their own, so rewriting the paths the guard knows of leaves part of the environment on the other node's tree.
+- /A link per node in the CernVM File System (CVMFS) that points at the node's tree./
+  Module roots and the run paths in binaries name the target in full, as =init/modules/EESSI/2023.06.lua= at software-layer-scripts =26441ca= shows, so the task would still open the other node's files.
+- /Checking again inside the module file of EESSI./
+  The module file runs when a =module= command loads it, and nothing loads it in a task before the program starts.
+- /An Lmod hook./
+  A hook runs for =module= commands, which a program started directly never calls, and it would run on every load for a check needed once per task.
+- /A file that bash reads at startup./
+  =BASH_ENV= misses a program =srun= starts without bash, runs for every bash, and is already Lmod's; the guard removes it from the helper and does not use it.
+- /Not exporting the environment into jobs at all./
+  =--export=NONE= as the site's default takes away the environment that job scripts are written against.
+  It stays as advice for a single command.
+- /A SPANK plugin, or other code inside Slurm./
+  The guard is one file a site can run from the =TaskProlog= it already has.
+
+** Limits
+
+- The behaviour of Slurm above was read in the public source and seen with Slurm 23.11.4; a site's own version may differ.
+- The cost on a node that runs a task on every core with a node-local =TMPDIR= is not measured; =python3 tests/measure_noop.py= prints the time of a run that changes nothing on the machine where it runs.
+- =--shell= changes only the shell that evaluates it, and the programs that shell starts afterwards.
+- After a failed reload the task runs with the environment it was submitted with, unless a wrapper uses =--strict=.
+
+** Further reading
+
+- [[file:how-it-decides.org][How the guard decides]], for the detection and the comparison.
+- [[file:output-modes.org][Prolog lines and shell lines]], for what the guard prints and how a step shares one decision.
+- [[https://github.com/stackhands/eessi-arch-guard/blob/main/DESIGN.md][DESIGN.md]], the maintainers' record of the design.

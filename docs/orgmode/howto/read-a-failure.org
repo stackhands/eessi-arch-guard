@@ -1,0 +1,219 @@
+#+TITLE: Correct a failed reload
+#+OPTIONS: toc:nil todo:nil num:nil author:nil title:nil
+#+STARTUP: content
+
+* Correct a failed reload
+
+Use this when a job's output has a line from the guard that ends in =environment left as it was=, or when a task has =EESSI_ARCH_GUARD_FAILED= set.
+The guard could not load the modules of the European Environment for Scientific Software Installations (EESSI) for the node; the task started with the environment it was submitted with, which was loaded for another node.
+
+** Before you start
+
+- The job's output, or a shell in an allocation on a node where the failure happens.
+- The modules you load before you submit, with their full names, as =module list= shows them.
+
+** Steps
+
+1. Read the marker in a task on the node:
+
+   #+begin_src bash
+   srun -p cpu -w node017 -n 1 printenv EESSI_ARCH_GUARD_FAILED
+   #+end_src
+
+   It reads =WAS->NOW=: the target the modules were loaded for, and after =->= either the node's target or a word for the failure.
+   The line in the job's output, from the first task on each node, says the same in words.
+
+2. Find what comes after =->= in this table, and make the correction:
+
+   | After =->=           | What happened                                                                                | Correction                                                                                                                                                         |
+   |----------------------+----------------------------------------------------------------------------------------------+--------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+   | the node's target    | A loaded module has no build for this node's target, or Lmod could not load it.              | Load a version that exists for the node, or unload the module the message names, before you submit.                                                                |
+   | =no-software-dir=    | None of the targets the detection offered has a software tree on this node.                  | Ask the site to mount or install a tree for one of the candidates in the message; a node meant to have none can set =EESSI_ARCH_GUARD_MISSING=ignore=.             |
+   | =archdetect-failed=  | =eessi_archdetect.sh= is missing, failed, or printed something the guard refuses.            | Check =EESSI_INIT_PREFIX/eessi_archdetect.sh=; =EESSI_PREFIX= and =EESSI_INIT_PREFIX= have to be absolute, and =EESSI_OS_TYPE= relative without =.= or =..= parts. |
+   | =lmod-unavailable=   | =LMOD_CMD= is missing or not executable on the node.                                         | Check that the file =LMOD_CMD= names exists on the node; it comes from the shell where EESSI was loaded, so ask the site when the node lacks it.                   |
+   | =unsafe-module-name= | A name in =LOADEDMODULES= fails the check of module names.                                   | Unload that module, and load it under a name of the form =NAME/VERSION=.                                                                                           |
+   | =restore-failed=     | The reload could not run, or did not end on this node's target; the message gives the cause. | For a workspace message, point =EESSI_ARCH_GUARD_WORKDIR= at a directory of yours with mode 700, or unset it; the other causes are in the reference below.         |
+   | =unsafe-environment= | The reload changes a variable in a way a prolog line cannot carry.                           | Run the guard with =--shell= in the job, as in [[file:use-in-a-batch-script.org][Run the guard in a batch script]], or unload the module that sets that value.                                         |
+   | =timeout=            | The decision was still running at the deadline.                                              | Ask the site to raise =timeout= in the configuration file.                                                                                                         |
+   | =terminated=         | Slurm or the system sent =SIGTERM= during the decision.                                      | Submit again.                                                                                                                                                      |
+
+   [[file:../reference/failures.org][Messages and markers]] has every message and every cause.
+
+3. Submit the job again from a shell with the corrected modules loaded.
+
+=docs/examples/failure_cases.py= in the repository runs each case against the stand-ins for EESSI and Lmod of the test suite, with the modules loaded for zen4 and a node that is zen2; =$PREFIX= is its temporary directory.
+A module with no build for zen2:
+
+#+begin_src bash
+python3 docs/examples/failure_cases.py missing-module
+#+end_src
+
+#+begin_example
+case: missing-module
+command: python3 -I src/eessi_arch_guard.py
+exit: 0
+--- stdout ---
+export EESSI_ARCH_GUARD_FAILED=x86_64/amd/zen4->x86_64/amd/zen2
+print eessi-arch-guard: this node is x86_64/amd/zen2, the modules were loaded for x86_64/amd/zen4; not available for this target: R/4.4.2; environment left as it was
+--- stderr ---
+(empty)
+#+end_example
+
+A node with no software tree for any candidate:
+
+#+begin_src bash
+python3 docs/examples/failure_cases.py no-software-dir
+#+end_src
+
+#+begin_example
+case: no-software-dir
+command: python3 -I src/eessi_arch_guard.py
+exit: 0
+--- stdout ---
+export EESSI_ARCH_GUARD_FAILED=x86_64/amd/zen4->no-software-dir
+print eessi-arch-guard: no EESSI software directory for this node under $PREFIX/prefix (candidates x86_64/amd/zen2 x86_64/generic); modules were loaded for x86_64/amd/zen4; environment left as it was
+--- stderr ---
+(empty)
+#+end_example
+
+The same with =EESSI_ARCH_GUARD_MISSING=ignore= prints nothing:
+
+#+begin_src bash
+python3 docs/examples/failure_cases.py ignore-missing
+#+end_src
+
+#+begin_example
+case: ignore-missing
+command: python3 -I src/eessi_arch_guard.py
+exit: 0
+--- stdout ---
+(empty)
+--- stderr ---
+(empty)
+#+end_example
+
+=eessi_archdetect.sh= failing, with the first line it wrote to stderr in the parentheses:
+
+#+begin_src bash
+python3 docs/examples/failure_cases.py archdetect
+#+end_src
+
+#+begin_example
+case: archdetect
+command: python3 -I src/eessi_arch_guard.py
+exit: 0
+--- stdout ---
+export EESSI_ARCH_GUARD_FAILED=x86_64/amd/zen4->archdetect-failed
+print eessi-arch-guard: archdetect failed (archdetect forced failure); environment left as it was
+--- stderr ---
+(empty)
+#+end_example
+
+No usable =LMOD_CMD=:
+
+#+begin_src bash
+python3 docs/examples/failure_cases.py lmod
+#+end_src
+
+#+begin_example
+case: lmod
+command: python3 -I src/eessi_arch_guard.py
+exit: 0
+--- stdout ---
+export EESSI_ARCH_GUARD_FAILED=x86_64/amd/zen4->lmod-unavailable
+print eessi-arch-guard: LMOD_CMD is missing or not executable; this node is x86_64/amd/zen2, the modules were loaded for x86_64/amd/zen4; environment left as it was
+--- stderr ---
+(empty)
+#+end_example
+
+An =EESSI_ARCH_GUARD_WORKDIR= that is not a private directory of the user's:
+
+#+begin_src bash
+python3 docs/examples/failure_cases.py workspace
+#+end_src
+
+#+begin_example
+case: workspace
+command: python3 -I src/eessi_arch_guard.py
+exit: 0
+--- stdout ---
+export EESSI_ARCH_GUARD_FAILED=x86_64/amd/zen4->restore-failed
+print eessi-arch-guard: restore failed (restore workspace unavailable: EESSI_ARCH_GUARD_WORKDIR is not an existing private owned directory); environment left as it was
+--- stderr ---
+(empty)
+#+end_example
+
+** Check that it worked
+
+Run the step again and print both markers:
+
+#+begin_src bash
+srun -p cpu -w node017 -n 1 printenv EESSI_SOFTWARE_SUBDIR EESSI_ARCH_GUARD_RELOADED EESSI_ARCH_GUARD_FAILED
+#+end_src
+
+The first line is the node's target, and =EESSI_ARCH_GUARD_FAILED= prints nothing: a reload unsets it.
+=EESSI_ARCH_GUARD_RELOADED= is set when the guard reloaded, and unset when the modules were already loaded for the node.
+
+** If it fails
+
+| Message or symptom                                                                     | Cause                                                                                                                    | What to do                                                           |
+|----------------------------------------------------------------------------------------+--------------------------------------------------------------------------------------------------------------------------+----------------------------------------------------------------------|
+| No message and no marker, and the task runs another node's build                       | The guard did nothing: EESSI was not loaded, the detection was pinned with an override, or =EESSI_ARCH_GUARD=0= was set. | Run the step with =EESSI_ARCH_GUARD_VERBOSE=1=, below, to see which. |
+| =EESSI_ARCH_GUARD=0= in the task although the command set =1=                          | =srun --export=ALL,EESSI_ARCH_GUARD=0= does not replace a value that is already set, as seen with Slurm 23.11.4.         | Set or unset the variable in the shell you submit from.              |
+| =eessi-arch-guard: --timeout is not a positive number of seconds at most 9223372036.0= | A wrapper passed =--timeout= with 0, a negative number or text; the guard keeps 60 seconds.                              | Pass a number of seconds greater than 0.                             |
+
+=EESSI_ARCH_GUARD_VERBOSE=1= writes to stderr why the guard did nothing.
+Slurm does not pass a =TaskProlog='s stderr on, so run the guard by hand in the task.
+On a node that matches:
+
+#+begin_src bash
+python3 docs/examples/failure_cases.py verbose
+#+end_src
+
+#+begin_example
+case: verbose
+command: python3 -I src/eessi_arch_guard.py
+exit: 0
+--- stdout ---
+(empty)
+--- stderr ---
+target already matches this node
+#+end_example
+
+With =EESSI_ARCH_GUARD=0=, the guard prints nothing at all, also on a mismatch:
+
+#+begin_src bash
+python3 docs/examples/failure_cases.py opt-out
+#+end_src
+
+#+begin_example
+case: opt-out
+command: python3 -I src/eessi_arch_guard.py
+exit: 0
+--- stdout ---
+(empty)
+--- stderr ---
+(empty)
+#+end_example
+
+=--timeout 0= is refused with a warning, and the guard keeps 60 seconds:
+
+#+begin_src bash
+python3 docs/examples/failure_cases.py bad-timeout
+#+end_src
+
+#+begin_example
+case: bad-timeout
+command: python3 -I src/eessi_arch_guard.py --timeout 0
+exit: 0
+--- stdout ---
+(empty)
+--- stderr ---
+eessi-arch-guard: --timeout is not a positive number of seconds at most 9223372036.0
+#+end_example
+
+** Related
+
+- [[file:../reference/failures.org][Messages and markers]]
+- [[file:../reference/environment.org][Environment variables]]
+- [[file:configure.org][Configure the guard]], for the time limit

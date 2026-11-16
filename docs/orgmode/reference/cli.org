@@ -1,0 +1,126 @@
+#+TITLE: The eessi-arch-guard command
+#+OPTIONS: toc:nil todo:nil num:nil author:nil title:nil
+#+STARTUP: content
+
+* The eessi-arch-guard command
+
+=eessi-arch-guard= checks whether the module environment of the European Environment for Scientific Software Installations (EESSI) in a Slurm task was loaded for the task's CPU and accelerator, and prints what loads it again for them.
+This page describes the Python guard, =src/eessi_arch_guard.py=; the Zig build behaves the same, except as [[file:compatibility.org][Compatibility]] lists.
+
+** Synopsis
+
+#+begin_example
+eessi-arch-guard [--shell] [--strict] [--chain PATH] [--timeout SEC] [--restore] [-h|--help] [--version]
+#+end_example
+
+=eessi-arch-guard --help= prints:
+
+#+begin_example
+usage: eessi-arch-guard [--shell] [--strict] [--chain PATH] [--timeout SEC]
+                        [--restore] [-h|--help] [--version]
+
+Slurm TaskProlog: when the loaded EESSI CPU or accelerator target is not this
+node's, print export/unset lines for the reloaded module environment.
+--shell prints bash for: eval "$(eessi-arch-guard --shell)"
+--strict returns 78 on a failed decision or an unexpected exception.
+--chain PATH runs an existing task prolog first. Slurm does not pass arguments,
+so a site sets this in a wrapper or in a root-owned eessi-arch-guard.conf.
+--timeout SEC bounds the decision. The default is 60 seconds.
+--restore reads a JSON restore request on stdin and writes the JSON result.
+-h, --help print this text. --version prints the version.
+#+end_example
+
+** Arguments
+
+=eessi-arch-guard= takes no arguments other than the options below, and skips any argument that is not one of them.
+Slurm starts a =TaskProlog= with no arguments at all.
+
+** Options
+
+| Option                           | Meaning                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+|----------------------------------+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| =--shell=                        | Print bash instead of prolog lines: =export NAME=VALUE= with the value quoted for bash, and =unset NAME=, for =eval "$(eessi-arch-guard --shell)"=. Messages go to stderr. No chained prolog runs.                                                                                                                                                                                                                                                                                                     |
+| =--strict=                       | Exit 78 when the decision fails or an unexpected exception interrupts it. The restore and the cache use a private workspace, which must exist (see [[file:environment.org][Environment variables]]), and the restore helper gets =--strict= too.                                                                                                                                                                                                                                                                                 |
+| =--chain PATH=, =--chain=PATH=   | Run =PATH= first, in prolog mode only, as described under Exit status. =PATH= must be absolute, free of newline, carriage return and NUL, a regular file and executable; otherwise =eessi-arch-guard: --chain is not an absolute executable= goes to stderr and nothing is chained. A value given here, even an empty or a refused one, replaces the =chain= of the configuration file.                                                                                                                |
+| =--timeout SEC=, =--timeout=SEC= | The time limit of the decision in seconds, replacing the =timeout= of the configuration file; the default is 60. =SEC= is read as a floating-point number, and must be greater than 0 and at most 9223372036.0, Python's =threading.TIMEOUT_MAX=; otherwise =eessi-arch-guard: --timeout is not a positive number of seconds at most 9223372036.0= goes to stderr and the earlier value stays. Above 2147483.647 the Python guard fails every decision that runs a command, a bug [[file:compatibility.org][Compatibility]] lists. |
+| =--restore=                      | Run as the restore helper: read one JSON request on stdin and write one JSON reply on stdout. The guard starts itself this way; a site or a user has no use for it.                                                                                                                                                                                                                                                                                                                                    |
+| =-h=, =--help=                   | Print the usage text above on stdout and exit 0.                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| =--version=                      | Print the version on stdout and exit 0.                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+
+- =--restore= comes first, then =--help=, then =--version=; any of them replaces the decision.
+- The value of =--chain= and =--timeout= is the next argument, whatever it is, and empty when there is none.
+  An option given twice takes its last value.
+- =--chain --strict= takes =--strict= as the path, a bug [[file:compatibility.org][Compatibility]] lists under the bugs both builds share.
+
+** Environment
+
+The decision reads the task's environment: the variables the =EESSI= module sets, the Slurm task's, and the guard's own controls.
+[[file:environment.org][Environment variables]] lists each one.
+
+** Exit status
+
+| Status | Meaning                                                                                                                                                                                                            |
+|--------+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+|      0 | Every run that is not one of the cases below, a failed decision without =--strict= included: the task starts.                                                                                                      |
+|     78 | =--strict=, and the decision failed or an unexpected exception interrupted it.                                                                                                                                     |
+|      1 | =--restore= could not read its request or answer it, with =eessi-arch-guard: restore failed: TEXT= on stderr.                                                                                                      |
+|      N | The chained prolog exited with the status N other than 0, or a signal ended it, which counts as 1. Its stdout is written, and the guard does not decide. Slurm then kills the task, as it would without the guard. |
+
+** Files
+
+| File                                                                | Use                                                                                                                                                                                                                                                                                                                                                                |
+|---------------------------------------------------------------------+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| =/etc/eessi-arch-guard.conf=                                        | The configuration file; [[file:configuration.org][The configuration file]] describes it.                                                                                                                                                                                                                                                                                                       |
+| =eessi-arch-guard.conf= beside the program                          | The configuration file when =/etc/eessi-arch-guard.conf= does not exist.                                                                                                                                                                                                                                                                                           |
+| =EESSI_INIT_PREFIX/eessi_archdetect.sh=                             | Run with =bash --noprofile --norc=, as =eessi_archdetect.sh -a cpupath= and, unless =EESSI_ACCELERATOR_TARGET_OVERRIDE= is set, as =eessi_archdetect.sh accelpath=.                                                                                                                                                                                                |
+| =EESSI_PROC_CPUINFO=, or =/proc/cpuinfo=                            | Read for the processors and their flags. When the task may run on fewer processors than the file lists, =eessi_archdetect.sh= reads a copy limited to them instead, =eessi-arch-guard-cpu-XXXXXXXX= in the temporary directory, which is removed after the run.                                                                                                    |
+| =/proc/self/cgroup=, =cpuset.cpus.effective= under =/sys/fs/cgroup= | Read for the processors of the task's cgroup.                                                                                                                                                                                                                                                                                                                      |
+| =.eessi-arch-guard.UID.NODE.JOB.STEP.MODE.DIGEST=                   | The decision of a job step, kept so that the other tasks of the step on the node read it instead of deciding again; mode 0600. It is in =TMPDIR= when that is a directory whose path starts with =/= and has no =..= part, otherwise in =/tmp=, and in the private workspace with =--strict=. =MODE= is =prolog= or =shell=. Without =SLURM_JOB_ID= there is none. |
+| the same name with =.lock= added                                    | The lock the tasks of the step take before they read or write the decision.                                                                                                                                                                                                                                                                                        |
+| =eessi-arch-guard-XXXXXXXX= in the restore workspace                | The restore helper's private directory, its =HOME= and =TMPDIR=, removed when the helper ends.                                                                                                                                                                                                                                                                     |
+
+The guard removes neither the decision nor its lock.
+A per-job =TMPDIR= takes them with it at the end of the job; in =/tmp= they stay until the node is cleaned.
+
+*** Standard output
+
+In prolog mode, stdout holds, in this order:
+
+1. what the chained prolog printed, with a newline added when its last line has none;
+2. one =export NAME=VALUE= or =unset NAME= line for each variable that changes, sorted by name;
+3. one =print MESSAGE= line, from the task whose =SLURM_LOCALID= is =0= or unset.
+
+Slurm applies the =export= and =unset= lines to the task's environment and writes the message to the task's output.
+No line is longer than 4094 bytes, the newline included.
+With =--shell=, stdout holds only the =export= and =unset= lines, and the message goes to stderr.
+[[file:failures.org][Messages and markers]] lists the messages.
+
+*** Standard error
+
+Warnings about the configuration file and the time limit, then whatever the chained prolog wrote to its stderr, unchanged.
+With =--shell=, the message.
+With =EESSI_ARCH_GUARD_VERBOSE=1=, the reason the guard did nothing, or the error of a failed reload.
+Slurm discards a =TaskProlog='s stderr.
+
+*** --version
+
+The Python guard prints its version:
+
+#+begin_example
+0.2.0
+#+end_example
+
+The Zig build follows it with its target, build mode, Zig version and the commit given to =zig build= with =-Dcommit=, or =unknown= without it.
+Built with =zig build -Drelease=true -Dtarget=x86_64-linux-musl -Dcommit=a418152=:
+
+#+begin_example
+0.2.0 (x86_64-linux-musl, safe, zig 0.17.1, a418152)
+#+end_example
+
+** See also
+
+- [[file:../tutorials/first-guarded-job.org][See the guard reload EESSI for another CPU]]
+- [[file:../howto/install-the-prolog.org][Install the prolog]], [[file:../howto/configure.org][Configure the guard]] and [[file:../howto/use-in-a-batch-script.org][Run the guard in a batch script]]
+- [[file:../explanation/output-modes.org][Prolog lines and shell lines]]
+- [[file:configuration.org][The configuration file]], [[file:environment.org][Environment variables]] and [[file:failures.org][Messages and markers]]
+- [[py:eessi_arch_guard.parse_args]] and [[py:eessi_arch_guard.main]], and the [[file:api.org][API]] of both builds.

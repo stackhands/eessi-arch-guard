@@ -1,0 +1,100 @@
+#+TITLE: Prolog lines and shell lines
+#+OPTIONS: toc:nil todo:nil num:nil author:nil title:nil
+#+STARTUP: content
+
+* Prolog lines and shell lines
+
+Why does eessi-arch-guard print Slurm's prolog lines by default and shell commands with =--shell=, and why do the tasks of a job step on one node share a single decision?
+
+** The problem
+
+The guard hands a reload to two readers.
+As a =TaskProlog=, its stdout goes to =slurmstepd=, which applies =export NAME=value=, =unset NAME= and =print TEXT= lines and knows no quoting: the value runs to the end of the line, and a newline starts the next directive.
+Slurm 17.11 reads each line with =fgets(buf, sizeof(buf) - 1)= into =char buf[4096]=, so a longer line is split, and its rest is read as a line of its own.
+=print= writes to the task's output, and Slurm has no directive for stderr.
+In a batch script, the reader is =bash=, through =eval=, which needs quoting and does not want the message in the text it evaluates.
+
+A step with many tasks on one node runs the prolog once per task.
+Each run would start =eessi_archdetect.sh= for the CPU and for the accelerator and, on a mismatch, a reload through Lmod, and tasks that decided apart could end up with different environments.
+
+** How eessi-arch-guard handles it
+
+The decision is the same in both modes, and only the lines that carry it differ.
+[[py:eessi_arch_guard.decide]] makes the decision, and [[py:eessi_arch_guard.cached_decide]] shares it.
+
+*** Prolog lines
+
+Each line on stdout is =export NAME=value=, =unset NAME= or =print TEXT=, and the names match =^[A-Za-z_][A-Za-z0-9_]*$=.
+A value may not hold a carriage return, a newline or a NUL byte, and no line, its newline included, may pass 4094 bytes.
+A changed value that breaks either rule fails the whole reload with =unsafe-environment=, and the task keeps the environment it arrived with, because half of a reload is a stack that is neither the old one nor the new one.
+New values of =PS1=, =PS2=, =PS3= and =PROMPT_COMMAND= are the exception: such a value is left out, and the rest of the reload is applied.
+
+The message is one =print= line, at most 500 characters, with control characters turned into spaces.
+Only the task whose =SLURM_LOCALID= is =0=, or unset, prints it, so a step with many tasks on a node shows it once; the other tasks get the same =export= and =unset= lines without it.
+A batch script that reads its own stdout sees that line too.
+A line that cannot be written is dropped, and the guard still exits 0.
+
+*** Shell lines
+
+With =--shell=, stdout holds =export NAME=VALUE= with the value quoted for the shell, and =unset NAME=, for =eval "$(eessi-arch-guard --shell)"=.
+The message goes to stderr, so the command substitution leaves it out, and the =eval= needs no =echo= to show it.
+A value with a newline can be quoted, so =--shell= carries reloads that a prolog line cannot; a NUL byte still fails the reload.
+There is no =print= line, and every task writes the message.
+[[file:../howto/use-in-a-batch-script.org][Run the guard in a batch script]] shows the output.
+
+*** One decision per step and node
+
+With =SLURM_JOB_ID= set, the first task of a step on a node makes the decision and stores it, and the others wait for it and read it.
+The file is named
+
+#+begin_example
+.eessi-arch-guard.UID.NODE.JOB.STEP.MODE.DIGEST
+#+end_example
+
+where =STEP= is =SLURM_STEP_ID=, or =batch= without it, and =MODE= is =prolog= or =shell=, because a value with a newline reloads in one mode and fails in the other.
+=DIGEST= covers the inputs of the decision: =EESSI_SOFTWARE_SUBDIR=, =EESSI_ACCEL_SUBDIR=, =LOADEDMODULES=, =MODULEPATH=, =EESSI_INIT_PREFIX=, =EESSI_PROC_CPUINFO=, =PATH=, the processors the task may run on, and the GPU variables =CUDA_VISIBLE_DEVICES=, =ROCR_VISIBLE_DEVICES=, =GPU_DEVICE_ORDINAL=, =SLURM_STEP_GPUS= and =SLURM_GPUS_ON_NODE=.
+Two tasks of one step on different processors or GPUs therefore decide apart.
+[[file:../reference/cli.org][The eessi-arch-guard command]] lists where the file is kept.
+
+The directory is one other users can write to, such as =/tmp=, so the guard opens the file and its lock without following a symbolic link, and trusts each only when it is a regular file of the user's, with one link and no permission bits for group or others.
+It writes the decision to a new file and renames it into place.
+A file that fails those checks makes the task decide on its own and write nothing through it.
+A stored decision that changes a name the guard never prints, or a name that starts with =LD_=, is not reused either.
+
+A timeout, a =SIGTERM= and an unexpected exception are not stored, so the next task tries again.
+
+*** One deadline
+
+One deadline, 60 seconds by default, covers the wait for the lock, both runs of =eessi_archdetect.sh= and the reload; 60 seconds is Slurm's =DEFAULT_UNKILLABLE_TIMEOUT=.
+Each command the guard starts runs in a session of its own.
+At the deadline, or on =SIGTERM=, the guard kills that process group with =SIGKILL=, sets =EESSI_ARCH_GUARD_FAILED= to a value ending in =->timeout= or =->terminated=, and exits 0.
+After the kill, the Python guard waits up to 5 seconds for the pipe to close and up to 5 seconds twice more for the process, 15 seconds in all at most.
+A decision that has finished when the signal comes is still the result, and is still stored.
+
+** What was considered and turned down
+
+- /Writing the message to stderr in prolog mode./
+  Slurm does not pass a =TaskProlog='s stderr to the task, so the user would not see it.
+- /Leaving out only the values a line cannot carry./
+  The first version did that, and =MODULEPATH= could move while =_ModuleTable*= or =PS1= stayed behind.
+- /Exporting the task's temporary directory./
+  =slurmstepd= creates =TMPDIR= after the prologs, and an export would change the directory it creates.
+- /One stored decision for both modes./
+  A reload that =--shell= can carry may fail as prolog lines.
+- /Making the opt-out part of the stored decision's key./
+  =EESSI_ARCH_GUARD= is not part of =DIGEST=, and the key was kept as it was first designed; two tasks of a step that differ only in that variable share a result.
+
+** Limits
+
+- Nothing removes the stored decision or its lock, the same name with =.lock= added, when the step or the job ends.
+  A per-job =TMPDIR= that Slurm removes takes them with it; in =/tmp= they stay until the node is cleaned.
+- The lock is =flock= on a file in that directory, and the guard assumes it works there.
+- A decision whose reload changes an =LD_= variable is decided again by every task.
+- A child process that leaves its process group is out of reach of the kill at the deadline.
+- In prolog mode, tasks other than local task 0 carry no message; the marker variables are their record.
+
+** Further reading
+
+- [[file:design.org][Why a task prolog runs the reload]]
+- [[file:../reference/failures.org][Messages and markers]]
+- [[file:../reference/compatibility.org][Compatibility]], which lists every line, file and limit as the Zig build keeps them.

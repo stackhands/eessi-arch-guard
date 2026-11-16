@@ -14,7 +14,7 @@ After that, a task that inherits the European Environment for Scientific Softwar
   The guard needs nothing outside Python's standard library.
 - EESSI on the compute nodes, as on the login nodes.
   The guard runs the =eessi_archdetect.sh= of the loaded EESSI version and the Lmod named by =LMOD_CMD= in the task's environment.
-- No =TaskProlog= in =slurm.conf= yet.
+- No =TaskProlog= in =slurm.conf= yet; with one, the guard runs it first, as in [[file:configure.org][Configure the guard]].
 - A checkout of the repository:
 
   #+begin_src bash
@@ -97,15 +97,19 @@ Only local task 0 of each node prints the line; every task gets the variable.
 
 ** If it fails
 
-| Message                                                                                  | Cause                                                                  | What to do                                                                     |
-|------------------------------------------------------------------------------------------+------------------------------------------------------------------------+--------------------------------------------------------------------------------|
-| =/usr/local/sbin/eessi-arch-guard: cannot execute: required file not found=, run by hand | The node has no =/usr/bin/python3=; every task on it fails to start.    | Install Python 3.9 or newer there, or remove the =TaskProlog= line until then. |
-| =/usr/local/sbin/eessi-arch-guard: Permission denied=, run by hand                       | The copy is not executable; every task on the node fails to start.     | Install it again with =-m 755=.                                                |
-| No line and no =EESSI_ARCH_GUARD_RELOADED= in a task that ran on another node type       | =slurmd= has not read the changed =slurm.conf=, or the submitting environment has =EESSI_ARCH_GUARD=0=. | Check =scontrol show config= for =TaskProlog=, and the job's environment.      |
-| =eessi-arch-guard: ... environment left as it was=                                       | A reload was needed and could not be made.                             | The rest of the line names the cause; the task ran with the environment it was submitted with. |
+| Message                                                                                  | Cause                                                                                                   | What to do                                                                                                                                 |
+|------------------------------------------------------------------------------------------+---------------------------------------------------------------------------------------------------------+--------------------------------------------------------------------------------------------------------------------------------------------|
+| =/usr/local/sbin/eessi-arch-guard: cannot execute: required file not found=, run by hand | The node has no =/usr/bin/python3=; every task on it fails to start.                                    | Install Python 3.9 or newer there, or remove the =TaskProlog= line until then.                                                             |
+| =/usr/local/sbin/eessi-arch-guard: Permission denied=, run by hand                       | The copy is not executable; every task on the node fails to start.                                      | Install it again with =-m 755=.                                                                                                            |
+| No line and no =EESSI_ARCH_GUARD_RELOADED= in a task that ran on another node type       | =slurmd= has not read the changed =slurm.conf=, or the submitting environment has =EESSI_ARCH_GUARD=0=. | Check =scontrol show config= for =TaskProlog=, and the job's environment.                                                                  |
+| =eessi-arch-guard: ... environment left as it was=                                       | A reload was needed and could not be made.                                                              | The rest of the line names the cause, and [[file:read-a-failure.org][Correct a failed reload]] the correction; the task ran with the environment it was submitted with. |
 
 ** Related
 
+- [[file:configure.org][Configure the guard]], to run the site's own prolog first or change the time limit
+- [[file:read-a-failure.org][Correct a failed reload]]
+- [[file:use-in-a-batch-script.org][Run the guard in a batch script]], for the =--shell= install of step 4
 - [[file:../tutorials/first-guarded-job.org][See the guard reload EESSI for another CPU]]
 - [[file:../explanation/how-it-decides.org][How the guard decides]]
+- [[file:../reference/cli.org][The eessi-arch-guard command]]
 - [[file:../reference/compatibility.org][Compatibility]], for the static Zig build of the guard, which is not the default prolog yet

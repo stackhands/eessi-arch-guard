@@ -1,0 +1,85 @@
+#+TITLE: Use the guard without changing the site TaskProlog
+#+OPTIONS: toc:nil todo:nil num:nil author:nil title:nil
+#+STARTUP: content
+
+* Use the guard without changing the site TaskProlog
+
+Use this when your jobs run on more than one CPU type and the site has not installed the guard as its =TaskProlog=, which you cannot change.
+Slurm runs a second task prolog for each job step that asks for one, after the site's, and the guard can be that prolog for your own jobs.
+
+** Before you start
+
+- The module environment of the European Environment for Scientific Software Installations (EESSI) loaded where you submit, as for any job that inherits it.
+- A copy of =src/eessi_arch_guard.py= from the repository, and a home directory the compute nodes mount.
+
+** Steps
+
+1. Put the guard where every compute node can run it:
+
+   #+begin_src bash
+   mkdir -p ~/bin
+   install -m 755 src/eessi_arch_guard.py ~/bin/eessi-arch-guard
+   #+end_src
+
+   Its first line, =#!/usr/bin/python3 -I=, starts it with the system's Python, whatever Python a loaded module provides.
+
+2. Name it as the task prolog of every =srun= that follows, with its full path:
+
+   #+begin_src bash
+   export SLURM_TASK_PROLOG="$HOME/bin/eessi-arch-guard"
+   #+end_src
+
+   =SLURM_TASK_PROLOG= is the variable form of =srun --task-prolog=PATH=.
+   Slurm runs it before each task starts, after any =TaskProlog= of =slurm.conf=.
+
+3. Start the job step:
+
+   #+begin_src bash
+   srun -p cpu -w node017 ./a.out
+   #+end_src
+
+4. In a batch script, add this line at the top as well, because =sbatch= has no task prolog and =SLURM_TASK_PROLOG= covers only =srun= steps:
+
+   #+begin_src bash
+   eval "$(/usr/bin/python3 -I "$HOME/bin/eessi-arch-guard" --shell)"
+   #+end_src
+
+   The commands of a batch script run in the batch step, which gets the site's =TaskProlog= but no per-job prolog, as seen with Slurm 23.11.4.
+   [[file:use-in-a-batch-script.org][Run the guard in a batch script]] describes that line.
+
+** Check that it worked
+
+Print the target and the guard's marker from a task on the other CPU type:
+
+#+begin_src bash
+srun -p cpu -w node017 -n 1 printenv EESSI_SOFTWARE_SUBDIR EESSI_ARCH_GUARD_RELOADED
+#+end_src
+
+The first line names the node's target, and the second records the change, from the target of the node where you loaded the modules to the node's.
+On a Slurm 26.05.5 cluster with EESSI 2026.06 and =GSL/2.8-GCC-15.2.0= loaded on a zen2 login node, tasks on a zen4 node got these targets:
+
+| How the task started                         | =EESSI_SOFTWARE_SUBDIR= in the task | GSL tree |
+|----------------------------------------------+-------------------------------------+----------|
+| =srun= on zen4, no guard                     | =x86_64/amd/zen2=                   | zen2     |
+| =srun= on zen4, with =SLURM_TASK_PROLOG=     | =x86_64/amd/zen4=                   | zen4     |
+| =sbatch --export=ALL=, batch step, no guard  | =x86_64/amd/zen2=                   | zen2     |
+| the same batch step after the =--shell= line | =x86_64/amd/zen4=                   | zen4     |
+
+In the two cases with the guard, it wrote =eessi-arch-guard: reloaded modules for x86_64/amd/zen4 (loaded for x86_64/amd/zen2)=, and =EESSI_ARCH_GUARD_RELOADED= read =x86_64/amd/zen2->x86_64/amd/zen4=.
+A plain =sbatch=, without =--export=ALL=, did not carry the login environment on that cluster: the job loaded EESSI on its own node and needed no guard.
+
+** If it fails
+
+| Message or symptom                                                                              | Cause                                                                                                                                                                                                            | What to do                                                                                                                    |
+|-------------------------------------------------------------------------------------------------+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+-------------------------------------------------------------------------------------------------------------------------------|
+| =EESSI_SOFTWARE_SUBDIR= names the login node's target, and =EESSI_ARCH_GUARD_RELOADED= is unset | Slurm did not run the guard: =SLURM_TASK_PROLOG= was not exported before =srun=, its path is not absolute or not executable on the node, or the =srun= line has a =--task-prolog= of its own, which replaces it. | Export the variable with the full path, check =ls -l ~/bin/eessi-arch-guard= on the node, and drop the other =--task-prolog=. |
+| The same, with =EESSI_ARCH_GUARD=0= in your environment                                         | The guard is off.                                                                                                                                                                                                | =unset EESSI_ARCH_GUARD= before you submit.                                                                                   |
+| =EESSI_ARCH_GUARD_FAILED= is set                                                                | The guard ran and could not load the modules for the node.                                                                                                                                                       | [[file:read-a-failure.org][Correct a failed reload]].                                                                                                      |
+
+Once the site installs the guard as its =TaskProlog=, your copy finds the modules already loaded for the node and does nothing.
+
+** Related
+
+- [[file:use-in-a-batch-script.org][Run the guard in a batch script]]
+- [[file:install-the-prolog.org][Install the prolog]], for the site's administrators
+- [[file:hand-built-software.org][Run a program you built yourself on more than one node type]]
