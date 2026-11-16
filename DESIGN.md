@@ -140,4 +140,4 @@ zen5 (`-march=znver5`; spec adds `avx512_vp2intersect avx_vnni movdiri`): 3dnowp
 
 ## Out of scope
 
-Unanswered here: whether this site already has a TaskProlog, which Slurm version it runs, the cost on a 192-task node with node-local `TMPDIR`, and a real cross-target job on production nodes. This repository does not invent those measurements. Binaries built with `-march=native` on a login node, virtualenvs with compiled wheels, and a module that simply does not exist for the target are unchanged: the guard refuses rather than loading half of a stack.
+Unanswered here: whether a site already has a TaskProlog, which Slurm version it runs, the cost on a node that runs a task on every core with node-local `TMPDIR`, and a real cross-target job on production nodes. This repository does not invent those measurements. Binaries built with `-march=native` on a login node, virtualenvs with compiled wheels, and a module that simply does not exist for the target are unchanged: the guard refuses rather than loading half of a stack.
