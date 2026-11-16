@@ -80,7 +80,7 @@ All values come from `os.environ` copied at L1745 unless a row says the helper r
 | `LMOD_CMD` | Lmod executable | non-empty, not starting `-`, no `\n \r \0`, `isfile` and `X_OK` | Missing/invalid on mismatch: `lmod-unavailable` failure. Read only after a target mismatch is found. | L1142-1149, L755-758, L975 |
 | `SLURM_JOB_ID` | Cache scope | any string | Empty/unset: no cache at all. Non-matching `^[A-Za-z0-9._-]{1,64}$` is replaced by a 16-hex SHA-256 prefix. | L1251-1253, L1229-1232 |
 | `SLURM_STEP_ID` | Cache scope | any string | Unset: `batch`. Empty string stays empty and is hashed. | L1257, L1229-1232 |
-| `SLURM_LOCALID` | Who prints | exactly `"0"` or unset prints the `print` line (prolog mode). | Any other value (including empty) suppresses `print`; exports still emitted. | L1708-1711 |
+| `SLURM_LOCALID` | Who prints | exactly `"0"` or unset prints the `print` line, the emergency skip line included (prolog mode). | Any other value (including empty) suppresses `print`; exports still emitted. | L1708-1711 |
 | locale (`LANG`, `LC_ALL`, `LC_CTYPE`) | Encoding for `print` text via `locale.getpreferredencoding(False)` | any | Unknown codec: falls back to ASCII with `errors="replace"`. Export values use `os.fsencode` (filesystem encoding, surrogateescape). | L324-334, L375 |
 | `BASH_ENV`, `ENV`, `SHELLOPTS`, `BASHOPTS`, `BASH_XTRACEFD`, `PS4` | Read only to be removed from every child environment | n/a | Always stripped from archdetect, Lmod, and apply children. | L45-52, L253-257 |
 | `SLURM_*`, `BASH_FUNC_*` etc. | Never read for decisions; excluded from delta | n/a | See section 4. | L268-273 |
@@ -118,7 +118,7 @@ All values come from `os.environ` copied at L1745 unless a row says the helper r
 | stdout, shell, unset | `"unset " + NAME + "\n"` | L365 |
 | stdout, shell, message | None. The message is written to stderr as `message_bytes(outcome.message) + b"\n"` whenever the outcome has a message (reload or failure). | L1790-1791 |
 | stdout, chain prefix | Chain stdout bytes are written first; if non-empty and not ending in `\n`, a `\n` is appended; then the guard's own text. | L1714-1719 |
-| stdout, emergency (prolog) | `b"print " + message_bytes("eessi-arch-guard: skipped, %s: %s" % (type(exc).__name__, exc)) + b"\n"`. Ignores `SLURM_LOCALID` (always printed). Exception class names are Python-specific. | L1722-1731 |
+| stdout, emergency (prolog) | `b"print " + message_bytes("eessi-arch-guard: skipped, %s: %s" % (type(exc).__name__, exc)) + b"\n"`; emitted only when `SLURM_LOCALID` is `"0"` or unset (`_announce`), as the message line is. Exception class names are Python-specific. | L1722-1731, L1708-1711 |
 | stderr, emergency (shell, per raw `--shell` in argv for the outer handler) | Same text and `\n`, to fd 2. | L1726-1727, L1810 |
 | stderr, `--restore` failure | `"eessi-arch-guard: restore failed: %s\n" % one_line(str(exc), 300)` | L963 |
 | stdout, `--restore` | `json.dumps(result)` with default separators (`", "`, `": "`), no trailing newline. | L960 |
@@ -312,7 +312,6 @@ All tests live under `eessi-arch-guard/tests/`. `harness.py` L14-18 supports `TO
 |---|---|---|
 | VERBOSE wording | Docs say "skip and match reasons"; code writes only `outcome.detail` (skip, noop, and the restore error on failures). | L1792-1793 |
 | Dead code | Unreachable branch L292-293. | as listed |
-| Emergency channel | `_emergency` always prints a `print` line in prolog mode regardless of `SLURM_LOCALID`. | L1729 |
 | `render_bytes` dry run | The decision runs `render_bytes` itself (prolog mode) to detect over-long lines; a cached outcome is not re-checked, so an over-long cached line raises `ValueError` in `_main` and becomes an emergency skip (exit 0, or 78 under strict). | L1211-1220, L1782-1788 |
 | `TIMEOUT_MAX` is platform-dependent | `threading.TIMEOUT_MAX` is 9223372036.0 here; the number appears in warning text. | L118, L1529, L1538 |
 | Not determined | The behaviour of the real `eessi_archdetect.sh` (only the stub in `tests/stubs/` was read); behaviour of real Lmod output; the docs for tutorial/howto pages under `docs/howto`, `docs/tutorial`, `docs/topics/{concepts,design,detection}.md` were not read line by line. | n/a |
