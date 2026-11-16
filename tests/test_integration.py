@@ -388,6 +388,32 @@ class IntegrationTests(unittest.TestCase):
         self.assertEqual(printed, [])
         self.assertIn("EESSI_ARCH_GUARD_RELOADED", changes)
 
+    def test_localid_suppresses_the_skip_line(self):
+        env = self._cpu_env(ZEN4, "zen2")
+        env["TMPDIR"] = self.site.root
+        env["SLURM_JOB_ID"] = "4343"
+        # A cached line is not measured again, so this one is refused at
+        # output and every task of the step takes the skip path.
+        guard._write_cache(
+            guard.cache_file_path(env),
+            guard.Outcome({"SITE_DATA": "x" * 5000}, None, "reloaded", None),
+        )
+        printed_by_task = {}
+        for localid in ("0", "1", "3"):
+            env["SLURM_LOCALID"] = localid
+            proc = harness.run_guard(env)
+            changes, printed = _assert_prolog(proc)
+            self.assertEqual(changes, {})
+            printed_by_task[localid] = printed
+        self.assertEqual(len(printed_by_task["0"]), 1, printed_by_task)
+        self.assertTrue(
+            printed_by_task["0"][0].startswith("eessi-arch-guard: skipped, ValueError: "),
+            printed_by_task,
+        )
+        self.assertEqual(printed_by_task["1"], [])
+        self.assertEqual(printed_by_task["3"], [])
+        self.assertEqual(harness.log_lines(self.site.log), [])
+
     def test_opt_out_and_archdetect_failure(self):
         env = self._cpu_env(ZEN4, "zen2")
         env["EESSI_ARCH_GUARD"] = "0"
