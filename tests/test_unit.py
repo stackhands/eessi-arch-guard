@@ -655,6 +655,51 @@ class UnitTests:
         assert outcome.kind == "failed"
         assert outcome.changes["EESSI_ARCH_GUARD_FAILED"].endswith("->timeout")
 
+    def test_cpu_bind_list_accepts_a_mask_a_list_and_a_hostlist(self):
+        assert guard.parse_cpu_spec("0x2") == frozenset({1})
+        assert guard.parse_cpu_spec("0-1,4") == frozenset({0, 1, 4})
+        assert guard.parse_cpu_spec("cpu[0-1,4]") == frozenset({0, 1, 4})
+        assert guard.parse_cpu_spec("[1]") == frozenset({1})
+        assert guard.parse_cpu_spec("nid[00001-00002]") is None
+        assert guard.parse_cpu_spec("quiet") is None
+        bound = guard.task_cpu_ids({"SLURM_CPU_BIND_LIST": "cpu[1]"})
+        assert bound is not None
+        assert 1 in bound
+        assert 0 not in bound
+        masked = guard.task_cpu_ids({"SLURM_CPU_BIND": "quiet,mask_cpu:0x2"})
+        assert masked == bound
+
+    def test_scope_cpuinfo_keeps_the_bound_processor(self):
+        text = "\n".join(
+            (
+                "processor : 0",
+                "vendor_id : GenuineIntel",
+                "cpu family : 6",
+                "model : 60",
+                "flags : avx2 fma",
+                "",
+                "processor : 1",
+                "vendor_id : GenuineIntel",
+                "cpu family : 6",
+                "model : 143",
+                "flags : avx2 fma avx512f waitpkg",
+                "",
+            )
+        )
+        one = guard.scope_cpuinfo(text, frozenset({1}))
+        assert one is not None
+        assert "model : 143" in one
+        assert "waitpkg" in one
+        assert "model : 60" not in one
+        both = guard.scope_cpuinfo(text, frozenset({0, 1}))
+        assert both is not None
+        assert "waitpkg" not in both
+        assert "avx2" in both
+        assert "model :" not in both
+        single = "processor : 0\nvendor_id : GenuineIntel\nflags : avx2 fma\n"
+        assert guard.scope_cpuinfo(single, frozenset({0, 1, 2})) is None
+        assert guard.scope_cpuinfo("eessi_arch_matches: x86_64/generic\n", frozenset({0})) is None
+
     def test_waitpkg_march_requires_the_flag(self):
         root = Path(__file__).resolve().parents[1] / "tests" / "fixtures" / "cpuinfo"
         real_path = root / "sapphirerapids-8488C.cpuinfo"

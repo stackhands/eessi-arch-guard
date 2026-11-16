@@ -23,6 +23,20 @@ cpupath must print one line, at most 65536 bytes, with no NUL and no character b
 
 The guard then reads CPU flags. The path is `EESSI_PROC_CPUINFO` when that variable is set, otherwise `/proc/cpuinfo`. Every `flags` line is parsed. The set used for the decision is the intersection: one logical CPU missing a flag removes it. The read stops at 16 MiB.
 
+## The processors the task may run on
+
+`/proc/cpuinfo` lists every online processor. A cgroup cpuset, the affinity mask, or a Slurm bind can keep the task off some of them. archdetect reads the last processor in the file, so an unbound read can name a microarchitecture the task will never execute.
+
+Before archdetect runs, the guard intersects three sets, skipping any it cannot read:
+
+* `sched_getaffinity` of this process
+* `cpuset.cpus.effective` of this cgroup, walking up to the ancestor that has one
+* `SLURM_CPU_BIND_LIST`, or the value after the last colon of `SLURM_CPU_BIND` when the list is unset
+
+The bind text is a hex mask (`0x2`), a CPU list (`0-3,8`), or a hostlist whose name is empty or `cpu` (`cpu[0-3,8]`, `[1]`). A node hostlist such as `nid[00001-00002]` is not a CPU list and is ignored. A mask with a bit at or past 4096 is ignored rather than applied in part.
+
+When the file has `processor` lines and the intersection is a narrower set, or the kept processors do not share one vendor, model, and flag set, archdetect is given one record. Its flags, features, and isa tokens are the intersection of the kept processors. The vendor and model are kept only when every kept processor has the same value, so a Granite Rapids model number is not applied to a mix. A file with no `processor` line, such as an `lscpu` snapshot or a test `eessi_arch_matches` line, is read as it stands. The caller-supplied `EESSI_PROC_CPUINFO` is scoped the same way.
+
 (detection-waitpkg)=
 ## The waitpkg check
 

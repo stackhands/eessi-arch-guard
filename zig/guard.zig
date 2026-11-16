@@ -347,6 +347,399 @@ fn line1(c: *Ctx, s: []const u8, limit: usize) []const u8 {
     return text.oneLine(c.arena, s, limit) catch s;
 }
 
+// sched_getaffinity and cpuset lists name processors in this range. A bind
+// mask with a bit past it is not a CPU set: applying the low bits alone
+// would hide a processor the mask named.
+const cpu_id_max: usize = 4096;
+
+const CpuSet = struct {
+    words: [cpu_id_max / 64]u64 = std.mem.zeroes([cpu_id_max / 64]u64),
+
+    fn add(s: *CpuSet, cpu: usize) void {
+        if (cpu >= cpu_id_max) return;
+        s.words[cpu / 64] |= @as(u64, 1) << @intCast(cpu % 64);
+    }
+
+    fn has(s: CpuSet, cpu: usize) bool {
+        if (cpu >= cpu_id_max) return false;
+        return s.words[cpu / 64] & (@as(u64, 1) << @intCast(cpu % 64)) != 0;
+    }
+
+    fn bitAnd(a: CpuSet, b: CpuSet) CpuSet {
+        var out: CpuSet = .{};
+        for (a.words, 0..) |word, i| out.words[i] = word & b.words[i];
+        return out;
+    }
+};
+
+fn parseUsize(s: []const u8) ?usize {
+    if (s.len == 0) return null;
+    var n: usize = 0;
+    for (s) |ch| {
+        if (ch < '0' or ch > '9') return null;
+        const d: usize = ch - '0';
+        if (n > (std.math.maxInt(usize) - d) / 10) return null;
+        n = n * 10 + d;
+    }
+    return n;
+}
+
+/// parse_cpu_spec: a hex mask, a 0-3,8 list, or a cpu[0-3] hostlist.
+fn parseCpuSpec(spec: []const u8) ?CpuSet {
+    const raw = std.mem.trim(u8, spec, " \t\r\n");
+    if (raw.len == 0) return null;
+    if (std.mem.startsWith(u8, raw, "0x") or std.mem.startsWith(u8, raw, "0X")) {
+        const hex = raw[2..];
+        if (hex.len == 0) return null;
+        var set: CpuSet = .{};
+        var bit: usize = 0;
+        var i: usize = hex.len;
+        while (i > 0) {
+            i -= 1;
+            const val: u8 = switch (hex[i]) {
+                '0'...'9' => hex[i] - '0',
+                'a'...'f' => hex[i] - 'a' + 10,
+                'A'...'F' => hex[i] - 'A' + 10,
+                else => return null,
+            };
+            var b: u3 = 0;
+            while (true) : (b += 1) {
+                if (val & (@as(u8, 1) << b) != 0) {
+                    if (bit >= cpu_id_max) return null;
+                    set.add(bit);
+                }
+                bit += 1;
+                if (b == 3) break;
+            }
+        }
+        return set;
+    }
+    var body = raw;
+    if (std.mem.endsWith(u8, raw, "]")) {
+        const open = std.mem.indexOfScalar(u8, raw, '[') orelse return null;
+        if (std.mem.indexOfScalar(u8, raw[open + 1 ..], '[') != null) return null;
+        const name = raw[0..open];
+        if (name.len != 0 and !std.ascii.eqlIgnoreCase(name, "cpu")) return null;
+        body = raw[open + 1 .. raw.len - 1];
+    } else if (std.mem.indexOfScalar(u8, raw, '[') != null) {
+        return null;
+    }
+    if (body.len == 0) return null;
+    var set: CpuSet = .{};
+    var i: usize = 0;
+    var saw = false;
+    while (i < body.len) {
+        if (body[i] == ' ') {
+            i += 1;
+            continue;
+        }
+        const start_i = i;
+        while (i < body.len and body[i] >= '0' and body[i] <= '9') i += 1;
+        const start = parseUsize(body[start_i..i]) orelse return null;
+        if (start >= cpu_id_max) return null;
+        if (i < body.len and body[i] == '-') {
+            i += 1;
+            const end_i = i;
+            while (i < body.len and body[i] >= '0' and body[i] <= '9') i += 1;
+            const end = parseUsize(body[end_i..i]) orelse return null;
+            if (end < start or end >= cpu_id_max) return null;
+            var cpu = start;
+            while (cpu <= end) : (cpu += 1) set.add(cpu);
+        } else set.add(start);
+        saw = true;
+        if (i < body.len and body[i] == ' ') {
+            while (i < body.len and body[i] == ' ') i += 1;
+        }
+        if (i < body.len) {
+            if (body[i] != ',') return null;
+            i += 1;
+        }
+    }
+    if (!saw) return null;
+    return set;
+}
+
+fn readFile(arena: Allocator, path: []const u8, max: usize) ?[]u8 {
+    const fd = sys.openat(fsx.cwd, path, .{ .NONBLOCK = true }, 0) catch return null;
+    defer sys.close(fd);
+    return fsx.readAll(arena, fd, max) catch null;
+}
+
+fn cgroupCpus(arena: Allocator) ?CpuSet {
+    const cgroup_text = readFile(arena, "/proc/self/cgroup", 1 << 20) orelse return null;
+    var dirs: std.ArrayList([]const u8) = .empty;
+    var it = std.mem.splitScalar(u8, cgroup_text, '\n');
+    while (it.next()) |line| {
+        var parts = std.mem.splitScalar(u8, line, ':');
+        const hier = parts.next() orelse continue;
+        const controllers = parts.next() orelse continue;
+        const rest = parts.next() orelse continue;
+        if (parts.next() != null) continue;
+        var path = rest;
+        if (path.len == 0 or path[0] != '/') {
+            path = std.fmt.allocPrint(arena, "/{s}", .{path}) catch return null;
+        }
+        if (std.mem.eql(u8, hier, "0") and controllers.len == 0) {
+            dirs.append(arena, std.fmt.allocPrint(arena, "/sys/fs/cgroup{s}", .{path}) catch return null) catch return null;
+        } else if (std.mem.indexOf(u8, controllers, "cpuset") != null) {
+            dirs.append(arena, std.fmt.allocPrint(arena, "/sys/fs/cgroup/cpuset{s}", .{path}) catch return null) catch return null;
+            dirs.append(arena, std.fmt.allocPrint(arena, "/sys/fs/cgroup{s}", .{path}) catch return null) catch return null;
+        }
+    }
+    for (dirs.items) |start| {
+        var directory = start;
+        var hop: usize = 0;
+        while (hop < 64 and std.mem.startsWith(u8, directory, "/sys/fs/cgroup")) : (hop += 1) {
+            const eff = std.fmt.allocPrint(arena, "{s}/cpuset.cpus.effective", .{directory}) catch return null;
+            if (readFile(arena, eff, 65536)) |raw| {
+                const trimmed = std.mem.trim(u8, raw, " \t\r\n");
+                if (trimmed.len > 0) {
+                    if (parseCpuSpec(trimmed)) |set| return set;
+                }
+            }
+            const parent = std.fs.path.dirname(directory) orelse break;
+            if (std.mem.eql(u8, parent, directory)) break;
+            directory = parent;
+        }
+    }
+    return null;
+}
+
+fn schedCpus() ?CpuSet {
+    var buf: [cpu_id_max / 8]u8 = std.mem.zeroes([cpu_id_max / 8]u8);
+    const rc = linux.syscall3(.sched_getaffinity, 0, buf.len, @intFromPtr(&buf));
+    const signed: isize = @bitCast(rc);
+    if (signed < 0) return null;
+    const n: usize = @min(@as(usize, @intCast(signed)), buf.len);
+    var set: CpuSet = .{};
+    var i: usize = 0;
+    while (i < n) : (i += 1) {
+        var b: u3 = 0;
+        while (true) : (b += 1) {
+            if (buf[i] & (@as(u8, 1) << b) != 0) set.add(i * 8 + b);
+            if (b == 7) break;
+        }
+    }
+    return set;
+}
+
+fn bindCpus(env: Map) ?CpuSet {
+    const listed = std.mem.trim(u8, env.get("SLURM_CPU_BIND_LIST") orelse "", " \t\r\n");
+    if (listed.len > 0) return parseCpuSpec(listed);
+    const verbose = std.mem.trim(u8, env.get("SLURM_CPU_BIND") orelse "", " \t\r\n");
+    const colon = std.mem.lastIndexOfScalar(u8, verbose, ':') orelse return null;
+    return parseCpuSpec(std.mem.trim(u8, verbose[colon + 1 ..], " \t\r\n"));
+}
+
+/// task_cpu_ids: the intersection of affinity, cpuset, and the Slurm bind list.
+fn taskCpuIds(arena: Allocator, env: Map) ?CpuSet {
+    const affinity = schedCpus();
+    const cgroup = cgroupCpus(arena);
+    const bind = bindCpus(env);
+    var allowed = affinity orelse cgroup orelse bind orelse return null;
+    if (affinity) |a| allowed = allowed.bitAnd(a);
+    if (cgroup) |g| allowed = allowed.bitAnd(g);
+    if (bind) |b| allowed = allowed.bitAnd(b);
+    return allowed;
+}
+
+fn normKey(arena: Allocator, key: []const u8) []const u8 {
+    const buf = arena.alloc(u8, key.len) catch return key;
+    var n: usize = 0;
+    var pending = false;
+    for (key) |ch| {
+        if (ch == ' ' or ch == '\t') {
+            pending = n > 0;
+            continue;
+        }
+        if (pending) {
+            buf[n] = '_';
+            n += 1;
+            pending = false;
+        }
+        buf[n] = std.ascii.toLower(ch);
+        n += 1;
+    }
+    return buf[0..n];
+}
+
+fn processorId(line: []const u8) ?usize {
+    const t = std.mem.trim(u8, line, " \t\r");
+    const prefix = "processor";
+    if (t.len < prefix.len or !std.ascii.eqlIgnoreCase(t[0..prefix.len], prefix)) return null;
+    var i: usize = prefix.len;
+    while (i < t.len and (t[i] == ' ' or t[i] == '\t')) i += 1;
+    if (i >= t.len or t[i] != ':') return null;
+    i += 1;
+    while (i < t.len and (t[i] == ' ' or t[i] == '\t')) i += 1;
+    if (i >= t.len) return null;
+    return parseUsize(t[i..]);
+}
+
+const CpuField = struct { norm: []const u8, raw: []const u8, value: []const u8 };
+
+fn cpuField(arena: Allocator, line: []const u8) ?CpuField {
+    const trimmed = std.mem.trim(u8, line, " \t\r");
+    const colon = std.mem.indexOfScalar(u8, trimmed, ':') orelse return null;
+    const raw = std.mem.trim(u8, trimmed[0..colon], " \t");
+    if (raw.len == 0) return null;
+    return .{
+        .norm = normKey(arena, raw),
+        .raw = raw,
+        .value = std.mem.trim(u8, trimmed[colon + 1 ..], " \t"),
+    };
+}
+
+fn isFlagKey(norm: []const u8) bool {
+    return std.mem.eql(u8, norm, "flags") or std.mem.eql(u8, norm, "features") or std.mem.eql(u8, norm, "isa");
+}
+
+fn fieldValue(fields: []const CpuField, norm: []const u8) ?[]const u8 {
+    for (fields) |f| if (std.mem.eql(u8, f.norm, norm)) return f.value;
+    return null;
+}
+
+fn sameFields(a: []const CpuField, b: []const CpuField) bool {
+    if (a.len != b.len) return false;
+    for (a) |f| {
+        const other = fieldValue(b, f.norm) orelse return false;
+        if (!std.mem.eql(u8, f.value, other)) return false;
+    }
+    return true;
+}
+
+fn tokenSet(arena: Allocator, value: []const u8) std.BufSet {
+    var set = std.BufSet.init(arena);
+    var it = std.mem.tokenizeAny(u8, value, " \t");
+    while (it.next()) |tok| set.insert(tok) catch {};
+    return set;
+}
+
+/// scope_cpuinfo: null when the text is already the allowed processors.
+fn scopeCpuinfo(arena: Allocator, cpuinfo: []const u8, allowed: CpuSet) ?[]const u8 {
+    const Block = struct { id: usize, fields: []const CpuField };
+    var blocks: std.ArrayList(Block) = .empty;
+    var cur_id: ?usize = null;
+    var cur: std.ArrayList(CpuField) = .empty;
+    var it = std.mem.splitScalar(u8, cpuinfo, '\n');
+    while (it.next()) |line| {
+        if (processorId(line)) |id| {
+            if (cur_id) |prev| blocks.append(arena, .{ .id = prev, .fields = cur.toOwnedSlice(arena) catch return null }) catch return null;
+            cur = .empty;
+            cur_id = id;
+            continue;
+        }
+        if (cur_id == null) continue;
+        if (cpuField(arena, line)) |f| {
+            if (!std.mem.eql(u8, f.norm, "processor")) cur.append(arena, f) catch return null;
+        }
+    }
+    if (cur_id) |prev| blocks.append(arena, .{ .id = prev, .fields = cur.toOwnedSlice(arena) catch return null }) catch return null;
+    if (blocks.items.len == 0) return null;
+    var kept: std.ArrayList(Block) = .empty;
+    for (blocks.items) |b| if (allowed.has(b.id)) kept.append(arena, b) catch return null;
+    if (kept.items.len == blocks.items.len and kept.items.len > 0) {
+        const base = kept.items[0].fields;
+        var same = true;
+        for (kept.items[1..]) |b| if (!sameFields(base, b.fields)) {
+            same = false;
+            break;
+        };
+        if (same) return null;
+    }
+    if (kept.items.len == 0) return arena.dupe(u8, "processor : 0\nflags :\n") catch null;
+    const first = kept.items[0];
+    var out: std.ArrayList(u8) = .empty;
+    out.print(arena, "processor : {d}\n", .{first.id}) catch return null;
+    var seen: std.BufSet = .init(arena);
+    for (first.fields) |f| {
+        if (seen.contains(f.norm)) continue;
+        seen.insert(f.norm) catch return null;
+        if (isFlagKey(f.norm)) {
+            var shared: ?std.BufSet = null;
+            for (kept.items) |b| {
+                const value = fieldValue(b.fields, f.norm) orelse "";
+                var tokens = tokenSet(arena, value);
+                if (shared) |*got| {
+                    var next = std.BufSet.init(arena);
+                    var kit = got.iterator();
+                    while (kit.next()) |tok| if (tokens.contains(tok.*)) next.insert(tok.*) catch return null;
+                    shared = next;
+                } else shared = tokens;
+            }
+            out.print(arena, "{s} :", .{f.raw}) catch return null;
+            if (shared) |got| {
+                var names: std.ArrayList([]const u8) = .empty;
+                var kit = got.iterator();
+                while (kit.next()) |tok| names.append(arena, tok.*) catch return null;
+                std.mem.sort([]const u8, names.items, {}, struct {
+                    fn less(_: void, a: []const u8, b: []const u8) bool {
+                        return std.mem.lessThan(u8, a, b);
+                    }
+                }.less);
+                for (names.items) |name| out.print(arena, " {s}", .{name}) catch return null;
+            }
+            out.append(arena, '\n') catch return null;
+            continue;
+        }
+        const value = fieldValue(first.fields, f.norm) orelse continue;
+        var agree = true;
+        for (kept.items) |b| {
+            const other = fieldValue(b.fields, f.norm) orelse {
+                agree = false;
+                break;
+            };
+            if (!std.mem.eql(u8, other, value)) {
+                agree = false;
+                break;
+            }
+        }
+        if (!agree) continue;
+        out.print(arena, "{s} : {s}\n", .{ f.raw, value }) catch return null;
+    }
+    return out.toOwnedSlice(arena) catch null;
+}
+
+fn unlinkPath(path: []const u8) void {
+    var zb: [sys.path_max:0]u8 = undefined;
+    const z = sys.z(&zb, path) catch return;
+    _ = linux.unlinkat(linux.AT.FDCWD, z.ptr, 0);
+}
+
+fn tempCpuFile(c: *Ctx, data: []const u8) ?[]const u8 {
+    const alphabet = "abcdefghijklmnopqrstuvwxyz0123456789_";
+    var tries: usize = 0;
+    while (tries < 100) : (tries += 1) {
+        var rnd: [8]u8 = undefined;
+        _ = sys.call(linux.getrandom, .{ &rnd, rnd.len, 0 }) catch return null;
+        var suffix: [8]u8 = undefined;
+        for (rnd, 0..) |b, i| suffix[i] = alphabet[b % alphabet.len];
+        const p = c.arena.print("/tmp/eessi-arch-guard-cpu-{s}", .{suffix}) catch return null;
+        if (writePrivateNew(p, data, 0o600)) return p;
+    }
+    return null;
+}
+
+const PreparedCpu = struct { path: []const u8, cleanup: ?[]const u8 = null, child: Map };
+
+fn prepareCpuinfo(c: *Ctx, env: Map) PreparedCpu {
+    const explicit = env.get("EESSI_PROC_CPUINFO") orelse "";
+    const path: []const u8 = if (explicit.len > 0) explicit else "/proc/cpuinfo";
+    const allowed = taskCpuIds(c.arena, env) orelse return .{ .path = path, .child = env };
+    const blob = readFile(c.arena, path, cpuinfo_read_max) orelse return .{ .path = path, .child = env };
+    const scoped = scopeCpuinfo(c.arena, blob, allowed) orelse return .{ .path = path, .child = env };
+    const tmp = tempCpuFile(c, scoped) orelse return .{ .path = path, .child = env };
+    var child = envmap.clone(c.arena, env) catch {
+        unlinkPath(tmp);
+        return .{ .path = path, .child = env };
+    };
+    child.put(c.arena, "EESSI_PROC_CPUINFO", tmp) catch {
+        unlinkPath(tmp);
+        return .{ .path = path, .child = env };
+    };
+    return .{ .path = tmp, .cleanup = tmp, .child = child };
+}
+
 pub fn probeCpu(c: *Ctx, env: Map) Stop!CpuProbe {
     const prefix = env.get("EESSI_PREFIX") orelse empty;
     const os_type = env.get("EESSI_OS_TYPE") orelse empty;
@@ -355,8 +748,10 @@ pub fn probeCpu(c: *Ctx, env: Map) Stop!CpuProbe {
         return .{ .status = .@"error", .err = "EESSI_PREFIX, EESSI_OS_TYPE, or EESSI_INIT_PREFIX is missing or unsafe" };
     const script = std.fs.path.join(c.arena, &.{ init, "eessi_archdetect.sh" }) catch return .{ .status = .@"error", .err = "out of memory" };
     if (!isFile(script)) return .{ .status = .@"error", .err = "eessi_archdetect.sh is not available" };
+    const prepared = prepareCpuinfo(c, env);
+    defer if (prepared.cleanup) |p| unlinkPath(p);
     var why: []const u8 = "";
-    const r = runBash(c, &.{ script, "-a", "cpupath" }, env, &why) catch |err| switch (err) {
+    const r = runBash(c, &.{ script, "-a", "cpupath" }, prepared.child, &why) catch |err| switch (err) {
         error.Deadline, error.Terminated => |e| return e,
         else => return .{ .status = .@"error", .err = c.arena.print("could not run archdetect: {s}", .{why}) catch "could not run archdetect" },
     };
@@ -371,11 +766,7 @@ pub fn probeCpu(c: *Ctx, env: Map) Stop!CpuProbe {
     if (cands.items.len == 0) return .{ .status = .@"error", .err = "cpupath returned no candidates" };
     for (cands.items) |cand| if (!text.safeRelSubdir(cand))
         return .{ .status = .@"error", .candidates = cands.items, .err = "cpupath returned an unsafe candidate" };
-    const cpuinfo = blk: {
-        const v = env.get("EESSI_PROC_CPUINFO") orelse empty;
-        break :blk if (v.len > 0) v else "/proc/cpuinfo";
-    };
-    const flags = readCpuFlags(c.arena, cpuinfo);
+    const flags = readCpuFlags(c.arena, prepared.path);
     var compatible: std.ArrayList([]const u8) = .empty;
     for (cands.items) |cand| if (candidateSupportsCpu(cand, flags)) compatible.append(c.arena, cand) catch main_mod.oom();
     const chosen = installed(c, prefix, os_type, compatible.items);

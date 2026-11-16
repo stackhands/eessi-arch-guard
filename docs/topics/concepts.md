@@ -11,7 +11,7 @@ The EESSI module picks a CPU target once, at load time, and an accelerator targe
 The prolog compares the loaded target with the node, then either returns or reloads.
 ```
 
-The comparison is local to the task. CPU flags come from `EESSI_PROC_CPUINFO` or `/proc/cpuinfo`. The accelerator string comes from `eessi_archdetect.sh accelpath`, which sees the GPUs visible to the task. A job prolog runs outside the task cgroup, so a GPU hidden from the task is still visible there. The TaskProlog runs as the user, with the task environment, before `execve`.
+The comparison is local to the task. CPU flags come from `EESSI_PROC_CPUINFO` or `/proc/cpuinfo`, limited to the processors in the task's cpuset, affinity mask, and Slurm CPU bind list. The accelerator string comes from `eessi_archdetect.sh accelpath`, which sees the GPUs visible to the task. A job prolog runs outside the task cgroup, so a GPU hidden from the task is still visible there. The TaskProlog runs as the user, with the task environment, before `execve`.
 
 On a mismatch the prolog runs a helper, `python3 -I -X utf8 <this file> --restore`, whose stdin is a JSON request carrying the task environment. The helper's own process environment is `PATH`, `HOME`, `LANG`, `LC_ALL`, `TMPDIR`, and `EESSI_ARCH_GUARD_WORKDIR`. Module names are arguments to `LMOD_CMD` after a grammar check. Bash inside the helper is `bash --noprofile --norc`, with `BASH_ENV`, `ENV`, `SHELLOPTS`, `BASHOPTS`, `BASH_XTRACEFD`, and `PS4` removed, and its last command is `env -0`. The prolog prints the delta of that environment: `export` and `unset` lines Slurm can apply, plus one `print` line for local task 0.
 

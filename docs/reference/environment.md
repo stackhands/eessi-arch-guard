@@ -10,7 +10,9 @@
 | `EESSI_OS_TYPE` | Relative OS subdirectory. An absolute path fails the check. |
 | `EESSI_INIT_PREFIX` | Absolute directory that contains `eessi_archdetect.sh`. |
 | `EESSI_VERSION` | Exported by the EESSI module. The reload name is the `EESSI/<version>` entry in `LOADEDMODULES`. |
-| `EESSI_PROC_CPUINFO` | CPU info file. Unset selects `/proc/cpuinfo`. |
+| `EESSI_PROC_CPUINFO` | CPU info file. Unset selects `/proc/cpuinfo`. A file with `processor` lines is scoped to the task's cpuset, affinity, and Slurm bind list before archdetect reads it. |
+| `SLURM_CPU_BIND_LIST` | CPUs this task will be bound to: a hex mask, a `0-3,8` list, or a `cpu[0-3]` hostlist. Unset falls through to `SLURM_CPU_BIND`. A node hostlist is ignored. |
+| `SLURM_CPU_BIND` | Used when `SLURM_CPU_BIND_LIST` is unset. The text after the last colon is parsed as the bind list (`quiet,mask_cpu:0x2`). |
 | `EESSI_ARCHDETECT_OPTIONS` | Dropped for a waitpkg-fallback reload so it cannot outrank the pin. |
 | `LOADEDMODULES` | Colon-separated module names. Exactly one must match `EESSI/<version>`. |
 | `MODULEPATH` | Part of the cache key. The reload replaces it. |
