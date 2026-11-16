@@ -1,0 +1,111 @@
+#+TITLE: Environment variables
+#+OPTIONS: toc:nil todo:nil num:nil author:nil title:nil
+#+STARTUP: content
+
+* Environment variables
+
+The variables eessi-arch-guard reads from the task's environment and the ones it sets there.
+The module of the European Environment for Scientific Software Installations (EESSI) sets most of those it reads, and Slurm the rest.
+
+** Read from the task
+
+| Variable                                                                                                      | Use                                                                                                                                                                                                                                                  |
+|---------------------------------------------------------------------------------------------------------------+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| =EESSI_SOFTWARE_SUBDIR=                                                                                       | The CPU target the modules were loaded for, such as =x86_64/amd/zen4=. Unset or empty, EESSI is not loaded, and the guard does nothing.                                                                                                              |
+| =EESSI_ACCEL_SUBDIR=                                                                                          | The accelerator target the modules were loaded for, such as =accel/nvidia/cc90=; unset or empty is none.                                                                                                                                             |
+| =EESSI_PREFIX=                                                                                                | The EESSI version's prefix; must be an absolute path. A CPU candidate counts when =$EESSI_PREFIX/software/$EESSI_OS_TYPE/CANDIDATE/software= is a directory.                                                                                         |
+| =EESSI_OS_TYPE=                                                                                               | The operating system part of that path, such as =linux=; must be a relative path with no empty, =.= or =..= part.                                                                                                                                    |
+| =EESSI_INIT_PREFIX=                                                                                           | The directory of =eessi_archdetect.sh=; must be an absolute path.                                                                                                                                                                                    |
+| =EESSI_PROC_CPUINFO=                                                                                          | The file =eessi_archdetect.sh= reads instead of =/proc/cpuinfo=. The guard limits it to the task's processors too, when it has =processor= lines.                                                                                                    |
+| =SLURM_CPU_BIND_LIST=                                                                                         | The processors Slurm binds the task to: a mask such as =0x2=, a list such as =0-3,8=, or a list of names such as =cpu[0-3]=. A list of node names is not a processor list and is skipped.                                                            |
+| =SLURM_CPU_BIND=                                                                                              | Used when =SLURM_CPU_BIND_LIST= is unset: the text after its last =:= is read as the bind list, as in =quiet,mask_cpu:0x2=.                                                                                                                          |
+| =LOADEDMODULES=                                                                                               | The loaded modules, separated by =:=; the reload loads them again in this order. Exactly one must be =EESSI/VERSION=, and each must be a valid module name, as described below.                                                                      |
+| =MODULEPATH=                                                                                                  | Part of the key of the stored decision; the reload sets it anew.                                                                                                                                                                                     |
+| =PATH=                                                                                                        | Part of the key of the stored decision. =eessi_archdetect.sh= runs with it; the restore helper does not, it runs with =/usr/bin:/bin=.                                                                                                               |
+| =LMOD_CMD=                                                                                                    | The Lmod executable the reload runs; needed only when the targets differ.                                                                                                                                                                            |
+| =EESSI_ARCHDETECT_OPTIONS=                                                                                    | Kept for the =module --force purge= of a reload that pins the CPU target, since the =EESSI= module's unload uses it to find the tree to remove, and dropped from the loads after it.                                                                 |
+| =SLURM_JOB_ID=                                                                                                | Part of the name of the stored decision. Unset, nothing is stored, and each task decides for itself.                                                                                                                                                 |
+| =SLURM_STEP_ID=                                                                                               | Part of the name of the stored decision; =batch= when unset.                                                                                                                                                                                         |
+| =SLURM_LOCALID=                                                                                               | Only the task for which it is =0= or unset prints the =print= line.                                                                                                                                                                                  |
+| =CUDA_VISIBLE_DEVICES=, =ROCR_VISIBLE_DEVICES=, =GPU_DEVICE_ORDINAL=, =SLURM_STEP_GPUS=, =SLURM_GPUS_ON_NODE= | Part of the key of the stored decision, so that tasks that see other GPUs do not share it.                                                                                                                                                           |
+| =TMPDIR=                                                                                                      | Where the decision is stored when it is an absolute directory, and the restore workspace when it is private: a directory of the job's user with no group or other permission bits. Never set by the guard: =slurmstepd= creates it after the prolog. |
+| =XDG_STATE_HOME=, =HOME=                                                                                      | With =--strict=, the restore workspace can be =$XDG_STATE_HOME/eessi-arch-guard=, or =$HOME/.local/state/eessi-arch-guard= when =XDG_STATE_HOME= is unset or empty.                                                                                  |
+| =EESSI_ARCH_GUARD_FAILED=                                                                                     | A successful reload removes it.                                                                                                                                                                                                                      |
+| =BASH_ENV=, =ENV=, =SHELLOPTS=, =BASHOPTS=, =BASH_XTRACEFD=, =PS4=                                            | Removed from the environment of every =bash= the guard starts, so no startup file or trace runs in it.                                                                                                                                               |
+
+On this page an absolute path starts with =/=, has no =..= part, and holds no newline, carriage return or NUL.
+
+** Controls
+
+| Variable                            | Effect                                                                                                                                                                                                                         |
+|-------------------------------------+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| =EESSI_ARCH_GUARD=0=                | The guard does nothing. It has to be set in the environment the job is submitted from: on Slurm 23.11.4, =srun --export=ALL,EESSI_ARCH_GUARD=0= left a value of =1= that was already set. Any other value leaves the guard on. |
+| =EESSI_ARCH_GUARD_MISSING=ignore=   | When no CPU candidate has a software directory, the guard does nothing instead of failing.                                                                                                                                     |
+| =EESSI_ARCH_GUARD_VERBOSE=1=        | The guard writes to stderr why it did nothing, or the error of a failed reload. Slurm discards a =TaskProlog='s stderr; run the guard by hand in the task to read it.                                                          |
+| =EESSI_SOFTWARE_SUBDIR_OVERRIDE=    | Set when the guard starts, the guard does nothing: the CPU target is pinned. A reload that pins the target sets it, as described in [[file:../explanation/how-it-decides.org][How the guard decides]].                                                                     |
+| =EESSI_ARCHDETECT_OPTIONS_OVERRIDE= | Set, the guard does nothing: the detection is pinned.                                                                                                                                                                          |
+| =EESSI_ACCELERATOR_TARGET_OVERRIDE= | Set, the guard does not compare the accelerator and does not run =eessi_archdetect.sh accelpath=; it still compares the CPU.                                                                                                   |
+| =EESSI_ARCH_GUARD_WORKDIR=          | The restore workspace: an existing directory of the job's user with no group or other permission bits. Set to anything else, every reload fails with =restore-failed=.                                                         |
+
+An override that is set but empty counts as unset.
+
+The restore workspace is the first of these that applies; the guard creates none of them and changes the mode of none:
+
+1. =EESSI_ARCH_GUARD_WORKDIR=, when it is set;
+2. =TMPDIR=, when it is private;
+3. with =--strict=, =eessi-arch-guard= under =XDG_STATE_HOME= or =~/.local/state=, when it exists and is private, and otherwise none, so the reload fails;
+4. without =--strict=, =TMPDIR= when it is an absolute directory, and otherwise the system's temporary directory.
+
+In the workspace the guard creates one private directory per reload, =eessi-arch-guard-XXXXXXXX=, and removes it afterwards.
+
+** Set by the guard
+
+| Variable                          | Value                                                                                                                                                                             |
+|-----------------------------------+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| =EESSI_ARCH_GUARD_RELOADED=       | After a reload, =WAS->NOW=: the target the modules were loaded for and the one they are loaded for now. When the accelerators differ, each side is =CPU ACCEL= or =CPU no accel=. |
+| =EESSI_ARCH_GUARD_FAILED=         | After a failed reload, =WAS->NOW=, or =WAS->TOKEN= when there is no target to name; [[file:failures.org][Messages and markers]] lists the tokens.                                                        |
+| every variable the reload changes | Its new value, or removed, except the names below.                                                                                                                                |
+
+The guard never sets or removes these names, whatever the reload does to them:
+
+- =_=, =SHLVL=, =PWD=, =OLDPWD=, =TMPDIR=, =BASH_ENV=, =ENV=, =SHELLOPTS=, =BASHOPTS=, =BASH_XTRACEFD=, =PS4=, =BASH_ARGC=, =BASH_ARGV=, =BASH_LINENO=, =BASH_SOURCE=, =BASH_VERSINFO=, =BASH_VERSION=, =DIRSTACK=, =EPOCHREALTIME=, =EPOCHSECONDS=, =FUNCNAME=, =GROUPS=, =HOSTNAME=, =HOSTTYPE=, =IFS=, =MACHTYPE=, =OPTERR=, =OPTIND=, =OSTYPE=, =PIPESTATUS=, =PPID=
+- any name that starts with =SLURM_= or =BASH_FUNC_=
+
+A changed variable whose name does not match =^[A-Za-z_][A-Za-z0-9_]*$=, or whose value holds a NUL byte, or, in prolog mode, a newline or carriage return, fails the whole reload with =unsafe-environment=.
+=PS1=, =PS2=, =PS3= and =PROMPT_COMMAND= are the exception: such a new value is left out, and the rest of the reload is applied.
+
+** Module names
+
+Each name in =LOADEDMODULES= must be at most 256 characters long and match
+
+#+begin_example
+^[A-Za-z0-9_][A-Za-z0-9._+-]*(/[A-Za-z0-9_][A-Za-z0-9._+-]*)+$
+#+end_example
+
+or be a year of four digits, such as =2026=, which matches =^[0-9]{4}$=.
+A name with no =/= is refused otherwise.
+The =EESSI= entry must match =^EESSI/[A-Za-z0-9_][A-Za-z0-9._+-]*$= and be the only name that starts with =EESSI/=.
+A name that fails is =unsafe-module-name=; a list with no such =EESSI= entry, or two, is =restore-failed=.
+
+** Accelerator targets
+
+A status other than 0 from =eessi_archdetect.sh accelpath=, or empty output, means no accelerator, as the =EESSI= module records it.
+Other output, without the white space around it, must match
+
+#+begin_example
+^accel/(?:nvidia/cc[0-9]+|amd/gfx[0-9a-f]+)$
+#+end_example
+
+and output that does not fails with =archdetect-failed=.
+
+** The restore helper's environment
+
+The helper starts with only =PATH=/usr/bin:/bin=, =LANG=C=, =LC_ALL=C=, and =HOME=, =TMPDIR= and =EESSI_ARCH_GUARD_WORKDIR=, which all name its private directory.
+The task's environment reaches it as data in its request.
+
+** See also
+
+- [[file:cli.org][The eessi-arch-guard command]]
+- [[file:failures.org][Messages and markers]]
+- [[file:../explanation/how-it-decides.org][How the guard decides]] and [[file:../explanation/output-modes.org][Prolog lines and shell lines]]
+- [[py:eessi_arch_guard.environment_delta]], [[py:eessi_arch_guard.module_name_ok]], [[py:eessi_arch_guard.restore_work_base]] and [[py:eessi_arch_guard.task_cpu_ids]]

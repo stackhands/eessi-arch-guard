@@ -20,12 +20,16 @@ const empty: []const u8 = "";
 const Map = envmap.Map;
 const Changes = envmap.Changes;
 
+/// DIAGNOSE_LIMIT: the most failed modules the one-call-each load collects
+/// before it stops; the message then says "(stopped after 32)".
 pub const diagnose_limit = 32;
 const max_arch_stdout = 65536;
 const cpuinfo_read_max = 16 * 1024 * 1024;
 const cache_read_max = 8 * 1024 * 1024;
 const lock_poll_ms = 50;
 
+/// The variables whose values, with the task's processors and visible GPUs,
+/// make up the digest in a cache file's name.
 pub const key_fields = [_][]const u8{
     "EESSI_SOFTWARE_SUBDIR", "EESSI_ACCEL_SUBDIR", "LOADEDMODULES", "MODULEPATH",
     "EESSI_INIT_PREFIX",     "EESSI_PROC_CPUINFO", "PATH",
@@ -37,17 +41,31 @@ const waitpkg_marches = [_][]const u8{
     "sapphirerapids", "sierraforest",  "tremont",
 };
 
+/// What a decision came to.
 pub const Kind = enum {
+    /// Nothing was compared: EESSI is not loaded, the guard is turned off,
+    /// the detection is pinned, or EESSI_ARCH_GUARD_MISSING=ignore covers a
+    /// node with no software directory.
     skip,
+    /// The node's targets are the loaded ones.
     noop,
+    /// The modules were loaded again for this node.
     reloaded,
+    /// A reload was needed and could not be made; only
+    /// EESSI_ARCH_GUARD_FAILED changes.
     failed,
 };
 
+/// A decision's result, as the cache stores it.
 pub const Outcome = struct {
+    /// The variables to set, or to unset where the value is null.
     changes: Changes = .empty,
+    /// The message: a print line in the prolog output, a line on stderr with
+    /// --shell.
     message: ?[]const u8 = null,
+    /// What the decision came to.
     kind: Kind,
+    /// The reason EESSI_ARCH_GUARD_VERBOSE=1 writes to stderr.
     detail: ?[]const u8 = null,
 };
 
@@ -62,17 +80,27 @@ pub var os_failure: []const u8 = "";
 
 // ---- the deadline and SIGTERM ------------------------------------------
 
+/// DecisionLimit: the deadline of one decision and the SIGTERM it may get.
 pub const Limit = struct {
+    /// The `nowMs` reading at which the decision stops.
     deadline_ms: i64,
+    /// Set by the SIGTERM handler.
     terminated: std.atomic.Value(bool) = .init(false),
+    /// Set while a finished decision is written to the cache, which neither
+    /// the deadline nor SIGTERM interrupts.
     committing: std.atomic.Value(bool) = .init(false),
+    /// The process group of the command the decision is running, 0 for none.
     child_pgid: std.atomic.Value(i32) = .init(0),
+    /// The SIGTERM action to put back when the decision ends.
     previous: linux.Sigaction = undefined,
 
+    /// Milliseconds left before the deadline; zero or less once it passed.
     pub fn remainingMs(l: *const Limit) i64 {
         return l.deadline_ms - nowMs();
     }
 
+    /// error.Terminated after a SIGTERM, error.Deadline once no time is
+    /// left; neither while the result is being written to the cache.
     pub fn check(l: *const Limit) Stop!void {
         if (l.committing.load(.seq_cst)) return;
         if (l.terminated.load(.seq_cst)) return error.Terminated;
@@ -107,6 +135,7 @@ fn removeLimit(l: *Limit) void {
     active_limit = null;
 }
 
+/// The monotonic clock in milliseconds, as Python's time.monotonic() counts.
 pub fn nowMs() i64 {
     var ts: linux.timespec = undefined;
     _ = linux.clock_gettime(.MONOTONIC, &ts);
@@ -115,22 +144,35 @@ pub fn nowMs() i64 {
 
 // ---- context -----------------------------------------------------------
 
+/// What every step of a decision needs.
 pub const Ctx = struct {
+    /// Holds everything the decision allocates; freed when the program ends.
     arena: Allocator,
+    /// The task's environment.
     env: Map,
+    /// --strict is on the command line: the restore and the cache use only a
+    /// private workspace.
     strict: bool,
     /// Absolute path of this program, for the restore helper.
     self_exe: []const u8,
+    /// The deadline while `limitedDecide` runs; null otherwise, as in the
+    /// restore helper, which its parent's deadline covers.
     limit: ?*Limit = null,
 };
 
 // ---- running programs ----------------------------------------------------
 
+/// Why a command gave no result: the decision stopped, the command could not
+/// be started, or something no message was written for.
 pub const RunError = Stop || error{ CannotRun, Unexpected };
 
+/// A command that ran to the end.
 pub const Ran = struct {
+    /// The exit status, or 128 plus the signal that ended it.
     code: u32,
+    /// What the command wrote to stdout; more than 64 MiB is an error.
     stdout: []const u8,
+    /// What the command wrote to stderr; more than 1 MiB is an error.
     stderr: []const u8,
 };
 
@@ -211,17 +253,31 @@ fn runBash(c: *Ctx, args: []const []const u8, env: Map, why: *[]const u8) RunErr
 
 // ---- probes ------------------------------------------------------------
 
+/// What `probeCpu` found.
 pub const CpuProbe = struct {
+    /// `ok`: a target was found; `none`: no candidate has a software
+    /// directory; `error`: the detection could not be run or read.
     status: enum { ok, none, @"error" },
+    /// This node's CPU target, set when the status is `ok`.
     target: []const u8 = "",
+    /// The detection's candidates, best first, without those the waitpkg rule
+    /// drops.
     candidates: []const []const u8 = &.{},
+    /// Why the status is `error`.
     err: []const u8 = "",
+    /// The target again when the waitpkg rule changed the choice, for the
+    /// reload to pin with EESSI_SOFTWARE_SUBDIR_OVERRIDE; empty otherwise.
     override: []const u8 = "",
 };
 
+/// What `probeAccel` found.
 pub const AccelProbe = struct {
+    /// `ok`: an accelerator subdirectory; `none`: no accelerator; `error`:
+    /// the detection could not be run or printed something else.
     status: enum { ok, none, @"error" },
+    /// The accelerator subdirectory, such as accel/nvidia/cc90.
     subdir: []const u8 = "",
+    /// Why the status is `error`.
     err: []const u8 = "",
 };
 
@@ -739,6 +795,11 @@ fn prepareCpuinfo(c: *Ctx, env: Map) PreparedCpu {
     return .{ .path = tmp, .cleanup = tmp, .child = child };
 }
 
+/// probe_cpu: this node's CPU target. Runs `eessi_archdetect.sh -a cpupath`
+/// from EESSI_INIT_PREFIX on the processors the task may use, drops the
+/// candidates whose -march needs waitpkg when a kept processor lacks it, and
+/// takes the first candidate with a directory
+/// `$EESSI_PREFIX/software/$EESSI_OS_TYPE/<candidate>/software`.
 pub fn probeCpu(c: *Ctx, env: Map) Stop!CpuProbe {
     const prefix = env.get("EESSI_PREFIX") orelse empty;
     const os_type = env.get("EESSI_OS_TYPE") orelse empty;
@@ -788,6 +849,9 @@ fn installed(c: *Ctx, prefix: []const u8, os_type: []const u8, items: []const []
     return "";
 }
 
+/// probe_accel: this node's accelerator subdirectory from
+/// `eessi_archdetect.sh accelpath`. A nonzero exit or empty output is no
+/// accelerator; other output must be one accel/nvidia/ccN or accel/amd/gfxN.
 pub fn probeAccel(c: *Ctx, env: Map) Stop!AccelProbe {
     const init = env.get("EESSI_INIT_PREFIX") orelse empty;
     if (!text.safeAbsolute(init)) return .{ .status = .@"error", .err = "EESSI_INIT_PREFIX is missing or unsafe" };
@@ -806,6 +870,8 @@ pub fn probeAccel(c: *Ctx, env: Map) Stop!AccelProbe {
     return .{ .status = .ok, .subdir = out };
 }
 
+/// lmod_invocable: whether LMOD_CMD can be run as given: not empty, not an
+/// option, no line break or NUL, and a regular file this user may execute.
 pub fn lmodInvocable(path: []const u8) bool {
     if (path.len == 0 or path[0] == '-' or text.hasLineBreakOrNul(path)) return false;
     if (!isFile(path)) return false;
@@ -829,6 +895,7 @@ fn privateDirectory(c: *Ctx, path: []const u8) ?[]const u8 {
     return c.arena.dupe(u8, real) catch null;
 }
 
+/// No directory the restore may work in; the reason is in `why`.
 pub const WorkError = error{Unavailable};
 
 /// restore_work_base: EESSI_ARCH_GUARD_WORKDIR when set (must be private),
@@ -912,9 +979,13 @@ fn rmtree(c: *Ctx, p: []const u8) void {
 /// RestoreResult. `ran` is false when the restore stopped before Lmod could
 /// answer: no workspace, no helper, or no usable reply from it.
 pub const Restore = struct {
+    /// The helper loaded every module.
     ok: bool,
+    /// The environment after the loads, when `ok`.
     env: ?Map = null,
+    /// The modules the helper names as not loading for this node.
     missing: []const []const u8 = &.{},
+    /// The first line of the helper's error, or why the restore did not run.
     err: []const u8 = "",
     ran: bool = true,
 };
@@ -1303,6 +1374,10 @@ fn nonEmpty(env: Map, k: []const u8) bool {
     return (env.get(k) orelse empty).len > 0;
 }
 
+/// decide: compare the loaded targets with this node's and, when they
+/// differ, reload the modules through the restore helper and return the
+/// delta. `shell` selects the --shell output, whose values may span lines.
+/// Returns error.Deadline or error.Terminated when the limit stops it.
 pub fn decide(c: *Ctx, env: Map, shell: bool) Stop!Outcome {
     if (c.limit) |l| try l.check();
     if (std.mem.eql(u8, env.get("EESSI_ARCH_GUARD") orelse empty, "0"))
@@ -1612,6 +1687,10 @@ test "a flock error other than would-block is an OSError, not a wait" {
     try std.testing.expectEqualStrings("[Errno 9] Bad file descriptor", os_failure);
 }
 
+/// cached_decide: `decide`, once per job step, node, user, output mode and
+/// cache key. The first task takes the lock and writes its outcome; the
+/// others wait for the lock and read it. Without SLURM_JOB_ID, or without a
+/// usable cache directory or lock file, every task decides on its own.
 pub fn cachedDecide(c: *Ctx, env: Map, shell: bool) Stop!Outcome {
     const p = cachePath(c, env, shell) orelse return decide(c, env, shell);
     const dirfd = fsx.openDir(fsx.cwd, p.dir, true) catch return decide(c, env, shell);

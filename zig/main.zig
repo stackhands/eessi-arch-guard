@@ -18,6 +18,8 @@ const cli = common.cli;
 const Allocator = std.mem.Allocator;
 const empty: []const u8 = "";
 
+/// The version `--version` prints first, `.version` of build.zig.zon. The
+/// Python guard's `__version__` and pyproject.toml name the same one.
 pub const version = build_options.version;
 const tool = "eessi-arch-guard";
 /// The Python guard's bare version, then this build (COMPAT.md).
@@ -104,6 +106,9 @@ pub fn oom() noreturn {
     emergencyExit("MemoryError", "out of memory");
 }
 
+/// A panic is an uncaught exception to the Python guard: the skip line
+/// "eessi-arch-guard: skipped, panic: MESSAGE", then exit 0, or 78 with
+/// --strict, so the task still starts.
 pub const panic = std.debug.FullPanic(struct {
     fn f(msg: []const u8, _: ?usize) noreturn {
         emergencyExit("panic", msg);
@@ -503,6 +508,10 @@ fn realMain(arena: Allocator, argv0: []const u8, argv: []const []const u8, envp:
     return 0;
 }
 
+/// Run the command line and return the exit status. Before anything can
+/// fail it notes whether this is local task 0 and whether --shell and
+/// --strict were given, and installs the crash handlers, so that a crash
+/// prints the skip line where that run would print it.
 pub fn main(init: std.process.Init.Minimal) u8 {
     emergency_announce = localTaskZero(init.environ.block.slice.ptr);
     var arena_state = std.heap.ArenaAllocator.init(std.heap.page_allocator);

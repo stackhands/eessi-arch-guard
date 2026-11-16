@@ -6,8 +6,21 @@ dist/
 build/
 .ruff_cache/
 .venv/
-docs/_build/
 docs/examples/_work/
 src/eessi-arch-guard.conf
 .zig-cache/
 zig-out/
+zig-pkg/
+
+# Documentation build (docs-plan template): generated, never committed.
+/docs/build/
+/docs/source/**/*.rst
+/docs/source/reference/api/
+/docs/source/**/*.png
+/docs/source/**/*.svg
+/docs/source/**/*.jpg
+/docs/source/**/*.webp
+!/docs/source/_static/**
+/docs/**/__pycache__/
+/.pixi/
+/.lycheecache

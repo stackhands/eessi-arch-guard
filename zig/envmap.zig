@@ -26,6 +26,8 @@ pub fn fromEnvp(arena: Allocator, envp: common.proc.Envp) Allocator.Error!Map {
     return m;
 }
 
+/// A copy of `m` allocated in `arena`; the names and values it points to are
+/// shared, not copied.
 pub fn clone(arena: Allocator, m: Map) Allocator.Error!Map {
     return m.clone(arena);
 }
@@ -94,6 +96,9 @@ fn eqlOpt(a: ?[]const u8, b: ?[]const u8) bool {
     return std.mem.eql(u8, a.?, b.?);
 }
 
+/// Why `render` refuses a delta: a name that is not a variable name, a prolog
+/// value with a newline, carriage return or NUL byte, or a prolog line longer
+/// than `text.prolog_line_max`.
 pub const RenderError = Allocator.Error || error{ UnsafeName, UnsafeValue, LineTooLong };
 
 /// The ValueError text the Python guard raised for each refusal.

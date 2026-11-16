@@ -250,12 +250,14 @@ def safe_rel_subdir(value: str) -> bool:
 
 
 def safe_absolute(path: str) -> bool:
+    """Absolute path: starts with ``/``, no newline, CR or NUL, no ``..`` segment."""
     if not path or not path.startswith("/") or any(c in path for c in "\n\r\0"):
         return False
     return all(part != ".." for part in path.split("/"))
 
 
 def strip_startup(env: Mapping[str, str]) -> Dict[str, str]:
+    """A copy of ``env`` without STARTUP_VARS, which make bash read a file or trace."""
     child = dict(env)
     for key in STARTUP_VARS:
         child.pop(key, None)
@@ -263,6 +265,11 @@ def strip_startup(env: Mapping[str, str]) -> Dict[str, str]:
 
 
 def value_emit_ok(value: str, multiline: bool) -> bool:
+    """Whether a value can be published.
+
+    A NUL byte never can; a newline or carriage return only when
+    ``multiline`` is true, for the quoted values of the shell output.
+    """
     if "\0" in value:
         return False
     if not multiline and ("\n" in value or "\r" in value):
@@ -390,6 +397,11 @@ def render_bytes(
 
 
 def parse_loaded_modules(env: Mapping[str, str]) -> LoadedModules:
+    """The EESSI module and the other modules of LOADEDMODULES, in order.
+
+    The error token is set instead when the list is empty, holds a name that
+    is not safe to pass to Lmod, or has no single ``EESSI/<version>`` entry.
+    """
     raw = env.get("LOADEDMODULES", "")
     names = [part for part in raw.split(":") if part]
     if not names:
@@ -404,6 +416,11 @@ def parse_loaded_modules(env: Mapping[str, str]) -> LoadedModules:
 
 
 def parse_cpu_line(stdout: str) -> Optional[List[str]]:
+    """The colon-separated candidates of the one line ``cpupath`` prints.
+
+    None when the output holds a NUL or another control character, is longer
+    than MAX_ARCH_STDOUT, or is not exactly one non-empty line.
+    """
     if "\0" in stdout or len(stdout) > MAX_ARCH_STDOUT:
         return None
     parts = [line for line in stdout.splitlines() if line != ""]
@@ -427,6 +444,7 @@ class DecisionLimit:
     """One deadline for the lock, both archdetect runs, and the restore helper."""
 
     def __init__(self, seconds: float) -> None:
+        """Start the deadline ``seconds`` from now; ``install`` takes SIGTERM."""
         self.seconds = seconds
         self.deadline = time.monotonic() + seconds
         self.child_pgid: Optional[int] = None
@@ -435,9 +453,15 @@ class DecisionLimit:
         self._previous = None
 
     def remaining(self) -> float:
+        """Seconds left before the deadline; zero or less once it has passed."""
         return self.deadline - time.monotonic()
 
     def check(self) -> None:
+        """Stop the decision after a SIGTERM or once no time is left.
+
+        Raises ``_Terminated`` or ``_Deadline``; neither while ``committing``,
+        when the result is being written to the cache.
+        """
         if self.committing:
             return
         if self.terminated:
@@ -446,9 +470,11 @@ class DecisionLimit:
             raise _Deadline()
 
     def install(self) -> None:
+        """Handle SIGTERM: note it and kill the running command's process group."""
         self._previous = signal.signal(signal.SIGTERM, self._handle)
 
     def restore(self) -> None:
+        """Put back the SIGTERM handler ``install`` replaced."""
         if self._previous is not None:
             signal.signal(signal.SIGTERM, self._previous)
             self._previous = None
@@ -466,9 +492,11 @@ class DecisionLimit:
             return
 
     def hold_signals(self) -> None:
+        """Block SIGTERM while a command starts, until ``child_pgid`` names it."""
         signal.pthread_sigmask(signal.SIG_BLOCK, {signal.SIGTERM})
 
     def release_signals(self) -> None:
+        """Unblock SIGTERM; one that arrived while it was held is handled now."""
         signal.pthread_sigmask(signal.SIG_UNBLOCK, {signal.SIGTERM})
 
 
@@ -913,6 +941,7 @@ def _prepare_cpuinfo(env: Mapping[str, str]) -> Tuple[str, Optional[str], Mappin
 
 
 def march_of(candidate: str) -> str:
+    """The compiler target of a CPU subdirectory: its last segment, ``-`` as ``_``."""
     leaf = candidate.rsplit("/", 1)[-1]
     return leaf.replace("-", "_")
 
@@ -1017,6 +1046,11 @@ def probe_accel(env: Mapping[str, str]) -> AccelProbe:
 
 
 def lmod_invocable(path: str) -> bool:
+    """Whether LMOD_CMD can be run as given.
+
+    Not empty, not an option, no line break or NUL, and a regular file this
+    user may execute.
+    """
     if not path or path.startswith("-") or any(c in path for c in "\n\r\0"):
         return False
     return os.path.isfile(path) and os.access(path, os.X_OK)
@@ -1091,6 +1125,12 @@ def restore_work_base(env: Mapping[str, str]) -> str:
 def source_exports(
     module_env: Mapping[str, str], script: bytes
 ) -> Tuple[Optional[Dict[str, str]], str]:
+    """Run the shell code Lmod printed and return the environment it leaves.
+
+    The code runs in bash from ``module_env``, without STARTUP_VARS, from a
+    private directory under the restore workspace. Returns None and the
+    error when it fails.
+    """
     base = restore_work_base(os.environ)
     tmp = tempfile.mkdtemp(prefix="eessi-arch-guard-", dir=base)
     try:
@@ -1117,6 +1157,10 @@ def source_exports(
 def run_lmod(
     module_env: Mapping[str, str], lmod_cmd: str, args: Sequence[str]
 ) -> subprocess.CompletedProcess:
+    """Run ``$LMOD_CMD bash ARGS`` from ``module_env`` without STARTUP_VARS.
+
+    Its stdout is the shell code that makes the change.
+    """
     return subprocess.run(
         [lmod_cmd, "bash", *args],
         capture_output=True,
@@ -1128,6 +1172,11 @@ def run_lmod(
 def apply_lmod(
     module_env: Mapping[str, str], lmod_cmd: str, args: Sequence[str]
 ) -> Tuple[Optional[Dict[str, str]], str]:
+    """The environment after one Lmod command, such as ``load R/4.4.2``.
+
+    Returns None and Lmod's stderr when the command fails, or None and the
+    error when its shell code does.
+    """
     proc = run_lmod(module_env, lmod_cmd, args)
     if proc.returncode != 0:
         return None, proc.stderr.decode("utf-8", "replace")
@@ -1241,6 +1290,10 @@ def do_restore(payload: Mapping[str, object]) -> Dict[str, object]:
 
 
 def restore_main() -> int:
+    """The ``--restore`` helper: a JSON request on stdin, the JSON result on stdout.
+
+    Returns 0; on an error it writes the reason to stderr and returns 1.
+    """
     try:
         payload = json.loads(sys.stdin.buffer.read().decode("utf-8"))
         sys.stdout.write(json.dumps(do_restore(payload)))
@@ -1253,6 +1306,12 @@ def restore_main() -> int:
 def call_restore(
     env: Mapping[str, str], eessi: str, modules: Sequence[str], pin: str = ""
 ) -> RestoreResult:
+    """Reload ``eessi`` and ``modules`` through the restore helper.
+
+    The helper is this file again with ``--restore``, run in a new private
+    workspace with a clean environment. ``pin`` is the CPU subdirectory the
+    loads after the purge are pinned to, empty for none.
+    """
     payload = {
         "v": 1,
         "env": _wire_map(env),
@@ -1532,6 +1591,11 @@ def gpu_scope_key(env: Mapping[str, str]) -> str:
 
 
 def cache_digest(env: Mapping[str, str]) -> str:
+    """The cache key in a cache file's name: 16 hex digits of a SHA-256.
+
+    The hash covers the KEY_FIELDS values, the task's processors and its
+    visible GPUs, joined by NUL bytes.
+    """
     parts = [env.get(key, "") for key in KEY_FIELDS]
     parts.append(task_scope_key(env))
     parts.append(gpu_scope_key(env))
@@ -1546,6 +1610,11 @@ def _safe_component(text: str) -> str:
 
 
 def cache_directory(env: Mapping[str, str]) -> Optional[str]:
+    """The directory for the decision cache, or None for no cache.
+
+    With ``--strict`` it is the private restore workspace; otherwise TMPDIR
+    when it is a safe absolute directory, else ``/tmp``.
+    """
     if _STRICT_MODE:
         try:
             return restore_work_base(env)
@@ -1733,6 +1802,12 @@ def cached_decide(
     accel_probe=probe_accel,
     restore=call_restore,
 ) -> Outcome:
+    """``decide`` once per job step, node, user, output mode and cache key.
+
+    The first task takes the lock and writes its outcome; the others wait for
+    the lock and read it. Without SLURM_JOB_ID, or without a usable cache
+    directory or lock file, every task decides on its own.
+    """
     path = cache_file_path(env, shell)
     if path is None or not hasattr(os, "O_NOFOLLOW"):
         return decide(env, shell, cpu_probe, accel_probe, restore)
@@ -1880,6 +1955,7 @@ def _config_untrusted(path: str) -> Optional[str]:
 
 
 def parse_config(text: str) -> Dict[str, str]:
+    """The settings of a configuration file given as text, as ``parse_config_bytes`` reads them."""
     settings, _bad = parse_config_bytes(text.encode("utf-8"))
     return settings
 
@@ -1911,6 +1987,7 @@ def parse_config_bytes(blob: bytes) -> Tuple[Dict[str, str], Tuple[str, ...]]:
 
 
 def config_chain(settings: Optional[Mapping[str, str]]) -> Optional[str]:
+    """The ``chain`` setting, or None when it is unset or empty."""
     if not settings:
         return None
     return settings.get("chain") or None
@@ -1947,6 +2024,11 @@ def site_config(script_path: str) -> Tuple[Optional[Dict[str, str]], Optional[st
 
 
 def run_chain(path: str, env: Mapping[str, str]) -> Tuple[int, bytes, bytes]:
+    """Run the chained prolog with no arguments and ``env``.
+
+    Returns its exit status, 1 when a signal ended it, its stdout and its
+    stderr.
+    """
     proc = subprocess.run(
         [path],
         stdout=subprocess.PIPE,

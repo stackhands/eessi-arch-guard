@@ -1,0 +1,126 @@
+#+TITLE: Configure the guard
+#+OPTIONS: toc:nil todo:nil num:nil author:nil title:nil
+#+STARTUP: content
+
+* Configure the guard
+
+Configure the guard when the compute nodes already run a =TaskProlog= of their own, or when its decision needs more or less than 60 seconds.
+Slurm starts a =TaskProlog= with no arguments, so these settings come from a configuration file owned by root, or from a wrapper the site owns.
+
+** Before you start
+
+- The guard installed on the compute nodes, as in [[file:install-the-prolog.org][Install the prolog]].
+- Root on the compute nodes, or on the image they boot.
+- The path of the site's existing task prolog, if there is one; this guide uses =/etc/slurm/task_prolog.site=, which prints =export SITE_PROLOG=1=.
+
+** Steps
+
+1. Choose where the settings go:
+
+   | Choice                 | Use it when                                                                          |
+   |------------------------+--------------------------------------------------------------------------------------|
+   | The configuration file | The guard can be the =TaskProlog= in =slurm.conf=, and runs the site's prolog first. |
+   | A wrapper              | The =TaskProlog= has to stay a script of the site's, which runs the guard last.      |
+
+2. For the configuration file, write =/etc/eessi-arch-guard.conf= on every compute node, owned by root and writable by no one else:
+
+   #+begin_src bash
+   printf '%s\n' 'chain = /etc/slurm/task_prolog.site' 'timeout = 60' | sudo tee /etc/eessi-arch-guard.conf
+   sudo chown root:root /etc/eessi-arch-guard.conf
+   sudo chmod 644 /etc/eessi-arch-guard.conf
+   #+end_src
+
+   =chain= runs first, as the job's user, with the task's environment; what it prints comes before the guard's lines, and when it exits with a status other than 0, the guard exits with that status and does not decide.
+   =timeout= is the limit of the decision in seconds.
+   [[file:../reference/configuration.org][The configuration file]] describes both keys.
+
+3. For a wrapper instead, write a file =task-prolog= that runs the site's prolog, stops on its failure, and then starts the guard:
+
+   #+begin_src sh
+   #!/bin/sh
+   /etc/slurm/task_prolog.site || exit $?
+   exec /usr/bin/python3 -I /usr/local/sbin/eessi-arch-guard
+   #+end_src
+
+   Keep the =|| exit $?=: in =if site; then exec guard; fi=, an =if= whose test fails has status 0, so a failed site prolog would look like success.
+   A wrapper can pass =--timeout SEC= to the guard as well.
+   Install it on every compute node, and set =TaskProlog=/usr/local/sbin/task-prolog= in =slurm.conf=:
+
+   #+begin_src bash
+   sudo install -m 755 task-prolog /usr/local/sbin/task-prolog
+   #+end_src
+
+** Check that it worked
+
+Run the prolog as Slurm would, with no arguments, in an environment that holds only =PATH=, and print its exit status:
+
+#+begin_src bash
+env -i PATH=/usr/bin:/bin /usr/local/sbin/eessi-arch-guard
+echo "exit $?"
+#+end_src
+
+#+begin_example
+export SITE_PROLOG=1
+exit 0
+#+end_example
+
+The site's prolog ran, and the guard printed nothing else and no warning: with the module environment of the European Environment for Scientific Software Installations (EESSI) not loaded, it has nothing to do.
+For a wrapper, run =/usr/local/sbin/task-prolog= the same way.
+
+=docs/examples/check_config.sh= in the repository runs each case of this guide on a copy of the guard in a temporary directory, =$WORK= in its output, with =sudo= for the files owned by root.
+For a configuration file whose first line is a comment holding the byte =0xff=, and which sets =chain= and =timeout = 15=, it shows:
+
+#+begin_example
+case: root-owned-chain
+comment_has_0xff: yes
+exit: 0
+--- stdout ---
+export SITE_PROLOG=1
+--- stderr ---
+(empty)
+#+end_example
+
+For a wrapper whose site prolog prints =export FROM_SITE=1=:
+
+#+begin_example
+case: wrapper
+command: $WORK/wrapper/wrapper.sh
+exit: 0
+--- stdout ---
+export FROM_SITE=1
+--- stderr ---
+(empty)
+#+end_example
+
+and when that site prolog writes =site-failed= to stderr and exits 9, the wrapper exits 9 without starting the guard:
+
+#+begin_example
+case: wrapper-site-fails
+command: $WORK/wrapper-fails/wrapper.sh
+exit: 9
+--- stdout ---
+(empty)
+--- stderr ---
+site-failed
+#+end_example
+
+** If it fails
+
+| Message                                                                                                      | Cause                                                                                                              | What to do                                                                         |
+|--------------------------------------------------------------------------------------------------------------+--------------------------------------------------------------------------------------------------------------------+------------------------------------------------------------------------------------|
+| =eessi-arch-guard: config ignored: /etc/eessi-arch-guard.conf is not owned by root and is ignored=           | The file belongs to another user.                                                                                  | =sudo chown root:root /etc/eessi-arch-guard.conf=                                  |
+| =eessi-arch-guard: config ignored: /etc/eessi-arch-guard.conf is writable by group or others and is ignored= | The mode has a group or other write bit, such as 664.                                                              | =sudo chmod 644 /etc/eessi-arch-guard.conf=                                        |
+| =eessi-arch-guard: config ignored: /etc/eessi-arch-guard.conf is a symlink and is ignored=                   | The path is a symbolic link, even to a file owned by root.                                                         | Put the file itself at the path.                                                   |
+| =eessi-arch-guard: config chain is not an absolute executable: /etc/slurm/task_prolog.site=                  | The =chain= path is relative, missing, or not executable.                                                          | Give the absolute path, and =sudo chmod 755= the script.                           |
+| =eessi-arch-guard: config timeout is not a positive number of seconds at most 9223372036.0=                  | =timeout= is 0, negative, or not a number; the guard uses 60 seconds and goes on.                                  | Write a number of seconds greater than 0.                                          |
+| =eessi-arch-guard: config value kept with its original bytes: KEY=                                           | The value of =KEY= is not UTF-8; it is kept as it is, and the other keys apply.                                    | Write the value in UTF-8.                                                          |
+| =eessi-arch-guard: skipped, OverflowError: timeout is too large= in the output of every job that loads EESSI | =timeout= is above 2147483.647, which the Python guard accepts and cannot wait for, a bug listed in [[file:../reference/compatibility.org][Compatibility]]. | Write a smaller =timeout=.                                                         |
+| The task does not start, with the site prolog's message                                                      | The site prolog exited with a status other than 0, which the guard returns, so Slurm ends the task.                | Correct the site prolog: without the guard, Slurm would end the task the same way. |
+
+The warnings go to stderr, which Slurm discards for a =TaskProlog=, so run the check above after every change.
+
+** Related
+
+- [[file:../reference/configuration.org][The configuration file]]
+- [[file:install-the-prolog.org][Install the prolog]]
+- [[file:read-a-failure.org][Correct a failed reload]], for the messages of the decision itself

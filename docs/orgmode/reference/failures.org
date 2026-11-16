@@ -1,0 +1,101 @@
+#+TITLE: Messages and markers
+#+OPTIONS: toc:nil todo:nil num:nil author:nil title:nil
+#+STARTUP: content
+
+* Messages and markers
+
+What eessi-arch-guard reports in each case: the marker it sets in the task's environment, the message it prints and its exit status.
+
+** Outcomes
+
+| Case                                                                                             | =EESSI_ARCH_GUARD_FAILED= | Output                                                                                                                   |
+|--------------------------------------------------------------------------------------------------+---------------------------+--------------------------------------------------------------------------------------------------------------------------|
+| =EESSI_ARCH_GUARD=0=                                                                             | unchanged                 | Nothing.                                                                                                                 |
+| =EESSI_SOFTWARE_SUBDIR= unset or empty                                                           | unchanged                 | Nothing: the module environment of the European Environment for Scientific Software Installations (EESSI) is not loaded. |
+| =EESSI_SOFTWARE_SUBDIR_OVERRIDE= or =EESSI_ARCHDETECT_OPTIONS_OVERRIDE= set                      | unchanged                 | Nothing: the detection is pinned.                                                                                        |
+| The node's CPU and accelerator targets are the loaded ones                                       | unchanged                 | Nothing. With =EESSI_ACCELERATOR_TARGET_OVERRIDE= set, only the CPU is compared.                                         |
+| The modules were loaded again                                                                    | removed                   | The reload's changes, =EESSI_ARCH_GUARD_RELOADED=WAS->NOW=, and the reload message.                                      |
+| No CPU candidate has a software directory                                                        | =WAS->no-software-dir=    | Its message; nothing with =EESSI_ARCH_GUARD_MISSING=ignore=.                                                             |
+| =eessi_archdetect.sh= cannot be run, fails for the CPU, or prints something that is not a target | =WAS->archdetect-failed=  | Its message.                                                                                                             |
+| A name in =LOADEDMODULES= is not a valid module name                                             | =WAS->unsafe-module-name= | Its message.                                                                                                             |
+| =LOADEDMODULES= is empty, or has no single =EESSI/VERSION= entry                                 | =WAS->restore-failed=     | Its message.                                                                                                             |
+| =LMOD_CMD= is not an executable                                                                  | =WAS->lmod-unavailable=   | Its message.                                                                                                             |
+| The reload could not run, or Lmod's result is not the node's target                              | =WAS->restore-failed=     | Its message, with the cause.                                                                                             |
+| A module does not load for the node's target                                                     | =WAS->NOW=                | Its message, with the modules that did not load.                                                                         |
+| A changed variable cannot be carried                                                             | =WAS->unsafe-environment= | Its message.                                                                                                             |
+| The time limit passed                                                                            | =SUBDIR->timeout=         | Its message. The command the decision was waiting for is killed.                                                         |
+| =SIGTERM= arrived during the decision                                                            | =SUBDIR->terminated=      | Its message, after the same kill.                                                                                        |
+| An unexpected exception                                                                          | unchanged                 | A skip line.                                                                                                             |
+
+- =WAS= and =NOW= are the target the modules were loaded for and the node's target, each =EESSI_SOFTWARE_SUBDIR= alone, or =CPU ACCEL= or =CPU no accel= when the accelerators differ.
+  =SUBDIR= is =EESSI_SOFTWARE_SUBDIR= alone.
+  A side that is empty or holds a line break reads =unrecognized=.
+- A failure changes nothing else in the environment.
+- The exit status is 0 in every case, and 78 with =--strict= for a failure, a time limit, a =SIGTERM= and an unexpected exception.
+- With =SLURM_JOB_ID= set, the outcome is stored for the other tasks of the step on the node, except a timeout, a =SIGTERM= and an unexpected exception.
+
+** Messages
+
+In prolog mode the message is a =print= line, which Slurm writes to the task's output, from the task whose =SLURM_LOCALID= is =0= or unset; with =--shell= it goes to stderr.
+It is one line of at most 500 characters, without control characters.
+
+| Message                                                                                                                                                                      | Marker                               |
+|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+--------------------------------------|
+| =eessi-arch-guard: reloaded modules for NOW (loaded for WAS)=                                                                                                                | =EESSI_ARCH_GUARD_RELOADED=WAS->NOW= |
+| =eessi-arch-guard: no EESSI software directory for this node under PREFIX (candidates CANDIDATES); modules were loaded for WAS; environment left as it was=                  | =no-software-dir=                    |
+| =eessi-arch-guard: archdetect failed (REASON); environment left as it was=                                                                                                   | =archdetect-failed=                  |
+| =eessi-arch-guard: a loaded module name is not safe to pass to Lmod; environment left as it was=                                                                             | =unsafe-module-name=                 |
+| =eessi-arch-guard: the loaded module list has no single EESSI/<version> entry; environment left as it was=                                                                   | =restore-failed=                     |
+| =eessi-arch-guard: LMOD_CMD is missing or not executable; this node is NOW, the modules were loaded for WAS; environment left as it was=                                     | =lmod-unavailable=                   |
+| =eessi-arch-guard: restore failed (CAUSE); environment left as it was=                                                                                                       | =restore-failed=                     |
+| =eessi-arch-guard: reload did not select this node's CPU target; environment left as it was=, and the same with =accelerator target=, =load the EESSI module= or =load NAME= | =restore-failed=                     |
+| =eessi-arch-guard: this node is NOW, the modules were loaded for WAS; not available for this target: NAMES; environment left as it was=                                      | =WAS->NOW=                           |
+| =eessi-arch-guard: this node is NOW, the modules were loaded for WAS; module load failed; environment left as it was=                                                        | =WAS->NOW=                           |
+| =eessi-arch-guard: reload produced a value this output mode cannot carry; environment left as it was=                                                                        | =unsafe-environment=                 |
+| =eessi-arch-guard: reload produced a prolog line past the Slurm 17.11 read; environment left as it was=                                                                      | =unsafe-environment=                 |
+| =eessi-arch-guard: decision exceeded the time limit; environment left as it was=                                                                                             | =timeout=                            |
+| =eessi-arch-guard: decision was terminated; environment left as it was=                                                                                                      | =terminated=                         |
+| =eessi-arch-guard: skipped, EXCEPTION: TEXT=                                                                                                                                 | none                                 |
+
+- =CANDIDATES= are the candidates =eessi_archdetect.sh= printed, separated by spaces.
+- =NAMES= are the modules that did not load, separated by spaces, followed by =(stopped after 32)= when the guard stopped at 32 of a longer list.
+  =module load failed= stands in for them when Lmod failed without naming one.
+
+=REASON= is one of:
+
+- =EESSI_PREFIX, EESSI_OS_TYPE, or EESSI_INIT_PREFIX is missing or unsafe=
+- =eessi_archdetect.sh is not available=
+- =could not run archdetect: ERROR=
+- the first line =eessi_archdetect.sh -a cpupath= wrote to stderr when it failed, or =exit N= when it wrote none
+- =cpupath output is not a single line=, =cpupath returned no candidates=, =cpupath returned an unsafe candidate=
+- =accelpath output is not an accelerator subdirectory=
+
+=CAUSE= is one of:
+
+- =restore workspace unavailable: EESSI_ARCH_GUARD_WORKDIR is not an existing private owned directory=
+- =restore workspace unavailable: strict mode needs an existing private job or state workspace=
+- =restore workspace unavailable: ERROR=, when its private directory cannot be created
+- =could not start restore helper: ERROR=
+- the helper's error on stderr, or =restore helper failed= when it wrote none
+- =restore helper returned invalid output=, =restore helper returned no environment=
+
+** Reasons on stderr
+
+With =EESSI_ARCH_GUARD_VERBOSE=1=, the guard writes the reason it did nothing to stderr, or the error of a reload whose modules did not load:
+
+| Reason                                                                              | Case                                                         |
+|-------------------------------------------------------------------------------------+--------------------------------------------------------------|
+| =EESSI_ARCH_GUARD=0=                                                                | The guard is off.                                            |
+| =EESSI is not loaded=                                                               | =EESSI_SOFTWARE_SUBDIR= is unset or empty.                   |
+| =EESSI_SOFTWARE_SUBDIR_OVERRIDE is set=, =EESSI_ARCHDETECT_OPTIONS_OVERRIDE is set= | The detection is pinned.                                     |
+| =no EESSI software directory (ignored)=                                             | =EESSI_ARCH_GUARD_MISSING=ignore= and no software directory. |
+| =target already matches this node=                                                  | The targets are the loaded ones.                             |
+| Lmod's error                                                                        | A module did not load.                                       |
+
+The warnings about the configuration file and the time limit are listed with [[file:configuration.org][The configuration file]] and [[file:cli.org][The eessi-arch-guard command]].
+
+** See also
+
+- [[file:../howto/read-a-failure.org][Correct a failed reload]], with the transcript of each case
+- [[file:environment.org][Environment variables]]
+- [[py:eessi_arch_guard.decide]] and [[py:eessi_arch_guard.Outcome]]

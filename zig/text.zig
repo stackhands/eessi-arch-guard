@@ -9,15 +9,30 @@ const Allocator = std.mem.Allocator;
 
 // Python's text handling, shared with the other tools through zig-common.
 const pytext = common.pytext;
+/// One character of a byte string as Python's UTF-8 decoder sees it: its
+/// code point, or null for a byte that is not valid UTF-8, and its length.
 pub const Char = pytext.Char;
+/// The next character of a byte string; an invalid byte is a character of
+/// its own, as surrogateescape decodes it.
 pub const nextChar = pytext.nextChar;
+/// bytes.decode("utf-8", "replace"): each ill-formed run becomes one U+FFFD.
 pub const decodeReplace = pytext.decodeReplace;
+/// str.isspace for the characters str.strip() removes.
 pub const pyWhitespace = pytext.pyWhitespace;
+/// str.strip(): the bytes without leading and trailing Unicode whitespace.
 pub const pyStrip = pytext.pyStrip;
+/// str.split() with no separator: the runs between Unicode whitespace.
 pub const pySplit = pytext.pySplit;
+/// shlex.quote: the value as it is when a shell reads it as one word,
+/// single-quoted otherwise.
 pub const shellQuote = pytext.shellQuote;
 
+/// MAX_MODULE_NAME: the longest module name the guard loads, in bytes.
 pub const max_module_name = 256;
+/// PROLOG_LINE_MAX: the longest line, newline included, the guard prints for
+/// slurmstepd. Slurm 17.11 reads 4094 bytes of a TaskProlog line and the
+/// rest as a line of its own, which a longer value could turn into another
+/// directive.
 pub const prolog_line_max = 4094;
 
 fn isAlnumU(c: u8) bool {
@@ -55,7 +70,7 @@ fn allDigits(s: []const u8) bool {
     return s.len > 0;
 }
 
-/// EESSI_MODULE_RE: ^EESSI/<segment>$
+/// EESSI_MODULE_RE: `^EESSI/<segment>$`
 pub fn eessiModule(s: []const u8) bool {
     return std.mem.startsWith(u8, s, "EESSI/") and modSegment(s["EESSI/".len..]);
 }
@@ -93,6 +108,7 @@ pub fn safeAbsolute(s: []const u8) bool {
     return true;
 }
 
+/// Whether `s` holds a newline, a carriage return or a NUL byte.
 pub fn hasLineBreakOrNul(s: []const u8) bool {
     return std.mem.findAny(u8, s, "\n\r\x00") != null;
 }
@@ -104,6 +120,9 @@ pub fn safeComponent(s: []const u8) bool {
     return true;
 }
 
+/// value_emit_ok: whether a value can be published. A NUL byte never can; a
+/// newline or carriage return only when `multiline` is set, for the quoted
+/// values of the shell output.
 pub fn valueEmitOk(v: []const u8, multiline: bool) bool {
     if (std.mem.findScalar(u8, v, 0) != null) return false;
     if (!multiline and std.mem.findAny(u8, v, "\n\r") != null) return false;
@@ -120,9 +139,16 @@ const never_emit = [_][]const u8{
     "PPID",
 };
 
+/// SOFT_DROP: the prompt variables a delta leaves out when their value cannot
+/// be published. Any other such value stops the reload; a prompt with a
+/// newline in it must not.
 pub const soft_drop = [_][]const u8{ "PS1", "PS2", "PS3", "PROMPT_COMMAND" };
+/// STARTUP_VARS: the variables that make bash read a file or trace, which
+/// `envmap.stripStartup` removes from the environment of the shells the
+/// guard starts.
 pub const startup_vars = [_][]const u8{ "BASH_ENV", "ENV", "SHELLOPTS", "BASHOPTS", "BASH_XTRACEFD", "PS4" };
 
+/// Whether `s` is one of the strings in `list`.
 pub fn inList(list: []const []const u8, s: []const u8) bool {
     for (list) |x| if (std.mem.eql(u8, x, s)) return true;
     return false;

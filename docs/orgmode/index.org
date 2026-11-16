@@ -1,0 +1,54 @@
+#+TITLE: eessi-arch-guard
+#+OPTIONS: toc:nil todo:nil num:nil author:nil title:nil
+#+STARTUP: content
+
+* eessi-arch-guard
+
+eessi-arch-guard is a Slurm =TaskProlog= that reloads a module stack of the European Environment for Scientific Software Installations (EESSI) when the task runs on a CPU or GPU other than the target recorded at =module load=.
+The EESSI module picks that target once, on the machine where it is loaded, and Slurm copies the choice into every job submitted from there.
+On the compute node, before the task's program starts, the guard asks EESSI's own detection which target fits the processors and GPUs the task can use; when that is another target, it loads the same modules again for this node and hands the changed environment to Slurm.
+A task on a node of the recorded type is left as it is, and a reload that cannot be made changes nothing and says why.
+The prolog is one Python file that needs only the standard library; a static Zig build of the same program is in the repository too.
+
+New here?
+[[file:tutorials/first-guarded-job.org][See the guard reload EESSI for another CPU]] runs the guard on one Linux machine, against a stand-in for EESSI loaded for another CPU, and ends with a reload, a run that changes nothing, and a reload that fails safely.
+
+| You want to                       | Read                                       |
+|-----------------------------------+--------------------------------------------|
+| learn by doing, start to finish   | [[file:tutorials/index.org][Tutorials]]    |
+| get one task done                 | [[file:howto/index.org][How-to guides]]    |
+| understand why it works this way  | [[file:explanation/index.org][Explanation]] |
+| look up a command, file or API    | [[file:reference/index.org][Reference]]    |
+
+#+begin_export rst
+.. toctree::
+   :hidden:
+   :caption: Tutorials
+
+   tutorials/index
+
+.. toctree::
+   :hidden:
+   :caption: How-to guides
+
+   howto/index
+
+.. toctree::
+   :hidden:
+   :caption: Explanation
+
+   explanation/index
+
+.. toctree::
+   :hidden:
+   :caption: Reference
+
+   reference/index
+
+.. toctree::
+   :hidden:
+   :caption: Project
+
+   contributing
+   changelog
+#+end_export

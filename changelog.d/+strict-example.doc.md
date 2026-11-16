@@ -1,0 +1,1 @@
+`docs/examples/strict_workspace.py` prints the `--strict --shell` failure that "Run the guard in a batch script" quotes, then checks that the reload runs once `~/.local/state/eessi-arch-guard` exists. The page shows its command, and CI's docs job runs it with the other examples, so every output block in the documentation comes from a script in the repository.

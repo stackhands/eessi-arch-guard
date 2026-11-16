@@ -1,0 +1,162 @@
+#+TITLE: See the guard reload EESSI for another CPU
+#+OPTIONS: toc:nil todo:nil num:nil author:nil title:nil
+#+STARTUP: content
+
+* See the guard reload EESSI for another CPU
+
+By the end of this tutorial you will have watched eessi-arch-guard find a module environment that was loaded for another CPU, load it again for the CPU it runs on, and stay silent once the two agree.
+You will also have seen what it does when a module has no build for that CPU.
+Everything runs on one Linux machine, as an ordinary user, from a checkout of the repository.
+A small stand-in for the European Environment for Scientific Software Installations (EESSI), the one the repository's tests use, takes the place of the real software stack, so you need no cluster, no Slurm and no EESSI.
+
+** What you will need
+
+- A Linux machine with =git=, =bash= and Python 3.9 or newer:
+
+  #+begin_src bash
+  python3 --version
+  #+end_src
+
+  #+begin_example
+  Python 3.12.3
+  #+end_example
+
+** Get the guard
+
+Clone the repository and check out the commit this tutorial was checked with:
+
+#+begin_src bash
+git clone https://github.com/stackhands/eessi-arch-guard.git
+cd eessi-arch-guard
+git checkout a418152
+#+end_src
+
+The guard is the single Python file =src/eessi_arch_guard.py=.
+Ask it for its version:
+
+#+begin_src bash
+python3 src/eessi_arch_guard.py --version
+#+end_src
+
+#+begin_example
+0.2.0
+#+end_example
+
+** Run it on a stack loaded for another CPU
+
+=docs/examples/walkthrough.py= sets up the stand-in and runs the guard the way Slurm runs a task prolog: with no arguments, and with the environment the task would start with.
+The stand-in holds software for two CPU types, =x86_64/amd/zen4= and =x86_64/amd/zen2=.
+The environment has the =EESSI= module and =R/4.4.2= loaded for zen4, as =module load= leaves them on a zen4 login node.
+The stand-in for EESSI's CPU detection says that this machine is a zen2:
+
+#+begin_src bash
+python3 docs/examples/walkthrough.py mismatch
+#+end_src
+
+#+begin_example
+case: mismatch
+loaded: x86_64/amd/zen4
+node cpuinfo: zen2
+command: python3 -I src/eessi_arch_guard.py
+exit: 0
+--- stdout ---
+export EBROOTR=$PREFIX/prefix/software/linux/x86_64/amd/zen2/software/R/4.4.2
+export EESSI_ACCEL_SUBDIR=
+export EESSI_ARCH_GUARD_RELOADED=x86_64/amd/zen4->x86_64/amd/zen2
+export EESSI_SOFTWARE_SUBDIR=x86_64/amd/zen2
+export MODULEPATH=$PREFIX/prefix/software/linux/x86_64/amd/zen2/modules/all
+export PATH=$PREFIX/prefix/software/linux/x86_64/amd/zen2/software/R/4.4.2/bin:$PREFIX/prefix/software/linux/x86_64/amd/zen2/bin:$PREFIX/bin:/usr/bin:/bin
+export _LMFILES_=
+export _ModuleTable001_=table-for-x86_64-amd-zen2
+print eessi-arch-guard: reloaded modules for x86_64/amd/zen2 (loaded for x86_64/amd/zen4)
+--- stderr ---
+(empty)
+#+end_example
+
+=$PREFIX= stands for the stand-in's directory, which the script creates under =docs/examples/_work=.
+The lines under =--- stdout ---= are what the guard printed, and they are written for Slurm:
+
+- The =print= line is a message.
+  In a job, Slurm writes it to the task's output.
+- Each =export= line sets one variable in the task's environment before the task starts.
+  =EESSI_SOFTWARE_SUBDIR=, =MODULEPATH=, =EBROOTR= and =PATH= now name the zen2 tree.
+- =EESSI_ARCH_GUARD_RELOADED= records the change, from the target the modules were loaded for to the one they are loaded for now.
+
+The guard printed only the variables that changed.
+It exited with status 0, so Slurm would go on to start the task.
+
+** Run it again on the corrected environment
+
+=again= applies those =export= lines to the environment, the way Slurm applies them before it starts the task, and runs the guard on the result:
+
+#+begin_src bash
+python3 docs/examples/walkthrough.py again
+#+end_src
+
+#+begin_example
+case: again
+command: python3 -I src/eessi_arch_guard.py
+exit: 0
+--- stdout ---
+(empty)
+--- stderr ---
+(empty)
+#+end_example
+
+The modules are now loaded for the CPU the guard detects, and when the two agree it prints nothing.
+
+** Watch a reload that cannot be made
+
+Run the guard on a stand-in where =R/4.4.2= exists only for zen4, again on a zen2:
+
+#+begin_src bash
+python3 docs/examples/failure_cases.py missing-module
+#+end_src
+
+#+begin_example
+case: missing-module
+command: python3 -I src/eessi_arch_guard.py
+exit: 0
+--- stdout ---
+export EESSI_ARCH_GUARD_FAILED=x86_64/amd/zen4->x86_64/amd/zen2
+print eessi-arch-guard: this node is x86_64/amd/zen2, the modules were loaded for x86_64/amd/zen4; not available for this target: R/4.4.2; environment left as it was
+--- stderr ---
+(empty)
+#+end_example
+
+The message names the module that has no build for this CPU.
+Nothing else in the environment changed: a task gets the whole reload or none of it.
+=EESSI_ARCH_GUARD_FAILED= records which change was needed, and the exit status is still 0, so the task would start with the environment it was submitted with.
+
+** Clean up
+
+Remove the stand-in:
+
+#+begin_src bash
+python3 docs/examples/walkthrough.py clean
+#+end_src
+
+#+begin_example
+case: clean
+removed: docs/examples/_work
+#+end_example
+
+** What just happened
+
+1. Loading the =EESSI= module chose a CPU target once, on the machine where it was loaded, and recorded it in =EESSI_SOFTWARE_SUBDIR=.
+   Every module loaded after it put paths from that target's tree into the environment.
+2. The guard asked EESSI's own detection, =eessi_archdetect.sh=, which target this machine is, and found zen2 where zen4 was recorded.
+3. It loaded the same modules again for zen2 in a separate process, with the Lmod that =LMOD_CMD= names, here the stand-in's, and printed the difference as lines Slurm applies before the task starts.
+4. On the second run the recorded target and the detected one agreed, so it printed nothing.
+5. When a module had no build for zen2, it changed nothing, set =EESSI_ARCH_GUARD_FAILED= and said which module was missing.
+
+[[file:../explanation/how-it-decides.org][How the guard decides]] gives the reasons for each step.
+
+** Next steps
+
+- [[file:../howto/install-the-prolog.org][Install the prolog]] on a cluster.
+- [[file:../howto/read-a-failure.org][Correct a failed reload]], for each message the guard can print.
+- [[file:../explanation/how-it-decides.org][How the guard decides]] what a node's target is.
+- [[file:../reference/cli.org][The eessi-arch-guard command]], for every option.
+
+Checked with Python 3.12.3 and eessi-arch-guard at commit a418152 on 2026-11-16.

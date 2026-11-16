@@ -1,0 +1,59 @@
+#+TITLE: The configuration file
+#+OPTIONS: toc:nil todo:nil num:nil author:nil title:nil
+#+STARTUP: content
+
+* The configuration file
+
+=eessi-arch-guard.conf= holds the settings a site gives the guard, which Slurm starts with no arguments.
+
+** Where it is read
+
+| Path                                                    | When                                                   |
+|---------------------------------------------------------+--------------------------------------------------------|
+| =/etc/eessi-arch-guard.conf=                            | First.                                                 |
+| =eessi-arch-guard.conf= in the directory of the program | Only when =/etc/eessi-arch-guard.conf= does not exist. |
+
+- The directory of the program is that of the path Python ran the file by, without following a symbolic link; a guard installed with =pip= reads the one beside the module in =site-packages=.
+  The Zig build differs when it is started through =PATH= by a symbolic link, as [[file:compatibility.org][Compatibility]] lists.
+- A symbolic link at =/etc/eessi-arch-guard.conf= that points nowhere counts as no file.
+- The first file that exists is the only one read, even when it is ignored.
+
+A file is used only when it is:
+
+| Check                           | Message on stderr when it fails                                                        |
+|---------------------------------+----------------------------------------------------------------------------------------|
+| not a symbolic link             | =eessi-arch-guard: config ignored: PATH is a symlink and is ignored=                   |
+| a regular file                  | =eessi-arch-guard: config ignored: PATH is not a regular file and is ignored=          |
+| owned by root                   | =eessi-arch-guard: config ignored: PATH is not owned by root and is ignored=           |
+| not writable by group or others | =eessi-arch-guard: config ignored: PATH is writable by group or others and is ignored= |
+| readable                        | =eessi-arch-guard: config ignored: ERROR=                                              |
+
+An ignored file is a warning, not a failure: the guard goes on with the defaults and exits as it would without the file.
+
+** Format
+
+#+begin_example
+# /etc/eessi-arch-guard.conf
+chain = /etc/slurm/task_prolog.site
+timeout = 60
+#+end_example
+
+- A line is =KEY = VALUE=, split at the first ===; spaces around the key and the value are removed.
+- A line that is empty, starts with =#= after its spaces, or has no === is skipped.
+- A key that is not UTF-8 is skipped.
+  A value that is not UTF-8 is kept as the bytes it holds, the other keys still apply, and =eessi-arch-guard: config value kept with its original bytes: KEY= goes to stderr.
+- A key given twice takes its last value.
+  Keys other than the two below are read and not used.
+
+** Keys
+
+| Key       | Default | Meaning                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+|-----------+---------+-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| =chain=   | none    | The absolute path of an executable that runs first, as the job's user, with the task's environment and no arguments, in prolog mode only. Its stdout comes before the guard's lines, its stderr goes to stderr unchanged, and a status other than 0 is the guard's exit status, with no decision. A path that is not absolute, holds a newline, carriage return or NUL, or is not an executable regular file gives =eessi-arch-guard: config chain is not an absolute executable: PATH= on stderr, and nothing is chained. An empty value is no chain. =--chain= replaces it. |
+| =timeout= | =60=    | The time limit of the decision in seconds, for prolog mode and =--shell= alike: a number greater than 0 and at most 9223372036.0. Another value gives =eessi-arch-guard: config timeout is not a positive number of seconds at most 9223372036.0= on stderr and keeps 60. Above 2147483.647 the Python guard fails every decision that runs a command, a bug [[file:compatibility.org][Compatibility]] lists. =--timeout= replaces it.                                                                                                                                                                    |
+
+** See also
+
+- [[file:../howto/configure.org][Configure the guard]], with the transcripts of each case
+- [[file:cli.org][The eessi-arch-guard command]]
+- [[py:eessi_arch_guard.site_config]] and [[py:eessi_arch_guard.parse_config_bytes]]

@@ -1,0 +1,25 @@
+// From module load on the login node to the task's first instruction.
+digraph reload {
+    graph [bgcolor="white", rankdir=TB, nodesep=0.5, ranksep=0.4, fontname="Helvetica"];
+    node [shape=box, style="rounded,filled", fillcolor="#f4f4f4", color="#555555", fontname="Helvetica", fontsize=11];
+    edge [color="#555555", fontname="Helvetica", fontsize=10];
+
+    load [label="login1: module load EESSI/2026.06 Example/1.0-GCCcore-15.2.0\nEESSI's detection runs once and picks x86_64/amd/zen4.\nEESSI_SOFTWARE_SUBDIR, MODULEPATH and EBROOTEXAMPLE\nnow name the zen4 tree."];
+    submit [label="sbatch: Slurm copies that environment into the job"];
+    prolog [label="An older node, before the task's program starts:\nslurmstepd runs the TaskProlog, eessi-arch-guard,\nas the user, with the task's environment"];
+    compare [shape=diamond, label="Is this node's target\nthe one recorded at load?", fillcolor="#ffffff"];
+    same [label="Same target:\nprints nothing"];
+    helper [label="Another target: a helper runs, with Lmod,\nmodule --force purge\nmodule load EESSI/2026.06\nmodule load Example/1.0-GCCcore-15.2.0"];
+    delta [label="The prolog prints the difference\nas export and unset lines, and a print line"];
+    failed [label="The reload could not be made safely:\nEESSI_ARCH_GUARD_FAILED and a print line;\nevery other variable stays as it was"];
+    start [label="slurmstepd applies the lines, then starts the program"];
+
+    load -> submit -> prolog -> compare;
+    compare -> same [label=" yes"];
+    compare -> helper [label=" no"];
+    helper -> delta [label=" it loaded"];
+    helper -> failed [label=" it did not"];
+    same -> start;
+    delta -> start;
+    failed -> start [label=" exit 0; 78 with --strict"];
+}
