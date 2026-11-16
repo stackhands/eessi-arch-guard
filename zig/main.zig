@@ -152,8 +152,16 @@ const Args = struct {
     timeout: ?[]const u8 = null,
 };
 
-/// parse_args: documented flags only; anything else is skipped. --chain and
-/// --timeout take the next word whatever it is, "" when there is none.
+/// _option_value: the word after argv[i.*], with i.* moved onto it, unless
+/// it starts with "-" and so is an option of its own; "" then, and when
+/// there is no word after it.
+fn optionValue(argv: []const []const u8, i: *usize) []const u8 {
+    if (i.* + 1 >= argv.len or std.mem.startsWith(u8, argv[i.* + 1], "-")) return "";
+    i.* += 1;
+    return argv[i.*];
+}
+
+/// parse_args: documented flags only; anything else is skipped.
 fn parseArgs(argv: []const []const u8) Args {
     var a: Args = .{};
     var i: usize = 0;
@@ -170,13 +178,11 @@ fn parseArgs(argv: []const []const u8) Args {
         } else if (std.mem.eql(u8, arg, "--version")) {
             a.version = true;
         } else if (std.mem.eql(u8, arg, "--chain")) {
-            i += 1;
-            a.chain = if (i < argv.len) argv[i] else "";
+            a.chain = optionValue(argv, &i);
         } else if (std.mem.startsWith(u8, arg, "--chain=")) {
             a.chain = arg["--chain=".len..];
         } else if (std.mem.eql(u8, arg, "--timeout")) {
-            i += 1;
-            a.timeout = if (i < argv.len) argv[i] else "";
+            a.timeout = optionValue(argv, &i);
         } else if (std.mem.startsWith(u8, arg, "--timeout=")) {
             a.timeout = arg["--timeout=".len..];
         }
@@ -593,11 +599,18 @@ test {
 
 test "parseArgs" {
     const a = parseArgs(&.{ "--shell", "--chain", "--strict", "--timeout=5", "x" });
-    try std.testing.expect(a.shell and !a.strict);
-    try std.testing.expectEqualStrings("--strict", a.chain.?);
+    try std.testing.expect(a.shell and a.strict);
+    try std.testing.expectEqualStrings("", a.chain.?);
     try std.testing.expectEqualStrings("5", a.timeout.?);
     const b = parseArgs(&.{"--timeout"});
     try std.testing.expectEqualStrings("", b.timeout.?);
+    const c = parseArgs(&.{ "--timeout", "-h", "--chain", "/bin/true", "--chain=-x" });
+    try std.testing.expect(c.help);
+    try std.testing.expectEqualStrings("", c.timeout.?);
+    try std.testing.expectEqualStrings("-x", c.chain.?);
+    const d = parseArgs(&.{ "--chain", "", "--timeout", "7" });
+    try std.testing.expectEqualStrings("", d.chain.?);
+    try std.testing.expectEqualStrings("7", d.timeout.?);
 }
 
 test "localTaskZero reads the first SLURM_LOCALID" {

@@ -483,6 +483,21 @@ class IntegrationTests(unittest.TestCase):
         self.assertTrue(printed)
         self.assertEqual(harness.log_lines(self.site.log), [])
 
+    def test_an_option_is_not_the_value_of_chain_or_timeout(self):
+        # A next word that starts with "-" is an option of its own, and the
+        # value is empty: --strict after --chain or --timeout still counts.
+        env = self._cpu_env(ZEN4, "zen2")
+        self.site.write_cpuinfo("zen2", fail=True)
+        for option, warning in (
+            ("--chain", "--chain is not an absolute executable"),
+            ("--timeout", "--timeout is not a positive number of seconds at most 2147483.647"),
+        ):
+            proc = harness.run_guard(env, [option, "--strict"])
+            changes, _printed = _assert_prolog(proc, code=guard.STRICT_FAILURE_EXIT)
+            self.assertIn("archdetect-failed", changes["EESSI_ARCH_GUARD_FAILED"])
+            self.assertEqual(proc.stderr, "eessi-arch-guard: %s\n" % warning)
+        self.assertEqual(harness.log_lines(self.site.log), [])
+
     def test_first_candidate_with_a_software_directory(self):
         # Drop zen4's tree so the node's best match cannot be used.
         shutil.rmtree(os.path.join(self.site.prefix, "software", "linux", ZEN4))

@@ -2058,6 +2058,17 @@ class Args(NamedTuple):
     strict: bool = False
 
 
+def _option_value(argv: Sequence[str], index: int) -> Tuple[str, int]:
+    """The value of the option at ``argv[index]``, and the index of its last word.
+
+    The value is the next word, unless that starts with ``-`` and so is an
+    option of its own; it is empty then, and when there is no next word.
+    """
+    if index + 1 < len(argv) and not argv[index + 1].startswith("-"):
+        return argv[index + 1], index + 1
+    return "", index
+
+
 def parse_args(argv: Sequence[str]) -> Args:
     """Parse the prolog argv. Flags other than the documented ones are skipped."""
     shell = restore = help_ = version = strict = False
@@ -2077,13 +2088,11 @@ def parse_args(argv: Sequence[str]) -> Args:
         elif arg == "--version":
             version = True
         elif arg == "--chain":
-            index += 1
-            chain = argv[index] if index < len(argv) else ""
+            chain, index = _option_value(argv, index)
         elif arg.startswith("--chain="):
             chain = arg.split("=", 1)[1]
         elif arg == "--timeout":
-            index += 1
-            timeout = argv[index] if index < len(argv) else ""
+            timeout, index = _option_value(argv, index)
         elif arg.startswith("--timeout="):
             timeout = arg.split("=", 1)[1]
         index += 1

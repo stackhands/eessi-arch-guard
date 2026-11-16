@@ -607,6 +607,16 @@ class UnitTests:
         assert guard.parse_args(["--timeout=8"]).timeout == "8"
         assert guard.parse_args(["--version"]).timeout is None
 
+    def test_an_option_is_not_the_value_of_another(self):
+        args = guard.parse_args(["--shell", "--chain", "--strict", "--timeout=5", "x"])
+        assert args.shell and args.strict
+        assert args.chain == "" and args.timeout == "5"
+        assert guard.parse_args(["--timeout"]).timeout == ""
+        args = guard.parse_args(["--timeout", "-h", "--chain", "/bin/true", "--chain=-x"])
+        assert args.help and args.timeout == "" and args.chain == "-x"
+        args = guard.parse_args(["--chain", "", "--timeout", "7"])
+        assert args.chain == "" and args.timeout == "7"
+
     def test_signal_while_a_child_starts_still_kills_it(self):
         limit = guard.DecisionLimit(30)
         limit.install()

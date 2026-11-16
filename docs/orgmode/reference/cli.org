@@ -48,9 +48,10 @@ Slurm starts a =TaskProlog= with no arguments at all.
 | =--version=                      | Print the version on stdout and exit 0.                                                                                                                                                                                                                                                                                                                                                                                        |
 
 - =--restore= comes first, then =--help=, then =--version=; any of them replaces the decision.
-- The value of =--chain= and =--timeout= is the next argument, whatever it is, and empty when there is none.
+- The value of =--chain= and =--timeout= is the next argument, and empty when there is none.
+  An argument that starts with =-= is not taken as the value but read as an option of its own, so =--chain --strict= is a strict run with an empty =--chain=, which is refused.
+  =--chain=PATH= and =--timeout=SEC= take the rest of the argument as it is.
   An option given twice takes its last value.
-- =--chain --strict= takes =--strict= as the path, a bug [[file:compatibility.org][Compatibility]] lists under the bugs both builds share.
 
 ** Environment
 

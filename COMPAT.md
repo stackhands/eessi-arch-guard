@@ -16,13 +16,13 @@ Slurm runs the file as `TaskProlog` with no arguments, so the argument-less path
 | `--restore` | none | off | Helper mode: read one JSON request on stdin, write one JSON object on stdout. Checked before `--help` and `--version`. | parse L1694-1695; dispatch L1742-1743; `restore_main` L957-964 |
 | `-h`, `--help` | none | off | Print `HELP` to stdout, exit 0. | parse L1696-1697; L1744-1746; text L141-154 |
 | `--version` | none | off | Print `0.2.0` plus newline to stdout, exit 0. | parse L1698-1699; L1747-1749 |
-| `--chain PATH` | Next argv element is consumed unconditionally as the value, even if it starts with `-`. A missing value yields `""`. | none (falls back to config key `chain`) | Run PATH as a prolog first (prolog mode only). An explicit value, even invalid or empty, suppresses the config `chain`. | parse L1700-1702; use L1759-1771 |
+| `--chain PATH` | The next argv element is the value, unless it starts with `-`: it is then parsed as an option of its own, and the value is `""`, as when there is no next element (`_option_value`). | none (falls back to config key `chain`) | Run PATH as a prolog first (prolog mode only). An explicit value, even invalid or empty, suppresses the config `chain`. | parse L1700-1702; use L1759-1771 |
 | `--chain=PATH` | Value is everything after the first `=`. | as above | Same. | L1703-1704 |
-| `--timeout SEC` | Next argv element consumed unconditionally; missing yields `""`. Value parsed as a float. | 60 s | Overrides config key `timeout`. Invalid value: warning on stderr, previous value kept. | parse L1705-1707; `parse_timeout` L1513-1521; `resolve_timeout` L1524-1550; default L115 |
+| `--timeout SEC` | As `--chain PATH`: the next argv element unless it starts with `-`, else `""`. Value parsed as a float. | 60 s | Overrides config key `timeout`. Invalid value: warning on stderr, previous value kept. | parse L1705-1707; `parse_timeout` L1513-1521; `resolve_timeout` L1524-1550; default L115 |
 | `--timeout=SEC` | As `--chain=`. | as above | Same. | L1708-1709 |
 | any other argv element | ignored silently (positional words, unknown flags, `--shell=x`, abbreviations). | n/a | No error, no effect. | docstring L1683; fall-through L1710 |
 | later duplicate | `--chain` and `--timeout`: last occurrence wins. Booleans are idempotent. | n/a | n/a | L1700-1709 |
-| strict detection in wrapper | `main` sets the global strict flag by exact membership `"--strict" in argv` over the raw argv, independent of `parse_args`. `--chain --strict` therefore leaves `args.strict` False but the strict workspace policy True. | n/a | n/a | L1812 |
+| strict detection in wrapper | `main` sets the global strict flag by exact membership `"--strict" in argv` over the raw argv, independent of `parse_args`. As no option takes a word that starts with `-` as its value, the two agree: `--chain --strict` is strict for both. | n/a | n/a | L1812 |
 | outer-handler shell detection | `main`'s exception handler picks the stderr/stdout channel with `"--shell" in argv` (raw membership). | n/a | n/a | L1816 |
 | `--timeout` numeric grammar | `float(text)`: accepts leading/trailing whitespace, `+`, exponents, `_` digit separators, `inf`, `nan` (the last two rejected afterwards). Accepted only when finite-comparable, `value > 0` and `value <= TIMEOUT_MAX`, 2147483.647: the longest wait for a command `subprocess` can make, as `poll()` takes a C `int` of milliseconds. | n/a | Rejected value gives the `--timeout is not a positive number...` warning. | L1513-1521, L118 |
 | help text exact | See section 5 row "HELP". | n/a | n/a | L141-154 |
@@ -337,9 +337,3 @@ The rows above describe the Python guard at 0.2.0. The Zig build in `zig/` keeps
 | a timeout written with non-ASCII digits, such as `５` | accepted, as `float()` takes any Unicode decimal digit | refused with the timeout warning; the default is kept |
 | a cache file with a leading-zero number, NaN, Infinity, or nesting deeper than 32 | `NaN` and `Infinity` accepted, the rest refused | all refused, and the decision is made again |
 | a cpuinfo line whose name is `flags` only under Unicode case folding (`flagſ`) | a flags line | not a flags line |
-
-## Bugs both builds share
-
-| case | both builds |
-|---|---|
-| `--chain --strict` | `--chain` takes `--strict` as its path and refuses it with `eessi-arch-guard: --chain is not an absolute executable`, so the run is not strict: a failed decision, and an unexpected exception in the decision, exit 0. The rest of the program reads `--strict` from the raw argv: the restore and the cache use the strict workspace, so without a private `TMPDIR` or state directory a reload fails with `restore failed (restore workspace unavailable: strict mode needs an existing private job or state workspace)`; the helper gets `--strict`; and an error the decision's handler does not catch (in the Zig build: out of memory, a panic, a crash signal) exits 78. |
