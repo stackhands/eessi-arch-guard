@@ -34,7 +34,7 @@ so a site sets this in a wrapper or in a root-owned eessi-arch-guard.conf.
 | `-h`, `--help` | Print the usage text and exit 0. |
 | `--version` | Print the version and exit 0. The Zig build follows it with its target, build mode, Zig version and the commit given with `-Dcommit` (`unknown` without it), in parentheses. |
 
-Flags other than these are skipped. The process exits 0 unless a chained prolog exits non-zero, or `--restore` hits an exception (that path exits 1 and writes the reason to stderr). The TaskProlog path catches exceptions and exits 0.
+Flags other than these are skipped. The process exits 0 unless `--strict` is given and the decision fails or raises (exit 78, see below), a chained prolog exits non-zero, or `--restore` hits an exception (that path exits 1 and writes the reason to stderr). Without `--strict`, the TaskProlog path catches exceptions and exits 0.
 
 `--restore` is the helper described in [Concepts](../topics/concepts.md). The JSON request has keys `v` (1), `env`, `eessi`, `modules`, and `lmod`. Names and values are the Latin-1 wire form from {py:func}`eessi_arch_guard.to_wire`.
 
