@@ -610,6 +610,44 @@ class IntegrationTests(unittest.TestCase):
         finally:
             conf.unlink(missing_ok=True)
 
+    def test_config_beside_a_link_found_through_path(self):
+        # Python's __file__ is the path execve was given, which a PATH search
+        # makes the link it found: the config beside the link is the one
+        # read, made absolute and normalized as os.path.abspath does.
+        target_dir = os.path.join(self.site.root, "target")
+        link_dir = os.path.join(self.site.root, "link")
+        os.makedirs(target_dir)
+        os.makedirs(link_dir)
+        program = os.path.join(target_dir, "guard")
+        if harness.TOOL_BIN:
+            shutil.copy(harness.PROGRAM, program)
+        else:
+            body = harness.GUARD.read_text(encoding="utf-8").split("\n", 1)[1]
+            with open(program, "w", encoding="utf-8") as handle:
+                handle.write("#!%s -I\n%s" % (sys.executable, body))
+        os.chmod(program, 0o755)
+        os.symlink(program, os.path.join(link_dir, "eessi-arch-guard"))
+        for directory in (target_dir, link_dir):
+            conf = os.path.join(directory, "eessi-arch-guard.conf")
+            with open(conf, "w", encoding="utf-8") as handle:
+                handle.write("timeout = 5\n")
+        expected = (
+            "eessi-arch-guard: config ignored: %s is not owned by root and is ignored\n"
+            % os.path.join(link_dir, "eessi-arch-guard.conf")
+        )
+        for entry in (link_dir, "./link"):
+            proc = subprocess.run(
+                ["eessi-arch-guard", "--shell"],
+                capture_output=True,
+                text=True,
+                env={"PATH": entry + ":/usr/bin:/bin", "LC_ALL": "C"},
+                cwd=self.site.root,
+                check=False,
+            )
+            self.assertEqual(proc.returncode, 0, (entry, proc.stderr))
+            self.assertEqual(proc.stdout, "", entry)
+            self.assertEqual(proc.stderr, expected, entry)
+
     def test_latin1_locale_keeps_bytes_through_the_restore(self):
         parent = os.path.join(tempfile.gettempdir(), "caf\udce9-eessi-arch-guard")
         os.makedirs(parent, exist_ok=True)

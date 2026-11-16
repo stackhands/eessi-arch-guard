@@ -347,8 +347,8 @@ fn exists(path: []const u8) bool {
 /// site_config: /etc/eessi-arch-guard.conf, else the file beside the
 /// program as it was invoked; the first that exists decides.
 fn siteConfig(arena: Allocator, invoked: []const u8) Config {
-    const beside = std.fs.path.join(arena, &.{ std.fs.path.dirname(invoked) orelse "/", "eessi-arch-guard.conf" }) catch return .{};
-    for ([_][]const u8{ "/etc/eessi-arch-guard.conf", beside }) |path| {
+    const beside = configBeside(arena, invoked) catch oom();
+    for ([_][]const u8{ "/etc/" ++ config_name, beside }) |path| {
         if (!exists(path)) continue;
         if (configUntrusted(arena, path)) |reason|
             return .{ .warning = arena.print("eessi-arch-guard: config ignored: {s}", .{reason}) catch null };
@@ -404,16 +404,74 @@ fn writeStdout(chain_out: []const u8, body: []const u8) void {
     cli.put(1, body);
 }
 
-/// The path this program was started as, for the config beside it: argv[0]
-/// when it names a path, else /proc/self/exe.
+/// The path this program was started by, for the config beside it: the
+/// path execve was given, which the kernel passes as AT_EXECFN and gives a
+/// script's interpreter, where the Python guard's __file__ comes from. A
+/// PATH search makes it the link the search found, wherever that points.
+/// Without AT_EXECFN, argv[0] when it names a path, else /proc/self/exe.
 fn invokedPath(arena: Allocator, argv0: []const u8) []const u8 {
-    if (std.mem.findScalar(u8, argv0, '/') != null) {
-        if (argv0[0] == '/') return argv0;
-        var rb: [sys.path_max]u8 = undefined;
-        const cwd = fsx.realpath(fsx.cwd, ".", &rb) catch return argv0;
-        return std.fs.path.join(arena, &.{ cwd, argv0 }) catch argv0;
-    }
+    const execfn = linux.getauxval(std.elf.AT.EXECFN);
+    if (execfn != 0) return std.mem.span(@as([*:0]const u8, @ptrFromInt(execfn)));
+    if (std.mem.findScalar(u8, argv0, '/') != null) return argv0;
     return selfExe(arena);
+}
+
+/// posixpath.normpath: "." parts and repeated slashes dropped, and each
+/// ".." taking off the part before it, without following symbolic links.
+/// One or two leading slashes stay; three or more become one.
+fn normPath(gpa: Allocator, path: []const u8) Allocator.Error![]u8 {
+    const slashes: usize = if (!std.mem.startsWith(u8, path, "/"))
+        0
+    else if (std.mem.startsWith(u8, path, "//") and !std.mem.startsWith(u8, path, "///"))
+        2
+    else
+        1;
+    var parts: std.ArrayList([]const u8) = .empty;
+    defer parts.deinit(gpa);
+    var it = std.mem.splitScalar(u8, path, '/');
+    while (it.next()) |part| {
+        if (part.len == 0 or std.mem.eql(u8, part, ".")) continue;
+        const after_up = parts.items.len > 0 and std.mem.eql(u8, parts.items[parts.items.len - 1], "..");
+        if (!std.mem.eql(u8, part, "..") or (slashes == 0 and parts.items.len == 0) or after_up) {
+            try parts.append(gpa, part);
+        } else {
+            _ = parts.pop();
+        }
+    }
+    var out: std.ArrayList(u8) = .empty;
+    errdefer out.deinit(gpa);
+    try out.appendNTimes(gpa, '/', slashes);
+    for (parts.items, 0..) |part, i| {
+        if (i > 0) try out.append(gpa, '/');
+        try out.appendSlice(gpa, part);
+    }
+    if (out.items.len == 0) try out.append(gpa, '.');
+    return out.toOwnedSlice(gpa);
+}
+
+/// os.path.abspath of the Python guard's __file__: Python's start-up puts
+/// a relative script path after the working directory and a "/", even when
+/// that directory is "/" itself, and abspath normalizes the result.
+fn absPath(gpa: Allocator, path: []const u8) Allocator.Error![]u8 {
+    if (std.mem.startsWith(u8, path, "/")) return normPath(gpa, path);
+    var buf: [sys.path_max]u8 = undefined;
+    const cwd = fsx.realpath(fsx.cwd, ".", &buf) catch return normPath(gpa, path);
+    const joined = try std.mem.concat(gpa, u8, &.{ cwd, "/", path });
+    defer gpa.free(joined);
+    return normPath(gpa, joined);
+}
+
+const config_name = "eessi-arch-guard.conf";
+
+/// site_config's second candidate, os.path.join(os.path.dirname(
+/// os.path.abspath(invoked)), "eessi-arch-guard.conf").
+fn configBeside(gpa: Allocator, invoked: []const u8) Allocator.Error![]u8 {
+    const abs = try absPath(gpa, invoked);
+    defer gpa.free(abs);
+    const cut = std.mem.findScalarLast(u8, abs, '/') orelse return gpa.dupe(u8, config_name);
+    var head: []const u8 = abs[0 .. cut + 1];
+    if (std.mem.findNone(u8, head, "/") != null) head = std.mem.trimEnd(u8, head, "/");
+    return std.mem.concat(gpa, u8, &.{ head, if (std.mem.endsWith(u8, head, "/")) "" else "/", config_name });
 }
 
 fn selfExe(arena: Allocator) []const u8 {
@@ -583,4 +641,43 @@ test "parseConfigBytes keeps other keys after a bad value" {
     try std.testing.expectEqualStrings("/bin/true", s.get("chain").?);
     try std.testing.expectEqualStrings("30", s.get("timeout").?);
     try std.testing.expectEqual(@as(usize, 1), bad.items.len);
+}
+
+fn expectNormPath(gpa: Allocator, path: []const u8, want: []const u8) !void {
+    const got = try normPath(gpa, path);
+    defer gpa.free(got);
+    try std.testing.expectEqualStrings(want, got);
+}
+
+test "normPath follows posixpath.normpath" {
+    const cases = [_][2][]const u8{
+        .{ "", "." },               .{ "/", "/" },             .{ "//", "//" },
+        .{ "///", "/" },            .{ "//a/b", "//a/b" },     .{ "///a//b/", "/a/b" },
+        .{ "/a/./b/../c", "/a/c" }, .{ "/..", "/" },           .{ "/../a", "/a" },
+        .{ "a/../..", ".." },       .{ "../a/..", ".." },      .{ "./", "." },
+        .{ "a/b/../../..", ".." },  .{ "/a/b/../../..", "/" }, .{ "//./x/../y", "//y" },
+        .{ "a//b/./c/", "a/b/c" },
+    };
+    for (cases) |c| try expectNormPath(std.testing.allocator, c[0], c[1]);
+    try std.testing.checkAllAllocationFailures(std.testing.allocator, expectNormPath, .{ "/a/./b/../c", "/a/c" });
+}
+
+fn expectConfigBeside(gpa: Allocator, invoked: []const u8, want: []const u8) !void {
+    const got = try configBeside(gpa, invoked);
+    defer gpa.free(got);
+    try std.testing.expectEqualStrings(want, got);
+}
+
+test "configBeside is the config in the directory of the normalized path" {
+    const t = std.testing.allocator;
+    try expectConfigBeside(t, "/usr/local/bin/eessi-arch-guard", "/usr/local/bin/eessi-arch-guard.conf");
+    try expectConfigBeside(t, "/eessi-arch-guard", "/eessi-arch-guard.conf");
+    try expectConfigBeside(t, "//eessi-arch-guard", "//eessi-arch-guard.conf");
+    try expectConfigBeside(t, "/opt/./x/../bin//eessi-arch-guard", "/opt/bin/eessi-arch-guard.conf");
+    var buf: [sys.path_max]u8 = undefined;
+    const cwd = try fsx.realpath(fsx.cwd, ".", &buf);
+    const want = try std.mem.concat(t, u8, &.{ cwd, "/link/eessi-arch-guard.conf" });
+    defer t.free(want);
+    try expectConfigBeside(t, "./link/eessi-arch-guard", want);
+    try std.testing.checkAllAllocationFailures(t, expectConfigBeside, .{ "link/../link/eessi-arch-guard", want });
 }

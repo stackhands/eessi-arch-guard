@@ -13,8 +13,8 @@
 | =/etc/eessi-arch-guard.conf=                            | First.                                                 |
 | =eessi-arch-guard.conf= in the directory of the program | Only when =/etc/eessi-arch-guard.conf= does not exist. |
 
-- The directory of the program is that of the path Python ran the file by, without following a symbolic link; a guard installed with =pip= reads the one beside the module in =site-packages=.
-  The Zig build differs when it is started through =PATH= by a symbolic link, as [[file:compatibility.org][Compatibility]] lists.
+- The directory of the program is that of the path Python ran the file by, or the Zig build was started by, without following a symbolic link: started by name through =PATH=, the directory in which =PATH= found it.
+  A guard installed with =pip= reads the one beside the module in =site-packages=.
 - A symbolic link at =/etc/eessi-arch-guard.conf= that points nowhere counts as no file.
 - The first file that exists is the only one read, even when it is ignored.
 
