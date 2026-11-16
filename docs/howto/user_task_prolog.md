@@ -18,8 +18,8 @@ The file's own shebang, `#!/usr/bin/python3 -I`, starts it.
 
 ## For the batch script itself
 
-`sbatch` has no task prolog.
-The commands in a batch script run in the batch step, which runs no task prolog; `srun` steps do.
+`sbatch` has no task prolog option, and `SLURM_TASK_PROLOG` covers `srun` steps only.
+The commands in a batch script run in the batch step, which gets a site `TaskProlog` from `slurm.conf` but no per-job prolog (checked on Slurm 23.11.4).
 At the top of the script, use the [shell mode](shell_batch.md):
 
 ```bash

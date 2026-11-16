@@ -31,7 +31,7 @@ from typing import Dict, List, Mapping, NamedTuple, Optional, Sequence, Tuple
 
 __version__ = "0.2.0"
 
-# ns-043 cache contract. EESSI_ARCH_GUARD is absent on purpose.
+# The cache key. EESSI_ARCH_GUARD is absent on purpose.
 KEY_FIELDS = (
     "EESSI_SOFTWARE_SUBDIR",
     "EESSI_ACCEL_SUBDIR",

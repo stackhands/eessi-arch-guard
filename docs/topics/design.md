@@ -12,7 +12,7 @@ The repository file `DESIGN.md` is the design record. This page is the part a us
 
 ## What was checked in Slurm
 
-Checked on Slurm `master` `src/slurmd/slurmstepd/task.c` (public source) and, separately, on Ubuntu's slurm-wlm 23.11.4 started by hand in one VM. That VM did run this prolog for both an `srun` step and a batch step. The site's Slurm version is open-003, below. Master behaving this way is evidence about the public source.
+Checked on Slurm `master` `src/slurmd/slurmstepd/task.c` (public source) and, separately, on Ubuntu's slurm-wlm 23.11.4 started by hand in one VM. That VM did run this prolog for both an `srun` step and a batch step. The site's Slurm version is not known here; see Out of scope, below. Master behaving this way is evidence about the public source.
 
 * `exec_task` calls the configured TaskProlog with no `!step->batch` guard. The batch step is included. The `!step->batch` checks in that function are for the switch plugin and MPI.
 * The prolog is started with `SLURM_SCRIPT_CONTEXT=prolog_task`.
@@ -20,14 +20,14 @@ Checked on Slurm `master` `src/slurmd/slurmstepd/task.c` (public source) and, se
 * A non-zero wait status is returned after that parse, and `exec_task` then exits. Exports from a failing prolog are applied, and the task still dies. This program returns non-zero only when a chained prolog did.
 * `_make_tmpdir` runs after the prologs, and only for local task 0. A per-job `TMPDIR` may not exist yet. The cache falls back to `/tmp`. The prolog omits `TMPDIR` from the delta.
 
-`srun --export=ALL,X=y` was not re-read in this repository. The design treats an `X` already in the environment as the value that remains. Opt-out belongs in the submitting environment.
+`srun --export=ALL,X=y` leaves an `X` already in the environment in place: on Slurm 23.11.4, with `EESSI_ARCH_GUARD=1` set, `--export=ALL,EESSI_ARCH_GUARD=0` gave the task `1`. Opt-out belongs in the submitting environment.
 
 ## Closed alternatives
 
 | Approach | What happens |
 | --- | --- |
 | CVMFS variant symlink per node | Module roots and `DT_RPATH` are absolute per target. The task opens the submitting node's files. Confirmed from `init/modules/EESSI/2023.06.lua` at software-layer-scripts `26441ca`. |
-| Re-check inside the EESSI module file | Lmod evaluates the file at load and returns. |
+| Re-check inside the EESSI module file | The file runs when a `module` command loads it, and nothing loads it in a task before `execve`. Loading it again re-runs it, but the other loaded modules go inactive. |
 | Lmod hook on every `module` command | The hook runs for module commands. A bare exec never calls one. It would also run on every load for a check that happens once per task. |
 | `BASH_ENV` as the carrier | A bare `srun` of a binary never sources it. Lmod already uses `BASH_ENV`. The reload shell removes it. |
 | `--export=NONE` as a site default | Job scripts lose the environment they were written against. A user can still pass it on one command. |
@@ -39,6 +39,6 @@ Re-emitting the child shell's whole environment was the earlier mechanism. It is
 
 ## Out of scope
 
-open-003 is unanswered: whether this site already has a TaskProlog, which Slurm version it runs, the cost on a 192-task node with node-local `TMPDIR`, and a real cross-target job on production nodes. Those measurements are absent from this repository.
+Unanswered here: whether this site already has a TaskProlog, which Slurm version it runs, the cost on a 192-task node with node-local `TMPDIR`, and a real cross-target job on production nodes. Those measurements are absent from this repository.
 
 Binaries built with `-march=native` on a login node, virtualenvs with compiled wheels from that node, and a module that has no build for the target stay as they are. The guard reports the missing module and leaves the environment unchanged. `python3 tests/measure_noop.py` prints a same-target timing on the machine where it is run. Treat that timing as a reading from that machine.

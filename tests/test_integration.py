@@ -920,7 +920,7 @@ class IntegrationTests(unittest.TestCase):
                     pass
 
     def test_intel_a100_uses_the_directory_that_exists(self):
-        # open-001: do not bake in either Intel subdirectory. The first
+        # Do not bake in either Intel subdirectory. The first
         # candidate with a software directory wins, including when the
         # listed-first tree is absent and the GPU is an A100 (cc 8.0).
         icelake = "x86_64/intel/icelake"

@@ -18,7 +18,7 @@ Version {{ version }}.
 
 ## Why
 
-A job submitted from a login node carries that node's EESSI paths. Slurm delivers the same environment to the allocated node. A binary from the login-node tree then executes on a different microarchitecture: the process can die with `SIGILL`, take a slow generic path, or open a GPU tree that is absent on the node. Running `module load EESSI/<version>` again leaves the stack in place, because Lmod evaluates a loaded module file once.
+A job submitted from a login node carries that node's EESSI paths. Slurm delivers the same environment to the allocated node. A binary from the login-node tree then executes on a different microarchitecture: the process can die with `SIGILL`, take a slow generic path, or open a GPU tree that is absent on the node. Running `module load EESSI/<version>` again runs the EESSI module's own detection a second time, but Lmod then marks every other loaded module inactive.
 
 The prolog is the step that still has the task environment and the executing node's view of the CPU and the GPU. A batch script can purge and reload in the shell. `srun ./a.out` starts the binary directly, so the corrected variables have to be in the environment before `execve`.
 
