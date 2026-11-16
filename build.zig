@@ -1,4 +1,5 @@
 const std = @import("std");
+const zon = @import("build.zig.zon");
 
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{ .default_target = .{ .abi = .musl, .cpu_model = .baseline } });
@@ -6,9 +7,11 @@ pub fn build(b: *std.Build) void {
     // Debug info carries absolute build paths; a release binary leaves it
     // out so two builds of one commit are byte-identical.
     const strip = b.option(bool, "strip", "Leave out debug info (default: on for release builds)") orelse (optimize != .debug);
+    const commit = b.option([]const u8, "commit", "Commit the binary is built from") orelse "unknown";
 
     const options = b.addOptions();
-    options.addOption([]const u8, "version", "0.2.0");
+    options.addOption([]const u8, "version", zon.version);
+    options.addOption([]const u8, "commit", commit);
 
     const common = b.dependency("zig_common", .{ .target = target, .optimize = optimize });
     const mod = b.createModule(.{

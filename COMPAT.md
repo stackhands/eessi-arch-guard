@@ -326,6 +326,7 @@ The rows above describe the Python guard at 0.1.2. The cache name gained the out
 
 | case | Python guard | Zig build |
 |---|---|---|
+| `--version` | the version | the same version, then the build: `VERSION (TARGET, MODE, zig ZIG_VERSION, COMMIT)`; COMMIT comes from `-Dcommit`, `unknown` without it |
 | restore helper | `python3 -I -X utf8 eessi_arch_guard.py --restore` | the same binary with `--restore`; the request and reply keep their JSON shape |
 | a request to `--restore` that is not UTF-8, not JSON or not an object | exit 1 with the Python exception text | exit 1 with a fixed text naming which of the three it was |
 | the chained prolog's stdin | inherited | `/dev/null` |

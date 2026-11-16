@@ -30,16 +30,21 @@ jobs:
         run: zig build -Drelease=true && TOOL_BIN="$PWD/zig-out/bin/eessi-arch-guard" python3 -m unittest discover -s tests
       - name: build
         run: |
-          zig build -Drelease=true -Dtarget=${{ matrix.arch }}-linux-musl --prefix out
-          # --version prints the bare version, as the Python guard does.
+          zig build -Drelease=true -Dtarget=${{ matrix.arch }}-linux-musl -Dcommit="${GITHUB_SHA::7}" --prefix out
+          # --version prints the Python guard's bare version, then the build
+          # and the commit.
           zon=$(sed -nE 's/^ *\.version = "([^"]+)".*/\1/p' build.zig.zon)
           if [ "${zon}" != "${GITHUB_REF_NAME#v}" ]; then
             echo "versions: tag ${GITHUB_REF_NAME}, build.zig.zon ${zon}"; exit 1
           fi
           got=$(out/bin/eessi-arch-guard --version)
+          case "${got}" in
+            "${GITHUB_REF_NAME#v} ("*", ${GITHUB_SHA::7})") ;;
+            *) echo "version '${got}' does not match tag ${GITHUB_REF_NAME} and commit ${GITHUB_SHA::7}"; exit 1 ;;
+          esac
           py=$(sed -n 's/^__version__ = "\(.*\)"$/\1/p' src/eessi_arch_guard.py)
-          if [ "${got}" != "${GITHUB_REF_NAME#v}" ] || [ "${py}" != "${got}" ]; then
-            echo "versions: tag ${GITHUB_REF_NAME}, binary ${got}, Python ${py}"; exit 1
+          if [ "${py}" != "${GITHUB_REF_NAME#v}" ]; then
+            echo "versions: tag ${GITHUB_REF_NAME}, Python ${py}"; exit 1
           fi
           mkdir dist
           cp out/bin/eessi-arch-guard "dist/eessi-arch-guard-${GITHUB_REF_NAME#v}-${{ matrix.arch }}-linux-musl"

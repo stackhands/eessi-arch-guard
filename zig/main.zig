@@ -19,6 +19,9 @@ const Allocator = std.mem.Allocator;
 const empty: []const u8 = "";
 
 pub const version = build_options.version;
+const tool = "eessi-arch-guard";
+/// The Python guard's bare version, then this build (COMPAT.md).
+const version_text = cli.versionLine(tool, version, build_options.commit)[tool.len + 1 ..];
 const strict_failure_exit: u8 = 78;
 const default_timeout: f64 = 60.0;
 /// threading.TIMEOUT_MAX on Linux, as Python prints it.
@@ -413,7 +416,7 @@ fn realMain(arena: Allocator, argv0: []const u8, argv: []const []const u8, envp:
         return 0;
     }
     if (args.version) {
-        cli.put(1, version ++ "\n");
+        cli.put(1, version_text);
         return 0;
     }
 
