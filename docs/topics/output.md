@@ -42,7 +42,9 @@ Within one job step the first task on a node computes the result and the others 
 
 `<step>` is `SLURM_STEP_ID`, or `batch` when that variable is unset. `<mode>` is `prolog` or `shell`. The decision depends on the output mode: a value with a newline can be carried by `--shell` and not by a prolog line. A batch script that runs `--shell` after the task prolog therefore computes its own result. There is no cache file when `SLURM_JOB_ID` is unset. `<node>`, `<job>`, and `<step>` are used as-is when they match `^[A-Za-z0-9._-]{1,64}$`; otherwise each is a 16-character SHA-256 prefix. `<digest>` is the first 16 hex characters of the SHA-256 of these values joined by NUL:
 
-`EESSI_SOFTWARE_SUBDIR`, `EESSI_ACCEL_SUBDIR`, `LOADEDMODULES`, `MODULEPATH`, `EESSI_INIT_PREFIX`, `EESSI_PROC_CPUINFO`, `PATH`.
+`EESSI_SOFTWARE_SUBDIR`, `EESSI_ACCEL_SUBDIR`, `LOADEDMODULES`, `MODULEPATH`, `EESSI_INIT_PREFIX`, `EESSI_PROC_CPUINFO`, `PATH`, the task's allowed processors, and the accelerator visibility.
+
+The allowed processors are the same intersection the detection uses, written as sorted decimal ids separated by commas. An empty intersection is `-`. No information is an empty field. Accelerator visibility is the values of `CUDA_VISIBLE_DEVICES`, `ROCR_VISIBLE_DEVICES`, `GPU_DEVICE_ORDINAL`, `SLURM_STEP_GPUS`, and `SLURM_GPUS_ON_NODE` that are set, each as `NAME=value` and joined by NUL. Two tasks in one step that do not share a cpuset or a GPU therefore do not share a cache entry.
 
 `EESSI_ARCH_GUARD` is omitted from the key. Two tasks in one step that differ only by that variable share a result.
 

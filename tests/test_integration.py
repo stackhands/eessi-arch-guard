@@ -997,6 +997,48 @@ class IntegrationTests(unittest.TestCase):
         self.assertEqual(proc.returncode, 0, proc.stderr)
         self.assertEqual(proc.stdout, "", proc.stdout)
 
+    def test_cache_does_not_reuse_a_decision_for_another_cpu_bind(self):
+        # The noop for cpu[1] must not be replayed for a task in the same
+        # job whose bind list is cpu[0].
+        spr = "x86_64/intel/sapphirerapids"
+        haswell = "x86_64/intel/haswell"
+        self.site.add_cpu(spr)
+        self.site.add_cpu(haswell)
+        self.site.add_module(spr, "R/4.4.2")
+        self.site.add_module(haswell, "R/4.4.2")
+        cpuinfo = "\n".join(
+            (
+                "processor : 0",
+                "vendor_id : GenuineIntel",
+                "cpu family : 6",
+                "model : 60",
+                "flags : avx2 fma",
+                "",
+                "processor : 1",
+                "vendor_id : GenuineIntel",
+                "cpu family : 6",
+                "model : 143",
+                "flags : avx2 fma avx512f avx512bw avx512cd avx512dq avx512vl "
+                "avx512_bf16 amx_tile waitpkg",
+                "",
+            )
+        )
+        with open(self.site.cpuinfo, "w", encoding="ascii") as handle:
+            handle.write(cpuinfo)
+        env = harness.base_env(self.site, spr, ["R/4.4.2"], gpu="none")
+        env["SLURM_JOB_ID"] = "bind-cache"
+        env["SLURM_STEP_ID"] = "0"
+        env["TMPDIR"] = self.site.root
+        env["SLURM_CPU_BIND_LIST"] = "cpu[1]"
+        first = harness.run_guard(env)
+        self.assertEqual(first.returncode, 0, first.stderr)
+        self.assertEqual(first.stdout, "", first.stdout)
+        env["SLURM_CPU_BIND_LIST"] = "cpu[0]"
+        second = harness.run_guard(env)
+        self.assertIn(haswell, second.stdout, second.stdout)
+        changes, _printed = _assert_prolog(second)
+        self.assertEqual(changes["EESSI_SOFTWARE_SUBDIR"], haswell)
+
     def test_help_version_and_shebang(self):
         first = harness.GUARD.read_text(encoding="utf-8").splitlines()[0]
         self.assertEqual(first, "#!/usr/bin/python3 -I")
