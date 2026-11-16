@@ -27,7 +27,7 @@ The steps, the shebang check, and a virtualenv install are in [Install the TaskP
 $ python3 -m venv .venv
 $ .venv/bin/python -m pip install .
 $ .venv/bin/eessi-arch-guard --version
-0.1.1
+0.2.0
 ```
 
 `docs/examples/check_install.sh` runs that sequence with the virtualenv under `/tmp`. The script's transcript on this machine ends with:
@@ -36,7 +36,7 @@ $ .venv/bin/eessi-arch-guard --version
 console import: from eessi_arch_guard import main
 console -I flag: absent
 + <venv>/bin/eessi-arch-guard --version
-0.1.1
+0.2.0
 ```
 
 ## What the host has to provide

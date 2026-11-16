@@ -7,11 +7,13 @@ eessi-arch-guard [--shell] [--strict] [--chain PATH] [--timeout SEC] [--restore]
 `python3 src/eessi_arch_guard.py --help` prints:
 
 ```text
-usage: eessi-arch-guard [--shell] [--chain PATH] [--timeout SEC] [--restore] [-h|--help] [--version]
+usage: eessi-arch-guard [--shell] [--strict] [--chain PATH] [--timeout SEC]
+                        [--restore] [-h|--help] [--version]
 
 Slurm TaskProlog: when the loaded EESSI CPU or accelerator target is not this
 node's, print export/unset lines for the reloaded module environment.
 --shell prints bash for: eval "$(eessi-arch-guard --shell)"
+--strict returns 78 on a failed decision or an unexpected exception.
 --chain PATH runs an existing task prolog first. Slurm does not pass arguments,
 so a site sets this in a wrapper or in a root-owned eessi-arch-guard.conf.
 --timeout SEC bounds the decision. The default is 60 seconds.
@@ -19,7 +21,7 @@ so a site sets this in a wrapper or in a root-owned eessi-arch-guard.conf.
 -h, --help print this text. --version prints the version.
 ```
 
-`python3 src/eessi_arch_guard.py --version` prints `0.1.1`.
+`python3 src/eessi_arch_guard.py --version` prints `0.2.0`.
 
 | Flag | Effect |
 | --- | --- |
