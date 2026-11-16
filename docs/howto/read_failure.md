@@ -137,7 +137,7 @@ exit: 0
 (empty)
 ```
 
-Put the variable in the environment that Slurm copies. An `EESSI_ARCH_GUARD` value that is already set is the one the task receives. The design treats `srun --export=ALL,EESSI_ARCH_GUARD=0` as leaving that existing value in place. That Slurm line was not re-read in this repository.
+Put the variable in the environment that Slurm copies. An `EESSI_ARCH_GUARD` value that is already set is the one the task receives: on Slurm 23.11.4, with `EESSI_ARCH_GUARD=1` in the shell, `srun --export=ALL,EESSI_ARCH_GUARD=0` gave the task `1`, and the guard reloaded.
 
 `EESSI_SOFTWARE_SUBDIR_OVERRIDE` or `EESSI_ARCHDETECT_OPTIONS_OVERRIDE` also skips the whole decision: detection is pinned. `EESSI_ACCELERATOR_TARGET_OVERRIDE` skips only the accelerator comparison. The CPU walk still runs.
 
@@ -154,6 +154,13 @@ exit: 0
 (empty)
 --- stderr ---
 target already matches this node
+```
+
+Slurm discards a TaskProlog's stderr, so under the prolog the reason never reaches the job. A task whose prolog stayed silent still has the environment the prolog saw; run the guard by hand there:
+
+```console
+$ EESSI_ARCH_GUARD=0 EESSI_ARCH_GUARD_VERBOSE=1 srun -n1 eessi-arch-guard
+EESSI_ARCH_GUARD=0
 ```
 
 ## The decision ran out of time

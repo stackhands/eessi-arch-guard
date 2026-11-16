@@ -51,3 +51,9 @@ fi
 ```
 
 The source path names the installed guard file. The native Python interpreter starts before any inherited EESSI Python. A nonzero guard status prevents the payload from running. This does not alter the configured site TaskProlog.
+
+`--strict` also needs a private workspace for the restore: a directory owned by the job's user with no group or other permission bits. The guard takes `EESSI_ARCH_GUARD_WORKDIR` when it is set, then `TMPDIR` when that is private (a per-job directory with mode 700 is; a shared `/tmp` is not), then `$XDG_STATE_HOME/eessi-arch-guard`, by default `~/.local/state/eessi-arch-guard`. It creates none of them. Without one, a node that needs a reload fails the decision and the wrapper exits 78 before the payload. Create the state directory once:
+
+```bash
+mkdir -p -m 700 ~/.local/state/eessi-arch-guard
+```

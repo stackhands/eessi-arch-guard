@@ -1,6 +1,6 @@
 # Detection and matching
 
-CPU selection stays inside `eessi_archdetect.sh -a cpupath` plus a directory walk. Subdirectory names come from that script's stdout and from the directories that are mounted. An Intel node with A100 GPUs gets whichever candidate has a software directory, which is how open-001 was closed. Naming `x86_64/intel/icelake` or `x86_64/intel/skylake_avx512` inside the program would pick the wrong tree on the other of those nodes, and on every AMD node.
+CPU selection stays inside `eessi_archdetect.sh -a cpupath` plus a directory walk. Subdirectory names come from that script's stdout and from the directories that are mounted. An Intel node with A100 GPUs gets whichever candidate has a software directory. Naming `x86_64/intel/icelake` or `x86_64/intel/skylake_avx512` inside the program would pick the wrong tree on the other of those nodes, and on every AMD node.
 
 ```{figure} detection.svg
 :alt: CPU candidate walk beside the accelerator comparison, and the waitpkg pin

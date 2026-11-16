@@ -1,6 +1,6 @@
 # Design: eessi-arch-guard
 
-The EESSI module picks a CPU target once, at load time, and an accelerator target the same way. Both are written into `MODULEPATH` and into every path later modules export. Slurm sends that environment to the job. A task that lands on another CPU or GPU then runs the submitting machine's binaries: illegal instruction, a silent slow path, or a missing GPU tree. `module load EESSI/<version>` inside the job does nothing, because Lmod does not re-read a module that is already loaded. `module reload`, unload/load, and swap leave the other modules inactive. The sequence that works is: list the loaded modules, `module --force purge`, `module load EESSI/<version>` by its full name, then load the others in that order.
+The EESSI module picks a CPU target once, at load time, and an accelerator target the same way. Both are written into `MODULEPATH` and into every path later modules export. Slurm sends that environment to the job. A task that lands on another CPU or GPU then runs the submitting machine's binaries: illegal instruction, a silent slow path, or a missing GPU tree. `module load EESSI/<version>` inside the job runs the EESSI module again (checked on Lmod 9.4.5) and moves `MODULEPATH` to the tree its own detection picks, but Lmod then marks the other loaded modules inactive. `module reload`, unload/load, and swap leave the other modules inactive too. The sequence that works is: list the loaded modules, `module --force purge`, `module load EESSI/<version>` by its full name, then load the others in that order.
 
 This file records which program should do that, and which shapes were rejected.
 
@@ -36,9 +36,9 @@ Checked on Slurm `master` `src/slurmd/slurmstepd/task.c` (public source, not a s
 - A non-zero wait status is returned after that parse, and `exec_task` then `_exit`s. Exports from a failing prolog are applied, and the task still dies.
 - `_make_tmpdir` runs after the prologs, and only for local task 0. A per-job `TMPDIR` may not exist yet. Falling back to `/tmp` is the right cache location. The prolog must not itself export `TMPDIR`: that would change the directory Slurm creates.
 
-`srun --export=ALL,X=y` was not re-read in this repo. The design treats the existing statement as true: an `X` already in the environment is not overridden. Opt-out has to be in the submitting environment. It cannot be smuggled in as `--export=ALL,EESSI_ARCH_GUARD=0` when the variable is already set.
+`srun --export=ALL,X=y` does not override an `X` already in the environment: on Slurm 23.11.4, with `EESSI_ARCH_GUARD=1` set, `--export=ALL,EESSI_ARCH_GUARD=0` gave the task `1`. Opt-out has to be in the submitting environment. It cannot be smuggled in as `--export=ALL,EESSI_ARCH_GUARD=0` when the variable is already set.
 
-The site's Slurm version is open-003. Master behaving this way is not evidence about the installed daemon.
+The site's Slurm version is not known here; see Out of scope. Master behaving this way is not evidence about the installed daemon.
 
 ## What was rejected
 
@@ -70,7 +70,7 @@ These were rejected before this repo existed. The new information does not reviv
 | Alternative | Still rejected? | What changed |
 |---|---|---|
 | CVMFS variant symlink per node | Yes | EESSI module roots and `DT_RPATH` are absolute per target. Confirmed by reading `init/modules/EESSI/2023.06.lua` at software-layer-scripts `26441ca` (later versions are pointers at that file). |
-| Re-check inside the EESSI module file | Yes | Lmod does not re-evaluate a loaded module. The same lua file selects the target at load and returns. |
+| Re-check inside the EESSI module file | Yes | The lua file selects the target when a `module` command loads it, and nothing loads it in a task before `execve`. Loading it again does re-run it, but the other loaded modules go inactive. |
 | Lmod hook on every `module` command | Yes | A hook does not run for a bare exec. It would also run on every load for a case that happens once per task. |
 | `BASH_ENV` as the fix | Yes, more strongly | It misses `srun` of a binary, it runs for every bash, and Lmod already uses `BASH_ENV`. New: the prototype's own reload shell sources it. The guard strips it and does not use it as a carrier. |
 | `--export=NONE` as a site default | Yes | It drops the inherited environment scripts depend on. It remains user advice. New, taken from the existing Slurm note and not re-verified here: `--export=ALL,X=y` does not override an `X` that is already set, so a one-variable override is not a fix either. |
@@ -104,7 +104,7 @@ These were rejected before this repo existed. The new information does not reviv
 
 Runtime dependency is Python 3.9+ standard library, executed as `python3 -I`. The TaskProlog target is the single file `src/eessi_arch_guard.py` (shebang `#!/usr/bin/python3 -I`). `pyproject.toml` packages that module for a login-node `--shell` install. The generated console script does not pass `-I`; the prolog should be the file itself.
 
-## open-001 - Intel A100 CPU subdirectory
+## Intel A100 CPU subdirectory
 
 Resolved, without naming a directory in the program. The question was which CPU subdirectory an Intel node with A100 GPUs gets. Two names were in play, `x86_64/intel/icelake` and `x86_64/intel/skylake_avx512`, and either one baked into the guard would be wrong on the other node and on every AMD node. The guard does not contain either name. CPU selection stays the first `eessi_archdetect.sh -a cpupath` candidate for which `<EESSI_PREFIX>/software/<EESSI_OS_TYPE>/<candidate>/software` is a directory. The accelerator subdirectory stays the string `eessi_archdetect.sh accelpath` prints. An A100 is compute capability 8.0 only when that script prints `accel/nvidia/cc80`. A site that has one of those CPU trees and not the other follows the tree it mounted.
 
@@ -140,4 +140,4 @@ zen5 (`-march=znver5`; spec adds `avx512_vp2intersect avx_vnni movdiri`): 3dnowp
 
 ## Out of scope
 
-open-003 is unanswered: whether this site already has a TaskProlog, which Slurm version it runs, the cost on a 192-task node with node-local `TMPDIR`, and a real cross-target job on production nodes. This repository does not invent those measurements. Binaries built with `-march=native` on a login node, virtualenvs with compiled wheels, and a module that simply does not exist for the target are unchanged: the guard refuses rather than loading half of a stack.
+Unanswered here: whether this site already has a TaskProlog, which Slurm version it runs, the cost on a 192-task node with node-local `TMPDIR`, and a real cross-target job on production nodes. This repository does not invent those measurements. Binaries built with `-march=native` on a login node, virtualenvs with compiled wheels, and a module that simply does not exist for the target are unchanged: the guard refuses rather than loading half of a stack.

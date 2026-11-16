@@ -134,4 +134,4 @@ exit: 9
 site-failed
 ```
 
-Which path a site should chain is unanswered here. The [design topic](../topics/design.md) records that as part of open-003.
+Which path a site should chain is unanswered here. The [design topic](../topics/design.md) lists it with the other open site questions.

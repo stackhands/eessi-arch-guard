@@ -2,7 +2,7 @@
 
 The EESSI module picks a CPU target once, at load time, and an accelerator target the same way. Both are written into `MODULEPATH` and into the paths later modules export. Slurm sends that environment to the job. A task that lands on another CPU or GPU then runs the submitting machine's binaries.
 
-`module load EESSI/<version>` inside the job leaves the record in place, because Lmod evaluates a loaded module file once. `module reload`, unload/load, and swap leave the other modules inactive. The sequence that changes the stack is: list `LOADEDMODULES`, `module --force purge`, `module load EESSI/<version>` by that full name, then load the other names in the same order.
+`module load EESSI/<version>` inside the job runs the EESSI module again, with its own detection, and moves `MODULEPATH` to the tree that detection picks. The other loaded modules stay recorded for the old tree, and Lmod marks them inactive. `module reload`, unload/load, and swap leave the other modules inactive too. The sequence that changes the stack is: list `LOADEDMODULES`, `module --force purge`, `module load EESSI/<version>` by that full name, then load the other names in the same order.
 
 ```{figure} concepts.svg
 :alt: Submit host, TaskProlog, and the match or reload branches

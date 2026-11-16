@@ -52,6 +52,8 @@ The cache file and the lock are opened with `O_NOFOLLOW`. A symlink at either pa
 
 A timeout or `SIGTERM` is not written to the cache. A decision that has finished is still published if `SIGTERM` arrives while the file is written.
 
+Nothing removes the cache file or its lock, the same name plus `.lock`, when the step or the job ends. One pair stays for each user, node, job, step, output mode and key. A per-job `TMPDIR` removed at the end of the job takes them with it; under `/tmp` they stay until the node is cleaned.
+
 ## Deadline
 
 One deadline covers the lock wait, both archdetect runs, and the restore helper. The default is 60 seconds. Children run in their own sessions. `SIGTERM` is held until the child process group is known, then released. At the deadline, or on `SIGTERM`, the guard sends `SIGKILL` to that group. A child that leaves the group is outside this kill. After the kill the guard still waits up to 5 seconds (`POST_KILL_WAIT_SECONDS`) for the pipe to close, and may wait that long in `communicate` and twice more in `wait`, so the worst case after the kill is 15 seconds.
