@@ -39,6 +39,6 @@ Re-emitting the child shell's whole environment was the earlier mechanism. It is
 
 ## Out of scope
 
-Unanswered here: whether this site already has a TaskProlog, which Slurm version it runs, the cost on a 192-task node with node-local `TMPDIR`, and a real cross-target job on production nodes. Those measurements are absent from this repository.
+Unanswered here: whether a site already has a TaskProlog, which Slurm version it runs, the cost on a node that runs a task on every core with node-local `TMPDIR`, and a real cross-target job on production nodes. Those measurements are absent from this repository.
 
 Binaries built with `-march=native` on a login node, virtualenvs with compiled wheels from that node, and a module that has no build for the target stay as they are. The guard reports the missing module and leaves the environment unchanged. `python3 tests/measure_noop.py` prints a same-target timing on the machine where it is run. Treat that timing as a reading from that machine.

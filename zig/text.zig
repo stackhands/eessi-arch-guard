@@ -258,7 +258,7 @@ test "validators" {
     try std.testing.expect(!safeRelSubdir("../x"));
     try std.testing.expect(safeAbsolute("/cvmfs/x"));
     try std.testing.expect(!safeAbsolute("/a/../b"));
-    try std.testing.expect(safeComponent("int4.local"));
+    try std.testing.expect(safeComponent("login1.local"));
     try std.testing.expect(!safeComponent("a b"));
     try std.testing.expect(neverCache("LD_PRELOAD") and neverTouch("SLURM_JOB_ID") and !neverTouch("LD_PRELOAD"));
 }
