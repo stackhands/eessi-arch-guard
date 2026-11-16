@@ -26,9 +26,10 @@ const tool = "eessi-arch-guard";
 const version_text = cli.versionLine(tool, version, build_options.commit)[tool.len + 1 ..];
 const strict_failure_exit: u8 = 78;
 const default_timeout: f64 = 60.0;
-/// threading.TIMEOUT_MAX on Linux, as Python prints it.
-const timeout_max: f64 = 9223372036.0;
-const timeout_max_text = "9223372036.0";
+/// TIMEOUT_MAX, as Python prints it: the Python guard's subprocess waits
+/// with poll(), whose timeout is a C int of milliseconds.
+const timeout_max: f64 = 2147483.647;
+const timeout_max_text = "2147483.647";
 
 const help_text =
     \\usage: eessi-arch-guard [--shell] [--strict] [--chain PATH] [--timeout SEC]
@@ -568,8 +569,9 @@ test "pyFloat follows Python's float()" {
     try std.testing.expect(pyFloat(a, "0x10") == null);
     try std.testing.expect(parseTimeout(a, "inf") == null);
     try std.testing.expect(parseTimeout(a, "0") == null);
-    try std.testing.expect(parseTimeout(a, "9223372037") == null);
-    try std.testing.expectEqual(@as(?f64, 9223372036.0), parseTimeout(a, "9223372036"));
+    try std.testing.expect(parseTimeout(a, "2147483.648") == null);
+    try std.testing.expect(parseTimeout(a, "9223372036") == null);
+    try std.testing.expectEqual(@as(?f64, 2147483.647), parseTimeout(a, "2147483.647"));
 }
 
 test "parseConfigBytes keeps other keys after a bad value" {

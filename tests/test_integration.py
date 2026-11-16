@@ -919,6 +919,33 @@ class IntegrationTests(unittest.TestCase):
                 except OSError:
                     pass
 
+    def test_timeout_past_what_poll_can_wait_is_refused(self):
+        # The Python guard waits for a command with poll(), which takes at
+        # most 2**31 - 1 ms. A longer timeout is refused in both builds, and
+        # the decision runs under the default.
+        env = self._cpu_env(ZEN4, "zen2")
+        proc = harness.run_guard(env, ["--timeout", "2147483.647"])
+        changes, _printed = _assert_prolog(proc)
+        self.assertEqual(changes["EESSI_SOFTWARE_SUBDIR"], ZEN2, proc.stdout)
+        self.assertEqual(proc.stderr, "")
+        warning = "eessi-arch-guard: %s is not a positive number of seconds at most 2147483.647\n"
+        for value in ("2147483.648", "9223372036"):
+            proc = harness.run_guard(env, ["--timeout", value])
+            changes, _printed = _assert_prolog(proc)
+            self.assertEqual(changes["EESSI_SOFTWARE_SUBDIR"], ZEN2, (value, proc.stdout))
+            self.assertEqual(proc.stderr, warning % "--timeout")
+        conf = harness.PROGRAM.with_name("eessi-arch-guard.conf")
+        conf.write_text("timeout = 9223372036\n", encoding="utf-8")
+        subprocess.check_call(["sudo", "chown", "root:root", str(conf)])
+        subprocess.check_call(["sudo", "chmod", "644", str(conf)])
+        try:
+            proc = harness.run_guard(env)
+            changes, _printed = _assert_prolog(proc)
+            self.assertEqual(changes["EESSI_SOFTWARE_SUBDIR"], ZEN2, proc.stdout)
+            self.assertEqual(proc.stderr, warning % "config timeout")
+        finally:
+            subprocess.check_call(["sudo", "rm", "-f", str(conf)])
+
     def test_intel_a100_uses_the_directory_that_exists(self):
         # Do not bake in either Intel subdirectory. The first
         # candidate with a software directory wins, including when the

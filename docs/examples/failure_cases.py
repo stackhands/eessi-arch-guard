@@ -177,7 +177,7 @@ def bad_timeout() -> int:
     support.show(proc, "")
     warning = (
         "eessi-arch-guard: --timeout is not a positive number of seconds "
-        "at most 9223372036.0\n"
+        "at most 2147483.647\n"
     )
     if proc.returncode != 0 or proc.stdout or proc.stderr != warning:
         print("unexpected timeout transcript", file=sys.stderr)

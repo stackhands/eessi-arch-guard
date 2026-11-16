@@ -25,7 +25,6 @@ import stat
 import subprocess
 import sys
 import tempfile
-import threading
 import time
 from typing import Dict, List, Mapping, NamedTuple, Optional, Sequence, Tuple
 
@@ -115,7 +114,9 @@ PROLOG_LINE_MAX = 4094
 DEFAULT_TIMEOUT = 60.0
 STRICT_FAILURE_EXIT = 78
 _STRICT_MODE = False
-TIMEOUT_MAX = threading.TIMEOUT_MAX
+# subprocess waits for a command with poll(), whose timeout is a C int of
+# milliseconds: a wait past 2**31 - 1 ms raises OverflowError.
+TIMEOUT_MAX = 2147483.647
 # flock has no timeout and Python retries EINTR, so the wait is a
 # non-blocking loop. 0.05 s still ends a 1 s deadline in one shot, and a
 # 192-task step does not spin on the lock.

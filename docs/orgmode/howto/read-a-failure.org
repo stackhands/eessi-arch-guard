@@ -156,11 +156,11 @@ The first line is the node's target, and =EESSI_ARCH_GUARD_FAILED= prints nothin
 
 ** If it fails
 
-| Message or symptom                                                                     | Cause                                                                                                                    | What to do                                                           |
-|----------------------------------------------------------------------------------------+--------------------------------------------------------------------------------------------------------------------------+----------------------------------------------------------------------|
-| No message and no marker, and the task runs another node's build                       | The guard did nothing: EESSI was not loaded, the detection was pinned with an override, or =EESSI_ARCH_GUARD=0= was set. | Run the step with =EESSI_ARCH_GUARD_VERBOSE=1=, below, to see which. |
-| =EESSI_ARCH_GUARD=0= in the task although the command set =1=                          | =srun --export=ALL,EESSI_ARCH_GUARD=0= does not replace a value that is already set, as seen with Slurm 23.11.4.         | Set or unset the variable in the shell you submit from.              |
-| =eessi-arch-guard: --timeout is not a positive number of seconds at most 9223372036.0= | A wrapper passed =--timeout= with 0, a negative number or text; the guard keeps 60 seconds.                              | Pass a number of seconds greater than 0.                             |
+| Message or symptom                                                                    | Cause                                                                                                                    | What to do                                                           |
+|---------------------------------------------------------------------------------------+--------------------------------------------------------------------------------------------------------------------------+----------------------------------------------------------------------|
+| No message and no marker, and the task runs another node's build                      | The guard did nothing: EESSI was not loaded, the detection was pinned with an override, or =EESSI_ARCH_GUARD=0= was set. | Run the step with =EESSI_ARCH_GUARD_VERBOSE=1=, below, to see which. |
+| =EESSI_ARCH_GUARD=0= in the task although the command set =1=                         | =srun --export=ALL,EESSI_ARCH_GUARD=0= does not replace a value that is already set, as seen with Slurm 23.11.4.         | Set or unset the variable in the shell you submit from.              |
+| =eessi-arch-guard: --timeout is not a positive number of seconds at most 2147483.647= | A wrapper passed =--timeout= with 0, a negative number, a number above 2147483.647, or text; the guard keeps 60 seconds. | Pass a number of seconds greater than 0 and at most 2147483.647.     |
 
 =EESSI_ARCH_GUARD_VERBOSE=1= writes to stderr why the guard did nothing.
 Slurm does not pass a =TaskProlog='s stderr on, so run the guard by hand in the task.
@@ -209,7 +209,7 @@ exit: 0
 --- stdout ---
 (empty)
 --- stderr ---
-eessi-arch-guard: --timeout is not a positive number of seconds at most 9223372036.0
+eessi-arch-guard: --timeout is not a positive number of seconds at most 2147483.647
 #+end_example
 
 ** Related

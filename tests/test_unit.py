@@ -587,7 +587,7 @@ class UnitTests:
 
     def test_timeout_values(self):
         assert guard.DEFAULT_TIMEOUT == 60
-        assert guard.TIMEOUT_MAX == threading.TIMEOUT_MAX
+        assert str(guard.TIMEOUT_MAX) == "2147483.647"
         assert guard.parse_timeout("60") == 60.0
         assert guard.parse_timeout("1.5") == 1.5
         assert guard.parse_timeout("0") is None
@@ -595,6 +595,8 @@ class UnitTests:
         assert guard.parse_timeout("nope") is None
         assert guard.parse_timeout(str(guard.TIMEOUT_MAX)) == guard.TIMEOUT_MAX
         assert guard.parse_timeout(str(guard.TIMEOUT_MAX * 2)) is None
+        assert guard.parse_timeout("2147483.648") is None
+        assert guard.parse_timeout("9223372036") is None
         chosen, warning = guard.resolve_timeout(None, {"timeout": "12"})
         assert chosen == 12 and warning is None
         chosen, warning = guard.resolve_timeout("3", {"timeout": "12"})
