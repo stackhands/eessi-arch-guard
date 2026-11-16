@@ -101,6 +101,27 @@ print eessi-arch-guard: LMOD_CMD is missing or not executable; this node is x86_
 
 Point `LMOD_CMD` at the Lmod executable the EESSI module normally exports.
 
+## The restore could not run
+
+The targets differ, and the restore stopped before Lmod answered: there is no private directory for its temporary files, or the restore helper did not start or gave no usable reply. The parenthetical text is the cause.
+
+```console
+$ python3 docs/examples/failure_cases.py workspace
+```
+
+```text
+case: workspace
+command: python3 -I src/eessi_arch_guard.py
+exit: 0
+--- stdout ---
+export EESSI_ARCH_GUARD_FAILED=x86_64/amd/zen4->restore-failed
+print eessi-arch-guard: restore failed (restore workspace unavailable: EESSI_ARCH_GUARD_WORKDIR is not an existing private owned directory); environment left as it was
+--- stderr ---
+(empty)
+```
+
+A set `EESSI_ARCH_GUARD_WORKDIR` has to be an existing directory owned by the job's user, with no group or other permission bits (`chmod 700`). Unset, a private `TMPDIR` is used. Under `--strict`, with neither, the guard needs `$XDG_STATE_HOME/eessi-arch-guard`, by default `~/.local/state/eessi-arch-guard`; create it once with `mkdir -p -m 700 ~/.local/state/eessi-arch-guard`.
+
 ## Turn the guard off
 
 `EESSI_ARCH_GUARD=0` in the submitting environment skips the decision with no output, including on a mismatch:

@@ -9,6 +9,7 @@ before it returns.
 
 from __future__ import annotations
 
+import os
 import sys
 
 import support
@@ -20,6 +21,7 @@ CASES = (
     "opt-out",
     "archdetect",
     "lmod",
+    "workspace",
     "verbose",
     "bad-timeout",
 )
@@ -133,6 +135,25 @@ def lmod() -> int:
     )
 
 
+def workspace() -> int:
+    site, env = support.cpu_site()
+    shared = os.path.join(site.root, "shared")
+    os.mkdir(shared)
+    os.chmod(shared, 0o755)
+    env["EESSI_ARCH_GUARD_WORKDIR"] = shared
+    proc = support.run(env)
+    text = proc.stdout
+    return _finish(
+        site,
+        proc,
+        [
+            ("token", "->restore-failed" in text),
+            ("cause", "restore workspace unavailable" in text),
+            ("keeps subdir", "export EESSI_SOFTWARE_SUBDIR=" not in text),
+        ],
+    )
+
+
 def verbose() -> int:
     site, env = support.cpu_site(node="zen4", loaded=support.ZEN4)
     env["EESSI_ARCH_GUARD_VERBOSE"] = "1"
@@ -172,6 +193,7 @@ def main() -> int:
         "opt-out": opt_out,
         "archdetect": archdetect,
         "lmod": lmod,
+        "workspace": workspace,
         "verbose": verbose,
         "bad-timeout": bad_timeout,
     }

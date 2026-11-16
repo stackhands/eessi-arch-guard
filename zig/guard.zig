@@ -519,12 +519,19 @@ fn rmtree(c: *Ctx, p: []const u8) void {
 
 // ---- the restore helper, caller side -------------------------------------
 
+/// RestoreResult. `ran` is false when the restore stopped before Lmod could
+/// answer: no workspace, no helper, or no usable reply from it.
 pub const Restore = struct {
     ok: bool,
     env: ?Map = null,
     missing: []const []const u8 = &.{},
     err: []const u8 = "",
+    ran: bool = true,
 };
+
+fn notRun(err: []const u8) Restore {
+    return .{ .ok = false, .err = err, .ran = false };
+}
 
 fn wireMap(c: *Ctx, out: *std.ArrayList(u8), m: Map) Allocator.Error!void {
     try out.append(c.arena, '{');
@@ -543,11 +550,11 @@ fn wireMap(c: *Ctx, out: *std.ArrayList(u8), m: Map) Allocator.Error!void {
 fn callRestore(c: *Ctx, env: Map, eessi: []const u8, modules: []const []const u8) Stop!Restore {
     const a = c.arena;
     var req: std.ArrayList(u8) = .empty;
-    buildRequest(c, &req, env, eessi, modules) catch return .{ .ok = false, .err = "out of memory" };
+    buildRequest(c, &req, env, eessi, modules) catch return notRun("out of memory");
     var why: []const u8 = "";
     const base = restoreWorkBase(c, env, &why) catch
-        return .{ .ok = false, .err = a.print("restore workspace unavailable: {s}", .{why}) catch "restore workspace unavailable" };
-    const work = mkdtemp(c, base) orelse return .{ .ok = false, .err = "restore workspace unavailable: could not create a directory" };
+        return notRun(a.print("restore workspace unavailable: {s}", .{why}) catch "restore workspace unavailable");
+    const work = mkdtemp(c, base) orelse return notRun("restore workspace unavailable: could not create a directory");
     defer rmtree(c, work);
     var clean: Map = .empty;
     clean.put(a, "PATH", "/usr/bin:/bin") catch main_mod.oom();
@@ -561,13 +568,13 @@ fn callRestore(c: *Ctx, env: Map, eessi: []const u8, modules: []const []const u8
     if (c.strict) argv.append(a, "--strict") catch main_mod.oom();
     const r = runCaptured(c, argv.items, clean, req.items, c.limit != null, &why) catch |err| switch (err) {
         error.Deadline, error.Terminated => |e| return e,
-        else => return .{ .ok = false, .err = a.print("could not start restore helper: {s}", .{why}) catch "could not start restore helper" },
+        else => return notRun(a.print("could not start restore helper: {s}", .{why}) catch "could not start restore helper"),
     };
     if (r.code != 0 or r.stdout.len == 0) {
         const e = decodeReplace(c, r.stderr);
-        return .{ .ok = false, .err = line1(c, if (e.len > 0) e else "restore helper failed", 300) };
+        return notRun(line1(c, if (e.len > 0) e else "restore helper failed", 300));
     }
-    const data = json.parse(a, r.stdout) catch return .{ .ok = false, .err = "restore helper returned invalid output" };
+    const data = json.parse(a, r.stdout) catch return notRun("restore helper returned invalid output");
     var missing: std.ArrayList([]const u8) = .empty;
     if (data.get("missing")) |m| if (m == .array) for (m.array) |item| {
         if (item != .string) continue;
@@ -579,13 +586,14 @@ fn callRestore(c: *Ctx, env: Map, eessi: []const u8, modules: []const []const u8
         const e: []const u8 = if (data.get("error")) |v| (if (v == .string) json.decodeCache(a, v.string) catch "" else "") else "";
         return .{ .ok = false, .missing = missing.items, .err = line1(c, e, 300) };
     }
-    const restored = data.get("env") orelse return .{ .ok = false, .missing = missing.items, .err = "restore helper returned no environment" };
-    if (restored != .object) return .{ .ok = false, .missing = missing.items, .err = "restore helper returned no environment" };
+    const no_env = "restore helper returned no environment";
+    const restored = data.get("env") orelse return notRun(no_env);
+    if (restored != .object) return notRun(no_env);
     var m: Map = .empty;
     for (restored.object) |mem| {
-        const k = json.decodeWire(a, mem.key) catch return .{ .ok = false, .missing = missing.items, .err = "restore helper returned no environment" };
-        if (mem.value != .string) return .{ .ok = false, .missing = missing.items, .err = "restore helper returned no environment" };
-        const v = json.decodeWire(a, mem.value.string) catch return .{ .ok = false, .missing = missing.items, .err = "restore helper returned no environment" };
+        const k = json.decodeWire(a, mem.key) catch return notRun(no_env);
+        if (mem.value != .string) return notRun(no_env);
+        const v = json.decodeWire(a, mem.value.string) catch return notRun(no_env);
         m.put(a, k, v) catch main_mod.oom();
     }
     return .{ .ok = true, .env = m, .missing = missing.items };
@@ -930,6 +938,8 @@ pub fn decide(c: *Ctx, env: Map, shell: bool) Stop!Outcome {
         module_env.put(c.arena, "EESSI_SOFTWARE_SUBDIR_OVERRIDE", cpu.override) catch main_mod.oom();
     }
     const result = try callRestore(c, module_env, loaded.eessi, loaded.others);
+    if (!result.ran)
+        return failed(c, was_label, "restore-failed", fmt(c, "eessi-arch-guard: restore failed ({s}); environment left as it was", .{line1(c, result.err, 200)}), null);
     if (!result.ok or result.env == null) {
         var why: []const u8 = "module load failed";
         if (result.missing.len > 0) {
