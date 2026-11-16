@@ -938,10 +938,10 @@ fn wireMap(c: *Ctx, out: *std.ArrayList(u8), m: Map) Allocator.Error!void {
     try out.append(c.arena, '}');
 }
 
-fn callRestore(c: *Ctx, env: Map, eessi: []const u8, modules: []const []const u8) Stop!Restore {
+fn callRestore(c: *Ctx, env: Map, eessi: []const u8, modules: []const []const u8, pin: []const u8) Stop!Restore {
     const a = c.arena;
     var req: std.ArrayList(u8) = .empty;
-    buildRequest(c, &req, env, eessi, modules) catch return notRun("out of memory");
+    buildRequest(c, &req, env, eessi, modules, pin) catch return notRun("out of memory");
     var why: []const u8 = "";
     const base = restoreWorkBase(c, env, &why) catch
         return notRun(a.print("restore workspace unavailable: {s}", .{why}) catch "restore workspace unavailable");
@@ -990,7 +990,7 @@ fn callRestore(c: *Ctx, env: Map, eessi: []const u8, modules: []const []const u8
     return .{ .ok = true, .env = m, .missing = missing.items };
 }
 
-fn buildRequest(c: *Ctx, out: *std.ArrayList(u8), env: Map, eessi: []const u8, modules: []const []const u8) Allocator.Error!void {
+fn buildRequest(c: *Ctx, out: *std.ArrayList(u8), env: Map, eessi: []const u8, modules: []const []const u8, pin: []const u8) Allocator.Error!void {
     const a = c.arena;
     try out.appendSlice(a, "{\"v\": 1, \"env\": ");
     try wireMap(c, out, env);
@@ -1003,6 +1003,8 @@ fn buildRequest(c: *Ctx, out: *std.ArrayList(u8), env: Map, eessi: []const u8, m
     }
     try out.appendSlice(a, "], \"lmod\": ");
     try json.writeWireString(out, a, env.get("LMOD_CMD") orelse empty);
+    try out.appendSlice(a, ", \"pin\": ");
+    try json.writeWireString(out, a, pin);
     try out.append(a, '}');
 }
 
@@ -1075,7 +1077,19 @@ fn applyLmod(c: *Ctx, module_env: Map, lmod: []const u8, args: []const []const u
     return sourceExports(c, module_env, r.stdout, raised);
 }
 
-fn diagnose(c: *Ctx, original: Map, lmod: []const u8, eessi: []const u8, modules: []const []const u8, raised: *[]const u8) HelperError![]const []const u8 {
+/// pinned_env: the environment for loading EESSI pinned to one CPU
+/// subdirectory. A login-node EESSI_ARCHDETECT_OPTIONS would outrank the pin
+/// inside the EESSI module; the purge before this load still needs it, as
+/// the module's unload computes the tree to remove from it.
+fn pinnedEnv(c: *Ctx, env: Map, pin: []const u8) Map {
+    if (pin.len == 0) return env;
+    var m = env.clone(c.arena) catch main_mod.oom();
+    _ = m.orderedRemove("EESSI_ARCHDETECT_OPTIONS");
+    m.put(c.arena, "EESSI_SOFTWARE_SUBDIR_OVERRIDE", pin) catch main_mod.oom();
+    return m;
+}
+
+fn diagnose(c: *Ctx, original: Map, lmod: []const u8, eessi: []const u8, modules: []const []const u8, pin: []const u8, raised: *[]const u8) HelperError![]const []const u8 {
     var missing: std.ArrayList([]const u8) = .empty;
     for (modules[0..@min(modules.len, diagnose_limit)]) |name| {
         const p = try applyLmod(c, original, lmod, &.{ "--force", "purge" }, raised);
@@ -1083,7 +1097,7 @@ fn diagnose(c: *Ctx, original: Map, lmod: []const u8, eessi: []const u8, modules
             missing.append(c.arena, name) catch main_mod.oom();
             continue;
         };
-        const e = try applyLmod(c, purged, lmod, &.{ "load", eessi }, raised);
+        const e = try applyLmod(c, pinnedEnv(c, purged, pin), lmod, &.{ "load", eessi }, raised);
         const with_eessi = e.env orelse {
             missing.append(c.arena, name) catch main_mod.oom();
             continue;
@@ -1114,6 +1128,11 @@ fn doRestore(c: *Ctx, payload: json.Value, raised: *[]const u8) HelperError!Repl
     if (env_v != .object or eessi_v != .string or modules_v != .array or lmod_v != .string) return malformed();
     const eessi = json.decodeWire(a, eessi_v.string) catch return malformed();
     const lmod = json.decodeWire(a, lmod_v.string) catch return malformed();
+    var pin: []const u8 = "";
+    if (payload.get("pin")) |pin_v| {
+        if (pin_v != .string) return malformed();
+        pin = json.decodeWire(a, pin_v.string) catch return malformed();
+    }
     var modules: std.ArrayList([]const u8) = .empty;
     var module_bad = false;
     for (modules_v.array) |m| {
@@ -1136,6 +1155,7 @@ fn doRestore(c: *Ctx, payload: json.Value, raised: *[]const u8) HelperError!Repl
         };
         module_env.put(a, k, v) catch main_mod.oom();
     }
+    if (pin.len > 0 and !text.safeRelSubdir(pin)) return malformed();
     if (!lmodInvocable(lmod)) return .{ .ok = false, .err = "LMOD_CMD is not executable" };
     if (!text.moduleName(eessi) or !text.eessiModule(eessi)) return .{ .ok = false, .err = "unsafe-module-name" };
     if (module_bad) return .{ .ok = false, .err = "unsafe-module-name" };
@@ -1143,7 +1163,7 @@ fn doRestore(c: *Ctx, payload: json.Value, raised: *[]const u8) HelperError!Repl
 
     const p = try applyLmod(c, module_env, lmod, &.{ "--force", "purge" }, raised);
     var current = p.env orelse return .{ .ok = false, .err = line1(c, if (p.err.len > 0) p.err else "purge failed", 300) };
-    const e = try applyLmod(c, current, lmod, &.{ "load", eessi }, raised);
+    const e = try applyLmod(c, pinnedEnv(c, current, pin), lmod, &.{ "load", eessi }, raised);
     current = e.env orelse {
         const miss = a.dupe([]const u8, &.{eessi}) catch &.{};
         return .{ .ok = false, .missing = miss, .err = line1(c, if (e.err.len > 0) e.err else "EESSI load failed", 300) };
@@ -1154,7 +1174,7 @@ fn doRestore(c: *Ctx, payload: json.Value, raised: *[]const u8) HelperError!Repl
         args.appendSlice(a, modules.items) catch main_mod.oom();
         const n = try applyLmod(c, current, lmod, args.items, raised);
         current = n.env orelse {
-            const miss = try diagnose(c, module_env, lmod, eessi, modules.items, raised);
+            const miss = try diagnose(c, module_env, lmod, eessi, modules.items, pin, raised);
             return .{ .ok = false, .missing = miss, .err = line1(c, if (n.err.len > 0) n.err else "module load failed", 300) };
         };
     }
@@ -1322,13 +1342,7 @@ pub fn decide(c: *Ctx, env: Map, shell: bool) Stop!Outcome {
     if (!lmodInvocable(env.get("LMOD_CMD") orelse empty))
         return failed(c, was_label, "lmod-unavailable", fmt(c, "eessi-arch-guard: LMOD_CMD is missing or not executable; this node is {s}, the modules were loaded for {s}; environment left as it was", .{ now_label, was_label }), null);
 
-    var module_env = env;
-    if (cpu.override.len > 0) {
-        module_env = env.clone(c.arena) catch env;
-        _ = module_env.orderedRemove("EESSI_ARCHDETECT_OPTIONS");
-        module_env.put(c.arena, "EESSI_SOFTWARE_SUBDIR_OVERRIDE", cpu.override) catch main_mod.oom();
-    }
-    const result = try callRestore(c, module_env, loaded.eessi, loaded.others);
+    const result = try callRestore(c, env, loaded.eessi, loaded.others, cpu.override);
     if (!result.ran)
         return failed(c, was_label, "restore-failed", fmt(c, "eessi-arch-guard: restore failed ({s}); environment left as it was", .{line1(c, result.err, 200)}), null);
     if (!result.ok or result.env == null) {

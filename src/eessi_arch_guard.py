@@ -1134,11 +1134,27 @@ def apply_lmod(
     return source_exports(module_env, proc.stdout)
 
 
+def pinned_env(env: Mapping[str, str], pin: str) -> Dict[str, str]:
+    """The environment for loading EESSI pinned to one CPU subdirectory.
+
+    A login-node EESSI_ARCHDETECT_OPTIONS would outrank the pin inside the
+    EESSI module, so it is dropped; the module's archdetect wrapper then
+    exports the pinned subdirectory. The purge before this load needs that
+    variable: the module's unload computes the tree to remove from it.
+    """
+    pinned = dict(env)
+    if pin:
+        pinned.pop("EESSI_ARCHDETECT_OPTIONS", None)
+        pinned["EESSI_SOFTWARE_SUBDIR_OVERRIDE"] = pin
+    return pinned
+
+
 def _diagnose(
     original: Mapping[str, str],
     lmod_cmd: str,
     eessi: str,
     modules: Sequence[str],
+    pin: str,
 ) -> List[str]:
     missing = []
     for name in list(modules)[:DIAGNOSE_LIMIT]:
@@ -1146,7 +1162,7 @@ def _diagnose(
         if current is None:
             missing.append(name)
             continue
-        current, _err = apply_lmod(current, lmod_cmd, ["load", eessi])
+        current, _err = apply_lmod(pinned_env(current, pin), lmod_cmd, ["load", eessi])
         if current is None:
             missing.append(name)
             continue
@@ -1176,18 +1192,22 @@ def do_restore(payload: Mapping[str, object]) -> Dict[str, object]:
     eessi = payload.get("eessi")
     modules = payload.get("modules")
     lmod_cmd = payload.get("lmod")
+    pin = payload.get("pin", "")
     if not isinstance(env, dict) or not isinstance(eessi, str) or not isinstance(modules, list):
         return {"ok": False, "missing": [], "error": "restore request is malformed"}
-    if not isinstance(lmod_cmd, str):
+    if not isinstance(lmod_cmd, str) or not isinstance(pin, str):
         return {"ok": False, "missing": [], "error": "restore request is malformed"}
     try:
         eessi = from_wire(eessi)
         lmod_cmd = from_wire(lmod_cmd)
+        pin = from_wire(pin)
         modules = [from_wire(name) if isinstance(name, str) else name for name in modules]
         module_env = {
             from_wire(str(key)): from_wire(str(value)) for key, value in env.items()
         }
     except UnicodeError:
+        return {"ok": False, "missing": [], "error": "restore request is malformed"}
+    if pin and not safe_rel_subdir(pin):
         return {"ok": False, "missing": [], "error": "restore request is malformed"}
     if not lmod_invocable(lmod_cmd):
         return {"ok": False, "missing": [], "error": "LMOD_CMD is not executable"}
@@ -1198,7 +1218,7 @@ def do_restore(payload: Mapping[str, object]) -> Dict[str, object]:
     current, err = apply_lmod(module_env, lmod_cmd, ["--force", "purge"])
     if current is None:
         return {"ok": False, "missing": [], "error": one_line(err or "purge failed", 300)}
-    current, err = apply_lmod(current, lmod_cmd, ["load", eessi])
+    current, err = apply_lmod(pinned_env(current, pin), lmod_cmd, ["load", eessi])
     if current is None:
         return {
             "ok": False,
@@ -1208,7 +1228,7 @@ def do_restore(payload: Mapping[str, object]) -> Dict[str, object]:
     if modules:
         nxt, err = apply_lmod(current, lmod_cmd, ["load", *modules])
         if nxt is None:
-            missing = _diagnose(module_env, lmod_cmd, eessi, modules)
+            missing = _diagnose(module_env, lmod_cmd, eessi, modules, pin)
             return {
                 "ok": False,
                 "missing": missing,
@@ -1229,7 +1249,7 @@ def restore_main() -> int:
 
 
 def call_restore(
-    env: Mapping[str, str], eessi: str, modules: Sequence[str]
+    env: Mapping[str, str], eessi: str, modules: Sequence[str], pin: str = ""
 ) -> RestoreResult:
     payload = {
         "v": 1,
@@ -1237,6 +1257,7 @@ def call_restore(
         "eessi": to_wire(eessi),
         "modules": [to_wire(name) for name in modules],
         "lmod": to_wire(env.get("LMOD_CMD", "")),
+        "pin": to_wire(pin),
     }
     try:
         work = tempfile.mkdtemp(prefix="eessi-arch-guard-", dir=restore_work_base(env))
@@ -1416,17 +1437,8 @@ def decide(
             % (now_label, was_label),
         )
 
-    module_env: Mapping[str, str] = env
-    if cpu.override:
-        pinned = dict(env)
-        # A login-node EESSI_ARCHDETECT_OPTIONS would outrank the pin inside
-        # the EESSI module. Drop it for the reload. The module's archdetect
-        # wrapper then exports the single overridden subdirectory.
-        pinned.pop("EESSI_ARCHDETECT_OPTIONS", None)
-        pinned["EESSI_SOFTWARE_SUBDIR_OVERRIDE"] = cpu.override
-        module_env = pinned
     try:
-        result = restore(module_env, loaded.eessi, loaded.others)
+        result = restore(env, loaded.eessi, loaded.others, cpu.override)
     except Exception as exc:
         result = _not_run(str(exc))
     if not result.ran:
