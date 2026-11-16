@@ -200,12 +200,17 @@ class LoadedModules(NamedTuple):
 
 
 class RestoreResult(NamedTuple):
-    """Helper result: success flag, restored environment, missing modules, error text."""
+    """Helper result: success flag, restored environment, missing modules, error text.
+
+    ran is False when the restore stopped before Lmod could answer: no
+    workspace, no helper, or no usable reply from it.
+    """
 
     ok: bool
     env: Optional[Dict[str, str]]
     missing: Tuple[str, ...]
     error: str
+    ran: bool = True
 
 
 def one_line(text: str, limit: int = 500) -> str:
@@ -1267,7 +1272,7 @@ def call_restore(
     try:
         work = tempfile.mkdtemp(prefix="eessi-arch-guard-", dir=restore_work_base(env))
     except (OSError, ValueError) as exc:
-        return RestoreResult(False, None, (), "restore workspace unavailable: %s" % exc)
+        return _not_run("restore workspace unavailable: %s" % exc)
     clean = {
         "PATH": "/usr/bin:/bin",
         "LC_ALL": "C",
@@ -1288,14 +1293,14 @@ def call_restore(
                 new_session=_ACTIVE is not None,
             )
         except OSError as exc:
-            return RestoreResult(False, None, (), "could not start restore helper: %s" % exc)
+            return _not_run("could not start restore helper: %s" % exc)
         if proc.returncode != 0 or not proc.stdout:
             err = proc.stderr.decode("utf-8", "replace")
-            return RestoreResult(False, None, (), one_line(err or "restore helper failed", 300))
+            return _not_run(one_line(err or "restore helper failed", 300))
         try:
             data = json.loads(proc.stdout.decode("utf-8"))
         except json.JSONDecodeError:
-            return RestoreResult(False, None, (), "restore helper returned invalid output")
+            return _not_run("restore helper returned invalid output")
         missing_raw = data.get("missing") or []
         missing = tuple(
             name for name in missing_raw if isinstance(name, str) and module_name_ok(name)
@@ -1304,16 +1309,20 @@ def call_restore(
             return RestoreResult(False, None, missing, one_line(str(data.get("error") or ""), 300))
         restored = data.get("env")
         if not isinstance(restored, dict):
-            return RestoreResult(False, None, missing, "restore helper returned no environment")
+            return _not_run("restore helper returned no environment")
         try:
             cleaned = {
                 from_wire(str(key)): from_wire(str(value)) for key, value in restored.items()
             }
         except UnicodeError:
-            return RestoreResult(False, None, missing, "restore helper returned no environment")
+            return _not_run("restore helper returned no environment")
         return RestoreResult(True, cleaned, missing, "")
     finally:
         shutil.rmtree(work, ignore_errors=True)
+
+
+def _not_run(error: str) -> RestoreResult:
+    return RestoreResult(False, None, (), error, ran=False)
 
 
 def _side(text: str) -> str:
@@ -1450,11 +1459,13 @@ def decide(
     try:
         result = restore(module_env, loaded.eessi, loaded.others)
     except Exception as exc:
+        result = _not_run(str(exc))
+    if not result.ran:
         return _failed(
             was_label,
             "restore-failed",
             "eessi-arch-guard: restore failed (%s); environment left as it was"
-            % one_line(str(exc), 200),
+            % one_line(result.error, 200),
         )
     if not result.ok or result.env is None:
         if result.missing:

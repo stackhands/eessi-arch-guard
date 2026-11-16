@@ -84,6 +84,7 @@ jobs:
           python docs/examples/failure_cases.py opt-out
           python docs/examples/failure_cases.py archdetect
           python docs/examples/failure_cases.py lmod
+          python docs/examples/failure_cases.py workspace
           python docs/examples/failure_cases.py verbose
           python docs/examples/failure_cases.py bad-timeout
           python docs/examples/shell_demo.py

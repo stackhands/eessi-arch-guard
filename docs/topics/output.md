@@ -28,7 +28,7 @@ Any name starting with `BASH_FUNC_` or `SLURM_` is omitted as well.
 
 `EESSI_ARCH_GUARD_RELOADED` is `was->now` after a reload that was applied. When the accelerator differs, each side is `<cpu> <accel>` or `<cpu> no accel`.
 
-`EESSI_ARCH_GUARD_FAILED` uses the same shape. The token after `->` is fixed when there is no selected target: `no-software-dir`, `archdetect-failed`, `unsafe-module-name`, `unsafe-environment`, `lmod-unavailable`, `restore-failed`, `timeout`, `terminated`. When a target was selected and the module load failed, both sides are the target labels. A successful reload clears a previous `EESSI_ARCH_GUARD_FAILED` by emitting `unset` for it.
+`EESSI_ARCH_GUARD_FAILED` uses the same shape. The token after `->` is fixed when there is no selected target, or when the restore could not run: `no-software-dir`, `archdetect-failed`, `unsafe-module-name`, `unsafe-environment`, `lmod-unavailable`, `restore-failed`, `timeout`, `terminated`. When a target was selected and Lmod refused the load, both sides are the target labels. A successful reload clears a previous `EESSI_ARCH_GUARD_FAILED` by emitting `unset` for it.
 
 `EESSI_ARCH_GUARD_VERBOSE=1` writes the skip or match reason to stderr. The reason strings are the `detail` field of the decision, for example `target already matches this node`.
 

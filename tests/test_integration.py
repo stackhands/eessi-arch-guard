@@ -223,6 +223,40 @@ class IntegrationTests(unittest.TestCase):
                 except OSError:
                     pass
 
+    def test_restore_that_cannot_run_names_its_cause(self):
+        env = self._cpu_env(ZEN4, "zen2")
+        shared = os.path.join(self.site.root, "shared")
+        os.mkdir(shared)
+        os.chmod(shared, 0o755)
+        env["EESSI_ARCH_GUARD_WORKDIR"] = shared
+        proc = harness.run_guard(env)
+        changes, printed = _assert_prolog(proc)
+        self.assertEqual(changes, {"EESSI_ARCH_GUARD_FAILED": "%s->restore-failed" % ZEN4})
+        self.assertEqual(
+            printed,
+            [
+                "eessi-arch-guard: restore failed (restore workspace unavailable: "
+                "EESSI_ARCH_GUARD_WORKDIR is not an existing private owned directory); "
+                "environment left as it was"
+            ],
+        )
+        self.assertEqual(harness.log_lines(self.site.log), [])
+
+        # Strict mode with neither a private TMPDIR nor a state directory.
+        del env["EESSI_ARCH_GUARD_WORKDIR"]
+        env["TMPDIR"] = shared
+        env["HOME"] = os.path.join(self.site.root, "home")
+        proc = harness.run_guard(env, ["--strict", "--shell"])
+        self.assertEqual(proc.returncode, guard.STRICT_FAILURE_EXIT, proc.stderr)
+        self.assertIn("'%s->restore-failed'" % ZEN4, proc.stdout)
+        self.assertEqual(
+            proc.stderr,
+            "eessi-arch-guard: restore failed (restore workspace unavailable: "
+            "strict mode needs an existing private job or state workspace); "
+            "environment left as it was\n",
+        )
+        self.assertEqual(harness.log_lines(self.site.log), [])
+
     def test_cache_symlink_is_not_followed(self):
         self.site.write_cpuinfo("zen2")
         env = self._cpu_env(ZEN4, "zen2")
