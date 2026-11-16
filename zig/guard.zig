@@ -1075,23 +1075,31 @@ fn applyLmod(c: *Ctx, module_env: Map, lmod: []const u8, args: []const []const u
     return sourceExports(c, module_env, r.stdout, raised);
 }
 
-fn diagnose(c: *Ctx, original: Map, lmod: []const u8, eessi: []const u8, modules: []const []const u8, raised: *[]const u8) HelperError![]const []const u8 {
+const InOrder = struct {
+    env: Map,
+    missing: []const []const u8,
+    err: []const u8,
+};
+
+/// load_in_order: one Lmod call per module, in order, past any that fail.
+/// One call finds every name before it loads any, so a module from a tree an
+/// earlier module adds loads only in a later call. Stops at diagnose_limit
+/// failures; the error is the first failure's.
+fn loadInOrder(c: *Ctx, start: Map, lmod: []const u8, modules: []const []const u8, raised: *[]const u8) HelperError!InOrder {
+    var current = start;
     var missing: std.ArrayList([]const u8) = .empty;
-    for (modules[0..@min(modules.len, diagnose_limit)]) |name| {
-        const p = try applyLmod(c, original, lmod, &.{ "--force", "purge" }, raised);
-        const purged = p.env orelse {
-            missing.append(c.arena, name) catch main_mod.oom();
+    var first_err: []const u8 = "";
+    for (modules) |name| {
+        const l = try applyLmod(c, current, lmod, &.{ "load", name }, raised);
+        if (l.env) |next| {
+            current = next;
             continue;
-        };
-        const e = try applyLmod(c, purged, lmod, &.{ "load", eessi }, raised);
-        const with_eessi = e.env orelse {
-            missing.append(c.arena, name) catch main_mod.oom();
-            continue;
-        };
-        const l = try applyLmod(c, with_eessi, lmod, &.{ "load", name }, raised);
-        if (l.env == null) missing.append(c.arena, name) catch main_mod.oom();
+        }
+        missing.append(c.arena, name) catch main_mod.oom();
+        if (first_err.len == 0) first_err = l.err;
+        if (missing.items.len == diagnose_limit) break;
     }
-    return missing.items;
+    return .{ .env = current, .missing = missing.items, .err = first_err };
 }
 
 const Reply = struct {
@@ -1153,9 +1161,11 @@ fn doRestore(c: *Ctx, payload: json.Value, raised: *[]const u8) HelperError!Repl
         args.append(a, "load") catch main_mod.oom();
         args.appendSlice(a, modules.items) catch main_mod.oom();
         const n = try applyLmod(c, current, lmod, args.items, raised);
-        current = n.env orelse {
-            const miss = try diagnose(c, module_env, lmod, eessi, modules.items, raised);
-            return .{ .ok = false, .missing = miss, .err = line1(c, if (n.err.len > 0) n.err else "module load failed", 300) };
+        current = n.env orelse blk: {
+            const seq = try loadInOrder(c, current, lmod, modules.items, raised);
+            if (seq.missing.len > 0)
+                return .{ .ok = false, .missing = seq.missing, .err = line1(c, if (seq.err.len > 0) seq.err else "module load failed", 300) };
+            break :blk seq.env;
         };
     }
     return .{ .ok = true, .env = current };
@@ -1335,7 +1345,7 @@ pub fn decide(c: *Ctx, env: Map, shell: bool) Stop!Outcome {
         var why: []const u8 = "module load failed";
         if (result.missing.len > 0) {
             var names = std.mem.join(c.arena, " ", result.missing) catch "";
-            if (loaded.others.len > diagnose_limit) names = fmt(c, "{s} (stopped after {d})", .{ names, diagnose_limit });
+            if (result.missing.len >= diagnose_limit and loaded.others.len > result.missing.len) names = fmt(c, "{s} (stopped after {d})", .{ names, diagnose_limit });
             why = fmt(c, "not available for this target: {s}", .{names});
         }
         return failed(c, was_label, now_label, fmt(c, "eessi-arch-guard: this node is {s}, the modules were loaded for {s}; {s}; environment left as it was", .{ now_label, was_label, why }), result.err);

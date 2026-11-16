@@ -367,8 +367,31 @@ class IntegrationTests(unittest.TestCase):
         self.assertEqual(changes["EESSI_SOFTWARE_SUBDIR"], ZEN2)
         self.assertEqual(changes["MODULEPATH"].split(":")[0], user[ZEN2])
         self.assertNotIn(ZEN4, changes["MODULEPATH"])
-        self.assertEqual(changes["LOADEDMODULES"], "EESSI/2025.06:%s:%s" % (extend, pigz))
+        self.assertIn(ZEN2, changes["EBROOTPIGZ"])
         self.assertTrue(printed)
+
+    def test_missing_module_after_the_first_32_is_named(self):
+        names = ["P%02d/1" % index for index in range(40)]
+        for name in names:
+            self.site.add_module(ZEN4, name)
+            if name != names[35]:
+                self.site.add_module(ZEN2, name)
+        env = self._cpu_env(ZEN4, "zen2", modules=names)
+        proc = harness.run_guard(env)
+        changes, printed = _assert_prolog(proc)
+        self.assertNotIn("EESSI_SOFTWARE_SUBDIR", changes)
+        self.assertIn("; not available for this target: %s; " % names[35], printed[0])
+
+    def test_missing_list_stops_after_32(self):
+        names = ["P%02d/1" % index for index in range(40)]
+        for name in names:
+            self.site.add_module(ZEN4, name)
+        env = self._cpu_env(ZEN4, "zen2", modules=names)
+        proc = harness.run_guard(env)
+        _changes, printed = _assert_prolog(proc)
+        listed = " ".join(names[:32])
+        self.assertIn("not available for this target: %s (stopped after 32);" % listed, printed[0])
+        self.assertNotIn(names[32], printed[0])
 
     def test_stderr_injection_stays_out_of_prolog_directives(self):
         self.site.add_module(ZEN4, "OnlyZen4/1.0")

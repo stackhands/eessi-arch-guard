@@ -40,7 +40,7 @@ exit: 0
 
 ## A module has no build for this target
 
-The node has a software directory, and one of the loaded modules has no file on the reloaded `MODULEPATH`. The message names each missing module, and stops after 32.
+The node has a software directory, and one of the loaded modules has no file on the reloaded `MODULEPATH`. The message names each missing module, and stops after 32. A module that appears only once an earlier one is loaded, such as one from the installation tree EESSI-extend adds, is loaded after that module and is not reported.
 
 ```console
 $ python3 docs/examples/failure_cases.py missing-module
