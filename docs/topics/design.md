@@ -12,7 +12,7 @@ The repository file `DESIGN.md` is the design record. This page is the part a us
 
 ## What was checked in Slurm
 
-Checked on Slurm `master` `src/slurmd/slurmstepd/task.c` (public source) and, separately, on Ubuntu's slurm-wlm 23.11.4 started by hand in one VM. That VM did run this prolog for both an `srun` step and a batch step. The site's Slurm version is open-003, below. Master behaving this way is evidence about the public source.
+Checked on Slurm `master` `src/slurmd/slurmstepd/task.c` (public source) and, separately, on Ubuntu's slurm-wlm 23.11.4 started by hand in one VM. That VM did run this prolog for both an `srun` step and a batch step. The site's Slurm version is not known here; see Out of scope, below. Master behaving this way is evidence about the public source.
 
 * `exec_task` calls the configured TaskProlog with no `!step->batch` guard. The batch step is included. The `!step->batch` checks in that function are for the switch plugin and MPI.
 * The prolog is started with `SLURM_SCRIPT_CONTEXT=prolog_task`.
@@ -39,6 +39,6 @@ Re-emitting the child shell's whole environment was the earlier mechanism. It is
 
 ## Out of scope
 
-open-003 is unanswered: whether this site already has a TaskProlog, which Slurm version it runs, the cost on a 192-task node with node-local `TMPDIR`, and a real cross-target job on production nodes. Those measurements are absent from this repository.
+Unanswered here: whether this site already has a TaskProlog, which Slurm version it runs, the cost on a 192-task node with node-local `TMPDIR`, and a real cross-target job on production nodes. Those measurements are absent from this repository.
 
 Binaries built with `-march=native` on a login node, virtualenvs with compiled wheels from that node, and a module that has no build for the target stay as they are. The guard reports the missing module and leaves the environment unchanged. `python3 tests/measure_noop.py` prints a same-target timing on the machine where it is run. Treat that timing as a reading from that machine.
