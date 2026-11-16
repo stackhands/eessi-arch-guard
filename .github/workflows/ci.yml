@@ -56,6 +56,8 @@ jobs:
       - run: zig fmt --check build.zig build.zig.zon zig
       - run: zig build test --summary all
       - run: zig build -Drelease=true
+      - name: build.zig.zon's version and -Dcommit reach --version
+        run: bash tests/build_version.sh
       - name: Python suite against the binary
         run: TOOL_BIN="$PWD/zig-out/bin/eessi-arch-guard" python -m unittest discover -s tests -v
 

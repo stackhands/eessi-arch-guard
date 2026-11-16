@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import fcntl
 import os
+import re
 import shutil
 import signal
 import subprocess
@@ -927,7 +928,14 @@ class IntegrationTests(unittest.TestCase):
         first = harness.GUARD.read_text(encoding="utf-8").splitlines()[0]
         self.assertEqual(first, "#!/usr/bin/python3 -I")
         proc = harness.run_guard({"PATH": "/usr/bin:/bin"}, ["--version"])
-        self.assertEqual(proc.stdout.strip(), guard.__version__)
+        if harness.TOOL_BIN:
+            # The Zig build adds its build after the version (COMPAT.md).
+            self.assertRegex(
+                proc.stdout,
+                r"\A" + re.escape(guard.__version__) + r" \([^()\n]+, [^()\n]+\)\n\Z",
+            )
+        else:
+            self.assertEqual(proc.stdout.strip(), guard.__version__)
         proc = harness.run_guard({"PATH": "/usr/bin:/bin"}, ["--help"])
         self.assertIn("--shell", proc.stdout)
         self.assertIn("--restore", proc.stdout)
