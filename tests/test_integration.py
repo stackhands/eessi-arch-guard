@@ -868,6 +868,38 @@ class IntegrationTests(unittest.TestCase):
         self.assertEqual(Path(path).read_bytes(), before)
         self.assertEqual(harness.log_lines(self.site.arch_log), [])
 
+    def test_unopenable_cache_directory_at_the_deadline_is_the_error(self):
+        # Before the decision a cache directory that does not open means no
+        # cache, but the read at the deadline opens it outside any handler:
+        # the OSError ends the run as a skip, not as a timeout.
+        if os.geteuid() == 0:
+            self.skipTest("root opens a directory of mode 000")
+        env = self._hang_env()
+        env["EESSI_TEST_GPU_HANG"] = "30"
+        cache_dir = os.path.join(self.site.root, "cache")
+        os.mkdir(cache_dir, 0)
+        env["TMPDIR"] = cache_dir
+        try:
+            proc = harness.run_guard(env, ["--timeout", "1"])
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            self.assertEqual(proc.stderr, "")
+            self.assertEqual(
+                proc.stdout,
+                "print eessi-arch-guard: skipped, PermissionError: "
+                "[Errno 13] Permission denied: %r\n" % cache_dir,
+            )
+            pid = int(Path(env["EESSI_TEST_HANG_PID"]).read_text(encoding="ascii"))
+            _wait_until_dead(pid)
+            self.assertFalse(_pid_alive(pid))
+        finally:
+            os.chmod(cache_dir, 0o700)
+            pid_path = Path(env["EESSI_TEST_HANG_PID"])
+            if pid_path.is_file():
+                try:
+                    os.kill(int(pid_path.read_text(encoding="ascii")), signal.SIGKILL)
+                except OSError:
+                    pass
+
     def test_chain_keeps_the_config_timeout(self):
         conf = harness.PROGRAM.with_name("eessi-arch-guard.conf")
         conf.write_text("timeout = 1\n", encoding="utf-8")

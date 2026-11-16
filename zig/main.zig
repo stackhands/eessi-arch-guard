@@ -551,7 +551,7 @@ fn realMain(arena: Allocator, argv0: []const u8, argv: []const []const u8, envp:
     // skip, after the chained output, and leaves the environment.
     const outcome = guard.limitedDecide(&ctx, env, args.shell, t.value) catch {
         writeStdout(chain_out, "");
-        emergencyWrite("OSError", guard.os_failure);
+        emergencyWrite(guard.os_failure.class, guard.os_failure.text);
         return if (args.strict) strict_failure_exit else 0;
     };
     const announce = !args.shell and std.mem.eql(u8, env.get("SLURM_LOCALID") orelse "0", "0");

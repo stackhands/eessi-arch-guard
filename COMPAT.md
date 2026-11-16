@@ -248,7 +248,7 @@ All values come from `os.environ` copied at L1751 unless a row says the helper r
 | Item | Behaviour | Lines |
 |---|---|---|
 | Decision deadline | One `time.monotonic()` deadline of `DEFAULT_TIMEOUT = 60.0` s (or `--timeout`/config) covers: the lock wait, both archdetect runs, the restore helper. Checked at `decide` entry, before a cache miss decides, in the lock poll loop, and around each child. | L115, L455-472, L1074-1075, L1450-1451, L1401-1413 |
-| Deadline expiry | `_Deadline` (a `BaseException` subclass, not caught by `except Exception`) is raised; `limited_decide` reads the cache once (no lock, silently ignoring a miss; an `OSError` from that read would escape to the generic handler) and returns it, else a failed outcome token `timeout`. Not cached. The Zig build treats that `OSError` as a miss (see Unintended differences). | L444-446, L1489-1501 |
+| Deadline expiry | `_Deadline` (a `BaseException` subclass, not caught by `except Exception`) is raised; `limited_decide` reads the cache once (no lock, silently ignoring a miss; an `OSError` from opening the cache directory escapes to the generic handler, which prints the skip line) and returns it, else a failed outcome token `timeout`. Not cached. | L444-446, L1489-1501 |
 | SIGTERM | Handler installed only for the duration of `limited_decide` (`signal.signal(SIGTERM, ...)`) and restored in `finally`. It sets `terminated`, and unless `committing`, `os.killpg(child_pgid, SIGKILL)`. `_Terminated` is raised at the next `check()` or after the child returns; result is a failed outcome token `terminated`. Not cached. | L452-498, L1483-1510, L1502-1507 |
 | SIGTERM and child creation | `SIGTERM` is blocked with `pthread_sigmask` around `Popen` so the handler always knows the child's process group; then unblocked. If `terminated` was set meanwhile, the child group is killed before waiting. | L494-498, L559-580 |
 | Commit window | While the cache write runs, `committing` is True: `check()` returns early, the handler does not kill, and a signal arriving then does not discard the finished decision. | L467-468, L486-487, L1453-1460 |
@@ -331,6 +331,7 @@ The rows above describe the Python guard at 0.2.0. The Zig build in `zig/` keeps
 | the message encoding | the locale's preferred encoding, which Python's UTF-8 mode makes UTF-8 under the C, POSIX and UTF-8 locales | always UTF-8; a non-UTF-8 legacy locale gives different bytes for a non-ASCII message |
 | a cache entry holding a lone surrogate outside U+DC80..U+DCFF | read, then failing when written out | refused, and the decision is made again |
 | the skip line after an unexpected failure | `skipped, ExceptionName: text` | `skipped, panic: text`, `skipped, signal: SIGSEGV` and the like; a crash signal still exits 0 (78 with `--strict`) |
+| a path in the skip line for an `OSError` that holds a character past U+00FF Python does not print, such as U+2028 | escaped, as `repr()` escapes it | kept as it is |
 | archdetect or Lmod output past 64 MiB, stderr past 1 MiB | read whole | refused as a failed run; stderr is cut |
 | a timeout written with non-ASCII digits, such as `５` | accepted, as `float()` takes any Unicode decimal digit | refused with the timeout warning; the default is kept |
 | a cache file with a leading-zero number, NaN, Infinity, or nesting deeper than 32 | `NaN` and `Infinity` accepted, the rest refused | all refused, and the decision is made again |
@@ -342,7 +343,6 @@ The two builds differ here without meaning to, and no row above allows it. In ea
 
 | case | Python guard | Zig build |
 |---|---|---|
-| the deadline passes and the cache directory cannot be opened for the late cache read, as when `TMPDIR` lost its permissions during the decision | the `OSError` reaches the outer handler: `print eessi-arch-guard: skipped, PermissionError: [Errno 13] Permission denied: 'DIR'`, no `EESSI_ARCH_GUARD_FAILED` | treated as a cache miss: `export EESSI_ARCH_GUARD_FAILED=<was>->timeout` and `print eessi-arch-guard: decision exceeded the time limit; environment left as it was` |
 | a `--restore` request whose `env` holds a value that is not a string; the guard's own requests hold only strings | takes `str()` of any JSON value: `null` is `None`, `true` is `True`, a number as Python prints it (`1E5` is `100000.0`), a list or object as Python's repr; `NaN` and `Infinity` are accepted | `null`, `true` and `false` as the Python guard, a number as the JSON writes it, a list or object refused with `restore request is malformed`; `NaN` and `Infinity` refused with exit 1 and `eessi-arch-guard: restore failed: the request is not JSON` |
 ## Bugs both builds share
 

@@ -267,6 +267,36 @@ pub fn messageBytes(gpa: Allocator, text: []const u8) Allocator.Error![]u8 {
     return out.toOwnedSlice(gpa);
 }
 
+/// repr() of the str surrogateescape decodes from `s`: in single quotes, or
+/// double ones when `s` holds a ' and no ", with a backslash, that quote,
+/// the characters Python does not print up to U+00FF and an invalid byte
+/// escaped. Past U+00FF every character is kept, where repr() also escapes
+/// the ones Python does not print, such as U+2028.
+pub fn pyRepr(gpa: Allocator, s: []const u8) Allocator.Error![]u8 {
+    const quote: u8 = if (std.mem.findScalar(u8, s, '\'') != null and std.mem.findScalar(u8, s, '"') == null) '"' else '\'';
+    var out: std.ArrayList(u8) = .empty;
+    errdefer out.deinit(gpa);
+    try out.append(gpa, quote);
+    var i: usize = 0;
+    while (i < s.len) {
+        const ch = nextChar(s[i..]);
+        if (ch.cp) |cp| switch (cp) {
+            '\\' => try out.appendSlice(gpa, "\\\\"),
+            '\t' => try out.appendSlice(gpa, "\\t"),
+            '\n' => try out.appendSlice(gpa, "\\n"),
+            '\r' => try out.appendSlice(gpa, "\\r"),
+            0...8, 0x0b, 0x0c, 0x0e...0x1f, 0x7f...0xa0, 0xad => try out.print(gpa, "\\x{x:0>2}", .{cp}),
+            else => {
+                if (cp == quote) try out.append(gpa, '\\');
+                try out.appendSlice(gpa, s[i .. i + ch.len]);
+            },
+        } else try out.print(gpa, "\\udc{x:0>2}", .{s[i]});
+        i += ch.len;
+    }
+    try out.append(gpa, quote);
+    return out.toOwnedSlice(gpa);
+}
+
 test "validators" {
     try std.testing.expect(moduleName("GCC/13.2.0"));
     try std.testing.expect(moduleName("2025"));
@@ -303,6 +333,27 @@ test "oneLine and messageBytes" {
     const m = try messageBytes(gpa, "x\xffy\u{e9}");
     defer gpa.free(m);
     try std.testing.expectEqualStrings("x?y\u{e9}", m);
+}
+
+fn expectPyRepr(gpa: Allocator, s: []const u8, want: []const u8) !void {
+    const got = try pyRepr(gpa, s);
+    defer gpa.free(got);
+    try std.testing.expectEqualStrings(want, got);
+}
+
+test "pyRepr quotes and escapes as repr() does" {
+    const cases = [_][2][]const u8{
+        .{ "/tmp/x", "'/tmp/x'" },
+        .{ "it's", "\"it's\"" },
+        .{ "a'b\"c", "'a\\'b\"c'" },
+        .{ "a\\b", "'a\\\\b'" },
+        .{ "\t\n\r\x01\x7f", "'\\t\\n\\r\\x01\\x7f'" },
+        .{ "caf\xe9", "'caf\\udce9'" },
+        .{ "caf\u{e9}", "'caf\u{e9}'" },
+        .{ "\u{a0}\u{ad}\u{85}\u{ff}", "'\\xa0\\xad\\x85\u{ff}'" },
+    };
+    for (cases) |cs| try expectPyRepr(std.testing.allocator, cs[0], cs[1]);
+    try std.testing.checkAllAllocationFailures(std.testing.allocator, expectPyRepr, .{ "it's\xe9", "\"it's\\udce9\"" });
 }
 
 test "decodeReplace uses maximal subparts" {
