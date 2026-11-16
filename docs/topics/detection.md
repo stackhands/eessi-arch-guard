@@ -58,7 +58,7 @@ The walk keeps the first remaining candidate for which this path is a directory:
 
 That directory is the CPU target. When no candidate has a directory, the result is `->no-software-dir` unless `EESSI_ARCH_GUARD_MISSING=ignore`. See [Correct a guard message](../howto/read_failure.md).
 
-archdetect's own consumer, the EESSI module, walks the unfiltered list. When the directory that survives the waitpkg filter is further down the list than the directory the unfiltered walk would install, the reload sets `EESSI_SOFTWARE_SUBDIR_OVERRIDE` to the filtered directory and removes `EESSI_ARCHDETECT_OPTIONS` for that reload. A login-node value of `EESSI_ARCHDETECT_OPTIONS` would outrank the pin inside the module. The module's archdetect wrapper then exports `EESSI_ARCHDETECT_OPTIONS` as that one subdirectory.
+archdetect's own consumer, the EESSI module, walks the unfiltered list. When the directory that survives the waitpkg filter is further down the list than the directory the unfiltered walk would install, the reload sets `EESSI_SOFTWARE_SUBDIR_OVERRIDE` to the filtered directory and removes `EESSI_ARCHDETECT_OPTIONS` for the loads after the purge. A login-node value of `EESSI_ARCHDETECT_OPTIONS` would outrank the pin inside the module. The module's archdetect wrapper then exports `EESSI_ARCHDETECT_OPTIONS` as that one subdirectory. The purge itself runs with the task's value: the module's unload works out from it which tree to take off `MODULEPATH`, and without it Lmod only warns and leaves the loaded tree behind the pinned one.
 
 If the user already set `EESSI_SOFTWARE_SUBDIR_OVERRIDE` or `EESSI_ARCHDETECT_OPTIONS_OVERRIDE`, the guard skips detection entirely. The pin is the user's.
 

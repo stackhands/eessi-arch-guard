@@ -56,7 +56,7 @@ def _accel(status="none", subdir="", error=""):
 
 
 def _restore(target=ZEN2, accel="", newline=False):
-    def restore(env, eessi, modules):
+    def restore(env, eessi, modules, pin=""):
         new = dict(env)
         new["EESSI_SOFTWARE_SUBDIR"] = target
         new["EESSI_ACCEL_SUBDIR"] = accel

@@ -36,7 +36,7 @@ so a site sets this in a wrapper or in a root-owned eessi-arch-guard.conf.
 
 Flags other than these are skipped. The process exits 0 unless a chained prolog exits non-zero, or `--restore` hits an exception (that path exits 1 and writes the reason to stderr). The TaskProlog path catches exceptions and exits 0.
 
-`--restore` is the helper described in [Concepts](../topics/concepts.md). The JSON request has keys `v` (1), `env`, `eessi`, `modules`, and `lmod`. Names and values are the Latin-1 wire form from {py:func}`eessi_arch_guard.to_wire`.
+`--restore` is the helper described in [Concepts](../topics/concepts.md). The JSON request has keys `v` (1), `env`, `eessi`, `modules`, `lmod`, and `pin`: the CPU subdirectory the loads after the purge are pinned to, or empty. Names and values are the Latin-1 wire form from {py:func}`eessi_arch_guard.to_wire`.
 
 ## Strict user job and step status
 

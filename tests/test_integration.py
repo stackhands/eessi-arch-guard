@@ -7,6 +7,7 @@ EESSI_PROC_CPUINFO and a nvidia-smi stub that is first on PATH.
 from __future__ import annotations
 
 import fcntl
+import json
 import os
 import re
 import shutil
@@ -930,6 +931,53 @@ class IntegrationTests(unittest.TestCase):
         self.assertTrue(printed)
         source = harness.GUARD.read_text(encoding="utf-8")
         self.assertNotIn(icelake, source)
+
+    def test_pinned_reload_drops_the_loaded_module_paths(self):
+        # The EESSI module unloads the tree it computes from
+        # EESSI_ARCHDETECT_OPTIONS, so the purge has to see the task's value
+        # and only the loads after it see the pin.
+        spr = "x86_64/intel/sapphirerapids"
+        icelake = "x86_64/intel/icelake"
+        for cpu in (spr, icelake):
+            self.site.add_cpu(cpu)
+            self.site.add_module(cpu, "R/4.4.2")
+        self._copy_cpuinfo("sapphirerapids-kvm-no-waitpkg.cpuinfo")
+        env = harness.base_env(self.site, ZEN2, ["R/4.4.2"], gpu="none")
+        env["EESSI_ARCHDETECT_OPTIONS"] = ZEN2
+        env["EESSI_TEST_MODULE_PATHS"] = "1"
+        proc = harness.run_guard(env)
+        changes, _printed = _assert_prolog(proc)
+        self.assertEqual(changes["EESSI_SOFTWARE_SUBDIR"], icelake)
+        self.assertEqual(changes["EESSI_SOFTWARE_SUBDIR_OVERRIDE"], icelake)
+        self.assertEqual(changes["EESSI_ARCHDETECT_OPTIONS"], icelake)
+        self.assertEqual(
+            changes["MODULEPATH"],
+            os.path.join(self.site.prefix, "software", "linux", icelake, "modules", "all"),
+        )
+
+    def test_restore_helper_rejects_an_unsafe_pin(self):
+        env = harness.base_env(self.site, ZEN2, ["R/4.4.2"])
+        request = {
+            "v": 1,
+            "env": env,
+            "eessi": "EESSI/2025.06",
+            "modules": ["R/4.4.2"],
+            "lmod": env["LMOD_CMD"],
+            "pin": "../" + ZEN2,
+        }
+        proc = subprocess.run(
+            [*harness.GUARD_ARGV, "--restore"],
+            input=json.dumps(request),
+            capture_output=True,
+            text=True,
+            env=env,
+            check=False,
+        )
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        reply = json.loads(proc.stdout)
+        self.assertFalse(reply["ok"])
+        self.assertEqual(reply["error"], "restore request is malformed")
+        self.assertEqual(harness.log_lines(self.site.log), [])
 
     def test_kvm_sapphirerapids_falls_back_to_skylake_when_that_tree_exists(self):
         spr = "x86_64/intel/sapphirerapids"

@@ -1,0 +1,1 @@
+A reload pinned by the waitpkg fallback purges with the task's `EESSI_ARCHDETECT_OPTIONS` and pins only the loads after the purge. The EESSI module's unload works out the tree to remove from that variable, so the pinned purge left the loaded tree on `MODULEPATH` behind the pinned one, with an Lmod warning. The restore request carries the pin as a new `pin` key.
