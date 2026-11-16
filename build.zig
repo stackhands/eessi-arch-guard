@@ -31,9 +31,11 @@ pub fn build(b: *std.Build) void {
     const test_step = b.step("test", "Run the Zig unit tests");
     test_step.dependOn(&b.addRunArtifact(unit).step);
 
-    // The Python test suite against this binary.
+    // The Python test suite against this binary, run in the build root:
+    // -s tests is relative, and zig build may be started in a subdirectory.
     const suite = b.addSystemCommand(&.{ "bash", "-c", "TOOL_BIN=\"$0\" exec python3 -m unittest discover -s tests" });
     suite.addArtifactArg(exe);
+    suite.setCwd(b.path("."));
     suite.expectExitCode(0);
     b.step("suite", "Run the Python test suite against the binary").dependOn(&suite.step);
 }

@@ -1,0 +1,1 @@
+`zig build suite` started in a subdirectory such as `src/` runs the Python suite: the step runs in the build root, where `-s tests` finds it, instead of where `zig build` was started, where unittest stopped with `Start directory is not importable: 'tests'`.
