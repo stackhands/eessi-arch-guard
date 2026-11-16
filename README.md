@@ -9,14 +9,13 @@
 
 eessi-arch-guard is a Slurm TaskProlog that reloads an EESSI module stack when the task runs on a CPU or GPU other than the target recorded at `module load`. The EESSI module chooses that target once. Lmod keeps the recorded `MODULEPATH` and the `EBROOT*` paths until the stack is purged and loaded again. The prolog does that purge and load on the compute node, before `execve`, and prints the environment delta for `slurmstepd` to apply.
 
-Documentation: <https://stackhands.github.io/eessi-arch-guard/>, a Sphinx site built from `docs/`: a tutorial, how-to guides, topics, and a reference, including the generated Python API.
+Documentation: <https://stackhands.github.io/eessi-arch-guard/>, built from the Org pages in `docs/orgmode/`: a tutorial, how-to guides, explanation, and a reference, including the API generated from the Python and Zig code.
 
 ```console
-python3 -m pip install -r docs/requirements.txt
-make -C docs html
+pixi run -e docs docbld
 ```
 
-The HTML is written to `docs/_build/html`.
+The HTML is written to `docs/build/html`. `docs/orgmode/contributing.org` says how to write a page.
 
 ## Install the prolog
 

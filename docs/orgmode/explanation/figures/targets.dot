@@ -1,0 +1,28 @@
+// How the guard finds this node's CPU and accelerator targets.
+digraph targets {
+    graph [bgcolor="white", rankdir=TB, nodesep=0.6, ranksep=0.35, fontname="Helvetica", compound=true];
+    node [shape=box, style="rounded,filled", fillcolor="#f4f4f4", color="#555555", fontname="Helvetica", fontsize=11];
+    edge [color="#555555", fontname="Helvetica", fontsize=10];
+
+    subgraph cluster_cpu {
+        label="CPU"; fontsize=12; color="#999999"; style="rounded";
+        cpupath [label="eessi_archdetect.sh -a cpupath\non the processors the task may use:\none line of candidates, best first"];
+        waitpkg [label="Drop a candidate whose -march needs waitpkg\nwhen a kept processor lacks the flag"];
+        walk [label="Keep the first candidate that has\n$EESSI_PREFIX/software/$EESSI_OS_TYPE/<candidate>/software"];
+        cpu_cmp [label="Compare with EESSI_SOFTWARE_SUBDIR"];
+        cpupath -> waitpkg -> walk -> cpu_cmp;
+    }
+
+    subgraph cluster_accel {
+        label="Accelerator"; fontsize=12; color="#999999"; style="rounded";
+        accelpath [label="eessi_archdetect.sh accelpath,\nwhich sees the GPUs visible to the task"];
+        none [label="A nonzero status or empty output\nmeans no accelerator, the empty string"];
+        shape_ok [label="Any other output must be one line,\naccel/nvidia/ccN or accel/amd/gfxN"];
+        acc_cmp [label="Compare with EESSI_ACCEL_SUBDIR"];
+        accelpath -> none -> shape_ok -> acc_cmp;
+    }
+
+    match [label="Both equal: a match", fillcolor="#ffffff"];
+    cpu_cmp -> match;
+    acc_cmp -> match;
+}

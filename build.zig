@@ -27,6 +27,17 @@ pub fn build(b: *std.Build) void {
     const exe = b.addExecutable(.{ .name = "eessi-arch-guard", .root_module = mod, .linkage = .static });
     b.installArtifact(exe);
 
+    // The Zig autodoc site, into <prefix>/docs (pixi task autodoc). A compile
+    // of its own: asking the installed one for docs would add -femit-docs to
+    // every build of the binary.
+    const doc_exe = b.addExecutable(.{ .name = "eessi-arch-guard", .root_module = mod });
+    const docs = b.addInstallDirectory(.{
+        .source_dir = doc_exe.getEmittedDocs(),
+        .install_dir = .prefix,
+        .install_subdir = "docs",
+    });
+    b.step("docs", "Generate the API reference").dependOn(&docs.step);
+
     const unit = b.addTest(.{ .root_module = mod });
     const test_step = b.step("test", "Run the Zig unit tests");
     test_step.dependOn(&b.addRunArtifact(unit).step);

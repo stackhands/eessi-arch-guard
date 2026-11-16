@@ -1,3 +1,7 @@
+# Changelog
+
+<!-- towncrier release notes start -->
+
 ## [0.2.0] - 2026-11-14
 
 ### Features
