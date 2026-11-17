@@ -26,6 +26,10 @@ eessi-arch-guard = "eessi_arch_guard:main"
 py-modules = ["eessi_arch_guard"]
 package-dir = { "" = "src" }
 
+[tool.setuptools.data-files]
+"share/eessi-arch-guard" = ["share/sitepath.py"]
+"share/eessi-arch-guard/lmod" = ["share/lmod/SitePackage.lua"]
+
 [tool.ruff]
 target-version = "py39"
 line-length = 100
