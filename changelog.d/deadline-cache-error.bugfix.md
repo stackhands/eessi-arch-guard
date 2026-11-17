@@ -1,0 +1,1 @@
+When the time limit passes and the cache directory does not open for the last cache read, as when `TMPDIR` lost its permissions during the decision, the Zig build prints the skip line with that error, such as `skipped, PermissionError: [Errno 13] Permission denied: 'DIR'`, as the Python guard does, instead of reporting a timeout.

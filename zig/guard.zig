@@ -75,8 +75,33 @@ pub const Outcome = struct {
 /// its text in `os_failure`.
 pub const Stop = error{ Deadline, Terminated, Os };
 
-/// Python's str() of the OSError behind error.Os: "[Errno N] text".
-pub var os_failure: []const u8 = "";
+/// The OSError behind error.Os, as Python's main names it on the skip line:
+/// the class Python raises for its errno, and its str(), "[Errno N] text",
+/// with ": 'PATH'" after it for an error on a path.
+pub var os_failure: OsFailure = .{};
+
+pub const OsFailure = struct { class: []const u8 = "OSError", text: []const u8 = "" };
+
+/// The OSError subclass Python raises for errno `e` (PEP 3151).
+fn osErrorClass(e: linux.E) []const u8 {
+    return switch (e) {
+        .PERM, .ACCES => "PermissionError",
+        .NOENT => "FileNotFoundError",
+        .NOTDIR => "NotADirectoryError",
+        .ISDIR => "IsADirectoryError",
+        .EXIST => "FileExistsError",
+        .INTR => "InterruptedError",
+        .SRCH => "ProcessLookupError",
+        .CHILD => "ChildProcessError",
+        .AGAIN, .ALREADY, .INPROGRESS => "BlockingIOError",
+        .PIPE, .SHUTDOWN => "BrokenPipeError",
+        .CONNABORTED => "ConnectionAbortedError",
+        .CONNREFUSED => "ConnectionRefusedError",
+        .CONNRESET => "ConnectionResetError",
+        .TIMEDOUT => "TimeoutError",
+        else => "OSError",
+    };
+}
 
 // ---- the deadline and SIGTERM ------------------------------------------
 
@@ -1222,15 +1247,9 @@ fn doRestore(c: *Ctx, payload: json.Value, raised: *[]const u8) HelperError!Repl
     }
     var module_env: Map = .empty;
     for (env_v.object) |mem| {
+        if (mem.value != .string) return malformed();
         const k = json.decodeWire(a, mem.key) catch return malformed();
-        const v = switch (mem.value) {
-            .string => |s| json.decodeWire(a, s) catch return malformed(),
-            // str(value) of a non-string JSON value.
-            .null => "None",
-            .bool => |b| if (b) "True" else "False",
-            .number => |n| n,
-            else => return malformed(),
-        };
+        const v = json.decodeWire(a, mem.value.string) catch return malformed();
         module_env.put(a, k, v) catch main_mod.oom();
     }
     if (pin.len > 0 and !text.safeRelSubdir(pin)) return malformed();
@@ -1650,7 +1669,7 @@ fn writeCache(c: *Ctx, dirfd: sys.fd_t, name: []const u8, o: Outcome) void {
 fn lockExclusive(c: *Ctx, fd: sys.fd_t) Stop!void {
     const l = c.limit orelse {
         state.lockExclusive(fd, null) catch |err| {
-            os_failure = if (common.sys.asError(err)) |e| common.sys.describe(e) else @errorName(err);
+            os_failure = .{ .text = if (common.sys.asError(err)) |e| common.sys.describe(e) else @errorName(err) };
             return error.Os;
         };
         return;
@@ -1662,7 +1681,7 @@ fn lockExclusive(c: *Ctx, fd: sys.fd_t) Stop!void {
             .SUCCESS => return,
             .AGAIN, .INTR => {},
             else => |e| {
-                os_failure = common.sys.describeErrno(e);
+                os_failure = .{ .class = osErrorClass(e), .text = common.sys.describeErrno(e) };
                 return error.Os;
             },
         }
@@ -1684,7 +1703,35 @@ test "a flock error other than would-block is an OSError, not a wait" {
     const start = nowMs();
     try std.testing.expectError(error.Os, lockExclusive(&c, fd));
     try std.testing.expect(nowMs() - start < 1000);
-    try std.testing.expectEqualStrings("[Errno 9] Bad file descriptor", os_failure);
+    try std.testing.expectEqualStrings("OSError", os_failure.class);
+    try std.testing.expectEqualStrings("[Errno 9] Bad file descriptor", os_failure.text);
+}
+
+/// _read_cache's open of the cache directory, which no handler around it
+/// catches: an OSError goes up to main, as error.Os.
+fn openCacheDir(c: *Ctx, dir: []const u8) error{Os}!sys.fd_t {
+    return fsx.openDir(fsx.cwd, dir, true) catch |err| {
+        // sys.z refuses a path too long for the kernel before any call.
+        const e: linux.E = if (err == error.NameTooLong) .NAMETOOLONG else common.sys.last_errno;
+        const shown = text.pyRepr(c.arena, dir) catch main_mod.oom();
+        os_failure = .{
+            .class = osErrorClass(e),
+            .text = c.arena.print("{s}: {s}", .{ common.sys.describeErrno(e), shown }) catch main_mod.oom(),
+        };
+        return error.Os;
+    };
+}
+
+test "an unopenable cache directory is the OSError Python raises" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    var c: Ctx = .{ .arena = arena_state.allocator(), .env = .empty, .strict = false, .self_exe = "" };
+    try std.testing.expectError(error.Os, openCacheDir(&c, "/nonexistent/it's"));
+    try std.testing.expectEqualStrings("FileNotFoundError", os_failure.class);
+    try std.testing.expectEqualStrings("[Errno 2] No such file or directory: \"/nonexistent/it's\"", os_failure.text);
+    try std.testing.expectError(error.Os, openCacheDir(&c, "/proc/self/exe/x"));
+    try std.testing.expectEqualStrings("NotADirectoryError", os_failure.class);
+    try std.testing.expectEqualStrings("[Errno 20] Not a directory: '/proc/self/exe/x'", os_failure.text);
 }
 
 /// cached_decide: `decide`, once per job step, node, user, output mode and
@@ -1723,10 +1770,9 @@ pub fn limitedDecide(c: *Ctx, env: Map, shell: bool, timeout_s: f64) error{Os}!O
     return cachedDecide(c, env, shell) catch |err| switch (err) {
         error.Deadline => {
             if (cachePath(c, env, shell)) |p| {
-                if (fsx.openDir(fsx.cwd, p.dir, true)) |dirfd| {
-                    defer sys.close(dirfd);
-                    if (readCache(c, dirfd, p.name, shell)) |o| return o;
-                } else |_| {}
+                const dirfd = try openCacheDir(c, p.dir);
+                defer sys.close(dirfd);
+                if (readCache(c, dirfd, p.name, shell)) |o| return o;
             }
             return failed(c, was, "timeout", "eessi-arch-guard: decision exceeded the time limit; environment left as it was", null);
         },

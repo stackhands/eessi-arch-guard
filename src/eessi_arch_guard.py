@@ -25,7 +25,6 @@ import stat
 import subprocess
 import sys
 import tempfile
-import threading
 import time
 from typing import Dict, List, Mapping, NamedTuple, Optional, Sequence, Tuple
 
@@ -115,7 +114,9 @@ PROLOG_LINE_MAX = 4094
 DEFAULT_TIMEOUT = 60.0
 STRICT_FAILURE_EXIT = 78
 _STRICT_MODE = False
-TIMEOUT_MAX = threading.TIMEOUT_MAX
+# subprocess waits for a command with poll(), whose timeout is a C int of
+# milliseconds: a wait past 2**31 - 1 ms raises OverflowError.
+TIMEOUT_MAX = 2147483.647
 # flock has no timeout and Python retries EINTR, so the wait is a
 # non-blocking loop. 0.05 s still ends a 1 s deadline in one shot, and a
 # 192-task step does not spin on the lock.
@@ -1247,14 +1248,14 @@ def do_restore(payload: Mapping[str, object]) -> Dict[str, object]:
         return {"ok": False, "missing": [], "error": "restore request is malformed"}
     if not isinstance(lmod_cmd, str) or not isinstance(pin, str):
         return {"ok": False, "missing": [], "error": "restore request is malformed"}
+    if not all(isinstance(value, str) for value in env.values()):
+        return {"ok": False, "missing": [], "error": "restore request is malformed"}
     try:
         eessi = from_wire(eessi)
         lmod_cmd = from_wire(lmod_cmd)
         pin = from_wire(pin)
         modules = [from_wire(name) if isinstance(name, str) else name for name in modules]
-        module_env = {
-            from_wire(str(key)): from_wire(str(value)) for key, value in env.items()
-        }
+        module_env = {from_wire(key): from_wire(value) for key, value in env.items()}
     except UnicodeError:
         return {"ok": False, "missing": [], "error": "restore request is malformed"}
     if pin and not safe_rel_subdir(pin):
@@ -1289,13 +1290,18 @@ def do_restore(payload: Mapping[str, object]) -> Dict[str, object]:
     return {"ok": True, "env": _wire_map(current), "missing": [], "error": ""}
 
 
+def _not_json(name: str) -> float:
+    # json.loads reads NaN, Infinity and -Infinity, which JSON does not have.
+    raise ValueError("%s is not JSON" % name)
+
+
 def restore_main() -> int:
     """The ``--restore`` helper: a JSON request on stdin, the JSON result on stdout.
 
     Returns 0; on an error it writes the reason to stderr and returns 1.
     """
     try:
-        payload = json.loads(sys.stdin.buffer.read().decode("utf-8"))
+        payload = json.loads(sys.stdin.buffer.read().decode("utf-8"), parse_constant=_not_json)
         sys.stdout.write(json.dumps(do_restore(payload)))
         return 0
     except Exception as exc:
@@ -2052,6 +2058,17 @@ class Args(NamedTuple):
     strict: bool = False
 
 
+def _option_value(argv: Sequence[str], index: int) -> Tuple[str, int]:
+    """The value of the option at ``argv[index]``, and the index of its last word.
+
+    The value is the next word, unless that starts with ``-`` and so is an
+    option of its own; it is empty then, and when there is no next word.
+    """
+    if index + 1 < len(argv) and not argv[index + 1].startswith("-"):
+        return argv[index + 1], index + 1
+    return "", index
+
+
 def parse_args(argv: Sequence[str]) -> Args:
     """Parse the prolog argv. Flags other than the documented ones are skipped."""
     shell = restore = help_ = version = strict = False
@@ -2071,13 +2088,11 @@ def parse_args(argv: Sequence[str]) -> Args:
         elif arg == "--version":
             version = True
         elif arg == "--chain":
-            index += 1
-            chain = argv[index] if index < len(argv) else ""
+            chain, index = _option_value(argv, index)
         elif arg.startswith("--chain="):
             chain = arg.split("=", 1)[1]
         elif arg == "--timeout":
-            index += 1
-            timeout = argv[index] if index < len(argv) else ""
+            timeout, index = _option_value(argv, index)
         elif arg.startswith("--timeout="):
             timeout = arg.split("=", 1)[1]
         index += 1

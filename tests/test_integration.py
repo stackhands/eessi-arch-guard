@@ -483,6 +483,21 @@ class IntegrationTests(unittest.TestCase):
         self.assertTrue(printed)
         self.assertEqual(harness.log_lines(self.site.log), [])
 
+    def test_an_option_is_not_the_value_of_chain_or_timeout(self):
+        # A next word that starts with "-" is an option of its own, and the
+        # value is empty: --strict after --chain or --timeout still counts.
+        env = self._cpu_env(ZEN4, "zen2")
+        self.site.write_cpuinfo("zen2", fail=True)
+        for option, warning in (
+            ("--chain", "--chain is not an absolute executable"),
+            ("--timeout", "--timeout is not a positive number of seconds at most 2147483.647"),
+        ):
+            proc = harness.run_guard(env, [option, "--strict"])
+            changes, _printed = _assert_prolog(proc, code=guard.STRICT_FAILURE_EXIT)
+            self.assertIn("archdetect-failed", changes["EESSI_ARCH_GUARD_FAILED"])
+            self.assertEqual(proc.stderr, "eessi-arch-guard: %s\n" % warning)
+        self.assertEqual(harness.log_lines(self.site.log), [])
+
     def test_first_candidate_with_a_software_directory(self):
         # Drop zen4's tree so the node's best match cannot be used.
         shutil.rmtree(os.path.join(self.site.prefix, "software", "linux", ZEN4))
@@ -609,6 +624,44 @@ class IntegrationTests(unittest.TestCase):
             self.assertIn("EESSI_ARCH_GUARD_RELOADED", proc.stdout)
         finally:
             conf.unlink(missing_ok=True)
+
+    def test_config_beside_a_link_found_through_path(self):
+        # Python's __file__ is the path execve was given, which a PATH search
+        # makes the link it found: the config beside the link is the one
+        # read, made absolute and normalized as os.path.abspath does.
+        target_dir = os.path.join(self.site.root, "target")
+        link_dir = os.path.join(self.site.root, "link")
+        os.makedirs(target_dir)
+        os.makedirs(link_dir)
+        program = os.path.join(target_dir, "guard")
+        if harness.TOOL_BIN:
+            shutil.copy(harness.PROGRAM, program)
+        else:
+            body = harness.GUARD.read_text(encoding="utf-8").split("\n", 1)[1]
+            with open(program, "w", encoding="utf-8") as handle:
+                handle.write("#!%s -I\n%s" % (sys.executable, body))
+        os.chmod(program, 0o755)
+        os.symlink(program, os.path.join(link_dir, "eessi-arch-guard"))
+        for directory in (target_dir, link_dir):
+            conf = os.path.join(directory, "eessi-arch-guard.conf")
+            with open(conf, "w", encoding="utf-8") as handle:
+                handle.write("timeout = 5\n")
+        expected = (
+            "eessi-arch-guard: config ignored: %s is not owned by root and is ignored\n"
+            % os.path.join(link_dir, "eessi-arch-guard.conf")
+        )
+        for entry in (link_dir, "./link"):
+            proc = subprocess.run(
+                ["eessi-arch-guard", "--shell"],
+                capture_output=True,
+                text=True,
+                env={"PATH": entry + ":/usr/bin:/bin", "LC_ALL": "C"},
+                cwd=self.site.root,
+                check=False,
+            )
+            self.assertEqual(proc.returncode, 0, (entry, proc.stderr))
+            self.assertEqual(proc.stdout, "", entry)
+            self.assertEqual(proc.stderr, expected, entry)
 
     def test_latin1_locale_keeps_bytes_through_the_restore(self):
         parent = os.path.join(tempfile.gettempdir(), "caf\udce9-eessi-arch-guard")
@@ -830,6 +883,38 @@ class IntegrationTests(unittest.TestCase):
         self.assertEqual(Path(path).read_bytes(), before)
         self.assertEqual(harness.log_lines(self.site.arch_log), [])
 
+    def test_unopenable_cache_directory_at_the_deadline_is_the_error(self):
+        # Before the decision a cache directory that does not open means no
+        # cache, but the read at the deadline opens it outside any handler:
+        # the OSError ends the run as a skip, not as a timeout.
+        if os.geteuid() == 0:
+            self.skipTest("root opens a directory of mode 000")
+        env = self._hang_env()
+        env["EESSI_TEST_GPU_HANG"] = "30"
+        cache_dir = os.path.join(self.site.root, "cache")
+        os.mkdir(cache_dir, 0)
+        env["TMPDIR"] = cache_dir
+        try:
+            proc = harness.run_guard(env, ["--timeout", "1"])
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            self.assertEqual(proc.stderr, "")
+            self.assertEqual(
+                proc.stdout,
+                "print eessi-arch-guard: skipped, PermissionError: "
+                "[Errno 13] Permission denied: %r\n" % cache_dir,
+            )
+            pid = int(Path(env["EESSI_TEST_HANG_PID"]).read_text(encoding="ascii"))
+            _wait_until_dead(pid)
+            self.assertFalse(_pid_alive(pid))
+        finally:
+            os.chmod(cache_dir, 0o700)
+            pid_path = Path(env["EESSI_TEST_HANG_PID"])
+            if pid_path.is_file():
+                try:
+                    os.kill(int(pid_path.read_text(encoding="ascii")), signal.SIGKILL)
+                except OSError:
+                    pass
+
     def test_chain_keeps_the_config_timeout(self):
         conf = harness.PROGRAM.with_name("eessi-arch-guard.conf")
         conf.write_text("timeout = 1\n", encoding="utf-8")
@@ -918,6 +1003,33 @@ class IntegrationTests(unittest.TestCase):
                     os.kill(int(pid_path.read_text(encoding="ascii")), signal.SIGKILL)
                 except OSError:
                     pass
+
+    def test_timeout_past_what_poll_can_wait_is_refused(self):
+        # The Python guard waits for a command with poll(), which takes at
+        # most 2**31 - 1 ms. A longer timeout is refused in both builds, and
+        # the decision runs under the default.
+        env = self._cpu_env(ZEN4, "zen2")
+        proc = harness.run_guard(env, ["--timeout", "2147483.647"])
+        changes, _printed = _assert_prolog(proc)
+        self.assertEqual(changes["EESSI_SOFTWARE_SUBDIR"], ZEN2, proc.stdout)
+        self.assertEqual(proc.stderr, "")
+        warning = "eessi-arch-guard: %s is not a positive number of seconds at most 2147483.647\n"
+        for value in ("2147483.648", "9223372036"):
+            proc = harness.run_guard(env, ["--timeout", value])
+            changes, _printed = _assert_prolog(proc)
+            self.assertEqual(changes["EESSI_SOFTWARE_SUBDIR"], ZEN2, (value, proc.stdout))
+            self.assertEqual(proc.stderr, warning % "--timeout")
+        conf = harness.PROGRAM.with_name("eessi-arch-guard.conf")
+        conf.write_text("timeout = 9223372036\n", encoding="utf-8")
+        subprocess.check_call(["sudo", "chown", "root:root", str(conf)])
+        subprocess.check_call(["sudo", "chmod", "644", str(conf)])
+        try:
+            proc = harness.run_guard(env)
+            changes, _printed = _assert_prolog(proc)
+            self.assertEqual(changes["EESSI_SOFTWARE_SUBDIR"], ZEN2, proc.stdout)
+            self.assertEqual(proc.stderr, warning % "config timeout")
+        finally:
+            subprocess.check_call(["sudo", "rm", "-f", str(conf)])
 
     def test_intel_a100_uses_the_directory_that_exists(self):
         # Do not bake in either Intel subdirectory. The first
@@ -1029,6 +1141,43 @@ class IntegrationTests(unittest.TestCase):
         reply = json.loads(proc.stdout)
         self.assertFalse(reply["ok"])
         self.assertEqual(reply["error"], "restore request is malformed")
+        self.assertEqual(harness.log_lines(self.site.log), [])
+
+    def test_restore_helper_refuses_env_values_that_are_not_strings(self):
+        # The guard's own requests hold only strings: another value in env
+        # makes the request malformed, and NaN and Infinity, which are not
+        # JSON, stop the helper.
+        env = harness.base_env(self.site, ZEN2, ["R/4.4.2"])
+        request = json.dumps(
+            {
+                "v": 1,
+                "env": {**env, "EXTRA": "@VALUE@"},
+                "eessi": "EESSI/2025.06",
+                "modules": ["R/4.4.2"],
+                "lmod": env["LMOD_CMD"],
+            }
+        )
+
+        def restore(value):
+            return subprocess.run(
+                [*harness.GUARD_ARGV, "--restore"],
+                input=request.replace('"@VALUE@"', value),
+                capture_output=True,
+                text=True,
+                env=env,
+                check=False,
+            )
+
+        malformed = {"ok": False, "missing": [], "error": "restore request is malformed"}
+        for value in ("null", "true", "false", "1", "1E5", "[]", '["x"]', "{}", '{"x": "y"}'):
+            proc = restore(value)
+            self.assertEqual(proc.returncode, 0, (value, proc.stderr))
+            self.assertEqual(json.loads(proc.stdout), malformed, value)
+        for value in ("NaN", "Infinity", "-Infinity"):
+            proc = restore(value)
+            self.assertEqual(proc.returncode, 1, (value, proc.stdout))
+            self.assertEqual(proc.stdout, "", value)
+            self.assertRegex(proc.stderr, r"\Aeessi-arch-guard: restore failed: .* is not JSON\n\Z")
         self.assertEqual(harness.log_lines(self.site.log), [])
 
     def test_kvm_sapphirerapids_falls_back_to_skylake_when_that_tree_exists(self):

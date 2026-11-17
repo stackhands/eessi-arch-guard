@@ -26,9 +26,10 @@ const tool = "eessi-arch-guard";
 const version_text = cli.versionLine(tool, version, build_options.commit)[tool.len + 1 ..];
 const strict_failure_exit: u8 = 78;
 const default_timeout: f64 = 60.0;
-/// threading.TIMEOUT_MAX on Linux, as Python prints it.
-const timeout_max: f64 = 9223372036.0;
-const timeout_max_text = "9223372036.0";
+/// TIMEOUT_MAX, as Python prints it: the Python guard's subprocess waits
+/// with poll(), whose timeout is a C int of milliseconds.
+const timeout_max: f64 = 2147483.647;
+const timeout_max_text = "2147483.647";
 
 const help_text =
     \\usage: eessi-arch-guard [--shell] [--strict] [--chain PATH] [--timeout SEC]
@@ -151,8 +152,16 @@ const Args = struct {
     timeout: ?[]const u8 = null,
 };
 
-/// parse_args: documented flags only; anything else is skipped. --chain and
-/// --timeout take the next word whatever it is, "" when there is none.
+/// _option_value: the word after argv[i.*], with i.* moved onto it, unless
+/// it starts with "-" and so is an option of its own; "" then, and when
+/// there is no word after it.
+fn optionValue(argv: []const []const u8, i: *usize) []const u8 {
+    if (i.* + 1 >= argv.len or std.mem.startsWith(u8, argv[i.* + 1], "-")) return "";
+    i.* += 1;
+    return argv[i.*];
+}
+
+/// parse_args: documented flags only; anything else is skipped.
 fn parseArgs(argv: []const []const u8) Args {
     var a: Args = .{};
     var i: usize = 0;
@@ -169,13 +178,11 @@ fn parseArgs(argv: []const []const u8) Args {
         } else if (std.mem.eql(u8, arg, "--version")) {
             a.version = true;
         } else if (std.mem.eql(u8, arg, "--chain")) {
-            i += 1;
-            a.chain = if (i < argv.len) argv[i] else "";
+            a.chain = optionValue(argv, &i);
         } else if (std.mem.startsWith(u8, arg, "--chain=")) {
             a.chain = arg["--chain=".len..];
         } else if (std.mem.eql(u8, arg, "--timeout")) {
-            i += 1;
-            a.timeout = if (i < argv.len) argv[i] else "";
+            a.timeout = optionValue(argv, &i);
         } else if (std.mem.startsWith(u8, arg, "--timeout=")) {
             a.timeout = arg["--timeout=".len..];
         }
@@ -346,8 +353,8 @@ fn exists(path: []const u8) bool {
 /// site_config: /etc/eessi-arch-guard.conf, else the file beside the
 /// program as it was invoked; the first that exists decides.
 fn siteConfig(arena: Allocator, invoked: []const u8) Config {
-    const beside = std.fs.path.join(arena, &.{ std.fs.path.dirname(invoked) orelse "/", "eessi-arch-guard.conf" }) catch return .{};
-    for ([_][]const u8{ "/etc/eessi-arch-guard.conf", beside }) |path| {
+    const beside = configBeside(arena, invoked) catch oom();
+    for ([_][]const u8{ "/etc/" ++ config_name, beside }) |path| {
         if (!exists(path)) continue;
         if (configUntrusted(arena, path)) |reason|
             return .{ .warning = arena.print("eessi-arch-guard: config ignored: {s}", .{reason}) catch null };
@@ -403,16 +410,74 @@ fn writeStdout(chain_out: []const u8, body: []const u8) void {
     cli.put(1, body);
 }
 
-/// The path this program was started as, for the config beside it: argv[0]
-/// when it names a path, else /proc/self/exe.
+/// The path this program was started by, for the config beside it: the
+/// path execve was given, which the kernel passes as AT_EXECFN and gives a
+/// script's interpreter, where the Python guard's __file__ comes from. A
+/// PATH search makes it the link the search found, wherever that points.
+/// Without AT_EXECFN, argv[0] when it names a path, else /proc/self/exe.
 fn invokedPath(arena: Allocator, argv0: []const u8) []const u8 {
-    if (std.mem.findScalar(u8, argv0, '/') != null) {
-        if (argv0[0] == '/') return argv0;
-        var rb: [sys.path_max]u8 = undefined;
-        const cwd = fsx.realpath(fsx.cwd, ".", &rb) catch return argv0;
-        return std.fs.path.join(arena, &.{ cwd, argv0 }) catch argv0;
-    }
+    const execfn = linux.getauxval(std.elf.AT.EXECFN);
+    if (execfn != 0) return std.mem.span(@as([*:0]const u8, @ptrFromInt(execfn)));
+    if (std.mem.findScalar(u8, argv0, '/') != null) return argv0;
     return selfExe(arena);
+}
+
+/// posixpath.normpath: "." parts and repeated slashes dropped, and each
+/// ".." taking off the part before it, without following symbolic links.
+/// One or two leading slashes stay; three or more become one.
+fn normPath(gpa: Allocator, path: []const u8) Allocator.Error![]u8 {
+    const slashes: usize = if (!std.mem.startsWith(u8, path, "/"))
+        0
+    else if (std.mem.startsWith(u8, path, "//") and !std.mem.startsWith(u8, path, "///"))
+        2
+    else
+        1;
+    var parts: std.ArrayList([]const u8) = .empty;
+    defer parts.deinit(gpa);
+    var it = std.mem.splitScalar(u8, path, '/');
+    while (it.next()) |part| {
+        if (part.len == 0 or std.mem.eql(u8, part, ".")) continue;
+        const after_up = parts.items.len > 0 and std.mem.eql(u8, parts.items[parts.items.len - 1], "..");
+        if (!std.mem.eql(u8, part, "..") or (slashes == 0 and parts.items.len == 0) or after_up) {
+            try parts.append(gpa, part);
+        } else {
+            _ = parts.pop();
+        }
+    }
+    var out: std.ArrayList(u8) = .empty;
+    errdefer out.deinit(gpa);
+    try out.appendNTimes(gpa, '/', slashes);
+    for (parts.items, 0..) |part, i| {
+        if (i > 0) try out.append(gpa, '/');
+        try out.appendSlice(gpa, part);
+    }
+    if (out.items.len == 0) try out.append(gpa, '.');
+    return out.toOwnedSlice(gpa);
+}
+
+/// os.path.abspath of the Python guard's __file__: Python's start-up puts
+/// a relative script path after the working directory and a "/", even when
+/// that directory is "/" itself, and abspath normalizes the result.
+fn absPath(gpa: Allocator, path: []const u8) Allocator.Error![]u8 {
+    if (std.mem.startsWith(u8, path, "/")) return normPath(gpa, path);
+    var buf: [sys.path_max]u8 = undefined;
+    const cwd = fsx.realpath(fsx.cwd, ".", &buf) catch return normPath(gpa, path);
+    const joined = try std.mem.concat(gpa, u8, &.{ cwd, "/", path });
+    defer gpa.free(joined);
+    return normPath(gpa, joined);
+}
+
+const config_name = "eessi-arch-guard.conf";
+
+/// site_config's second candidate, os.path.join(os.path.dirname(
+/// os.path.abspath(invoked)), "eessi-arch-guard.conf").
+fn configBeside(gpa: Allocator, invoked: []const u8) Allocator.Error![]u8 {
+    const abs = try absPath(gpa, invoked);
+    defer gpa.free(abs);
+    const cut = std.mem.findScalarLast(u8, abs, '/') orelse return gpa.dupe(u8, config_name);
+    var head: []const u8 = abs[0 .. cut + 1];
+    if (std.mem.findNone(u8, head, "/") != null) head = std.mem.trimEnd(u8, head, "/");
+    return std.mem.concat(gpa, u8, &.{ head, if (std.mem.endsWith(u8, head, "/")) "" else "/", config_name });
 }
 
 fn selfExe(arena: Allocator) []const u8 {
@@ -492,7 +557,7 @@ fn realMain(arena: Allocator, argv0: []const u8, argv: []const []const u8, envp:
     // skip, after the chained output, and leaves the environment.
     const outcome = guard.limitedDecide(&ctx, env, args.shell, t.value) catch {
         writeStdout(chain_out, "");
-        emergencyWrite("OSError", guard.os_failure);
+        emergencyWrite(guard.os_failure.class, guard.os_failure.text);
         return if (args.strict) strict_failure_exit else 0;
     };
     const announce = !args.shell and std.mem.eql(u8, env.get("SLURM_LOCALID") orelse "0", "0");
@@ -534,11 +599,18 @@ test {
 
 test "parseArgs" {
     const a = parseArgs(&.{ "--shell", "--chain", "--strict", "--timeout=5", "x" });
-    try std.testing.expect(a.shell and !a.strict);
-    try std.testing.expectEqualStrings("--strict", a.chain.?);
+    try std.testing.expect(a.shell and a.strict);
+    try std.testing.expectEqualStrings("", a.chain.?);
     try std.testing.expectEqualStrings("5", a.timeout.?);
     const b = parseArgs(&.{"--timeout"});
     try std.testing.expectEqualStrings("", b.timeout.?);
+    const c = parseArgs(&.{ "--timeout", "-h", "--chain", "/bin/true", "--chain=-x" });
+    try std.testing.expect(c.help);
+    try std.testing.expectEqualStrings("", c.timeout.?);
+    try std.testing.expectEqualStrings("-x", c.chain.?);
+    const d = parseArgs(&.{ "--chain", "", "--timeout", "7" });
+    try std.testing.expectEqualStrings("", d.chain.?);
+    try std.testing.expectEqualStrings("7", d.timeout.?);
 }
 
 test "localTaskZero reads the first SLURM_LOCALID" {
@@ -568,8 +640,9 @@ test "pyFloat follows Python's float()" {
     try std.testing.expect(pyFloat(a, "0x10") == null);
     try std.testing.expect(parseTimeout(a, "inf") == null);
     try std.testing.expect(parseTimeout(a, "0") == null);
-    try std.testing.expect(parseTimeout(a, "9223372037") == null);
-    try std.testing.expectEqual(@as(?f64, 9223372036.0), parseTimeout(a, "9223372036"));
+    try std.testing.expect(parseTimeout(a, "2147483.648") == null);
+    try std.testing.expect(parseTimeout(a, "9223372036") == null);
+    try std.testing.expectEqual(@as(?f64, 2147483.647), parseTimeout(a, "2147483.647"));
 }
 
 test "parseConfigBytes keeps other keys after a bad value" {
@@ -581,4 +654,43 @@ test "parseConfigBytes keeps other keys after a bad value" {
     try std.testing.expectEqualStrings("/bin/true", s.get("chain").?);
     try std.testing.expectEqualStrings("30", s.get("timeout").?);
     try std.testing.expectEqual(@as(usize, 1), bad.items.len);
+}
+
+fn expectNormPath(gpa: Allocator, path: []const u8, want: []const u8) !void {
+    const got = try normPath(gpa, path);
+    defer gpa.free(got);
+    try std.testing.expectEqualStrings(want, got);
+}
+
+test "normPath follows posixpath.normpath" {
+    const cases = [_][2][]const u8{
+        .{ "", "." },               .{ "/", "/" },             .{ "//", "//" },
+        .{ "///", "/" },            .{ "//a/b", "//a/b" },     .{ "///a//b/", "/a/b" },
+        .{ "/a/./b/../c", "/a/c" }, .{ "/..", "/" },           .{ "/../a", "/a" },
+        .{ "a/../..", ".." },       .{ "../a/..", ".." },      .{ "./", "." },
+        .{ "a/b/../../..", ".." },  .{ "/a/b/../../..", "/" }, .{ "//./x/../y", "//y" },
+        .{ "a//b/./c/", "a/b/c" },
+    };
+    for (cases) |c| try expectNormPath(std.testing.allocator, c[0], c[1]);
+    try std.testing.checkAllAllocationFailures(std.testing.allocator, expectNormPath, .{ "/a/./b/../c", "/a/c" });
+}
+
+fn expectConfigBeside(gpa: Allocator, invoked: []const u8, want: []const u8) !void {
+    const got = try configBeside(gpa, invoked);
+    defer gpa.free(got);
+    try std.testing.expectEqualStrings(want, got);
+}
+
+test "configBeside is the config in the directory of the normalized path" {
+    const t = std.testing.allocator;
+    try expectConfigBeside(t, "/usr/local/bin/eessi-arch-guard", "/usr/local/bin/eessi-arch-guard.conf");
+    try expectConfigBeside(t, "/eessi-arch-guard", "/eessi-arch-guard.conf");
+    try expectConfigBeside(t, "//eessi-arch-guard", "//eessi-arch-guard.conf");
+    try expectConfigBeside(t, "/opt/./x/../bin//eessi-arch-guard", "/opt/bin/eessi-arch-guard.conf");
+    var buf: [sys.path_max]u8 = undefined;
+    const cwd = try fsx.realpath(fsx.cwd, ".", &buf);
+    const want = try std.mem.concat(t, u8, &.{ cwd, "/link/eessi-arch-guard.conf" });
+    defer t.free(want);
+    try expectConfigBeside(t, "./link/eessi-arch-guard", want);
+    try std.testing.checkAllAllocationFailures(t, expectConfigBeside, .{ "link/../link/eessi-arch-guard", want });
 }
