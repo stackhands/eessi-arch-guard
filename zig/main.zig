@@ -10,6 +10,7 @@ const common = @import("zig_common");
 const text = @import("text.zig");
 const envmap = @import("envmap.zig");
 const guard = @import("guard.zig");
+const jsonout = @import("jsonout.zig");
 const syslog = @import("syslog.zig");
 
 const sys = common.sys;
@@ -34,7 +35,7 @@ const timeout_max_text = "2147483.647";
 
 const help_text =
     \\usage: eessi-arch-guard [--shell] [--strict] [--chain PATH] [--timeout SEC]
-    \\                        [--syslog TARGET] [--restore] [-h|--help] [--version]
+    \\                        [--syslog TARGET] [--json] [--restore] [-h|--help] [--version]
     \\
     \\Slurm TaskProlog: when the loaded EESSI CPU or accelerator target is not this
     \\node's, print export/unset lines for the reloaded module environment.
@@ -44,7 +45,9 @@ const help_text =
     \\so a site sets this in a wrapper or in a root-owned eessi-arch-guard.conf.
     \\--timeout SEC bounds the decision. The default is 60 seconds.
     \\--syslog TARGET sends structured RFC 5424 or journald decision events.
-    \\--restore reads a JSON restore request on stdin and writes the JSON result.
+    \\--json prints one line of JSON with the decision summary on stdout instead of
+    \\prolog or shell lines. --restore reads a JSON restore request on stdin and writes
+    \\the JSON result.
     \\-h, --help print this text. --version prints the version.
     \\
 ;
@@ -150,6 +153,7 @@ const Args = struct {
     help: bool = false,
     version: bool = false,
     strict: bool = false,
+    json: bool = false,
     chain: ?[]const u8 = null,
     timeout: ?[]const u8 = null,
     syslog: ?[]const u8 = null,
@@ -176,6 +180,8 @@ fn parseArgs(argv: []const []const u8) Args {
             a.strict = true;
         } else if (std.mem.eql(u8, arg, "--restore")) {
             a.restore = true;
+        } else if (std.mem.eql(u8, arg, "--json")) {
+            a.json = true;
         } else if (std.mem.eql(u8, arg, "-h") or std.mem.eql(u8, arg, "--help")) {
             a.help = true;
         } else if (std.mem.eql(u8, arg, "--version")) {
@@ -565,25 +571,50 @@ fn realMain(arena: Allocator, argv0: []const u8, argv: []const []const u8, envp:
     // An OSError the decision does not catch: Python's main reports it as a
     // skip, after the chained output, and leaves the environment.
     const outcome = guard.limitedDecide(&ctx, env, args.shell, t.value) catch {
+        const was = env.get("EESSI_SOFTWARE_SUBDIR") orelse "";
+        const failed = guard.failureOutcome(
+            arena,
+            was,
+            guard.os_failure.class,
+            guard.os_failure.text,
+            guard.os_failure.text,
+        );
         syslog.emitEmergency(arena, sl, env, guard.os_failure.class, guard.os_failure.text, args.strict);
-        writeStdout(chain_out, "");
-        emergencyWrite(guard.os_failure.class, guard.os_failure.text);
-        return if (args.strict) strict_failure_exit else 0;
+        const code: u8 = if (args.strict) strict_failure_exit else 0;
+        if (args.json) {
+            jsonout.emit(arena, failed, env, false, args.strict, args.shell, code);
+        } else {
+            writeStdout(chain_out, "");
+            emergencyWrite(guard.os_failure.class, guard.os_failure.text);
+        }
+        return code;
     };
     const announce = !args.shell and std.mem.eql(u8, env.get("SLURM_LOCALID") orelse "0", "0");
     const body = envmap.render(arena, outcome.changes, outcome.message, args.shell, announce) catch |err| {
         const cls = if (err == error.OutOfMemory) "MemoryError" else "ValueError";
-        syslog.emitEmergency(arena, sl, env, cls, envmap.renderErrorText(err), args.strict);
-        writeStdout(chain_out, "");
-        emergencyWrite(cls, envmap.renderErrorText(err));
-        return if (args.strict) strict_failure_exit else 0;
+        const detail = envmap.renderErrorText(err);
+        const was = env.get("EESSI_SOFTWARE_SUBDIR") orelse "";
+        const failed = guard.failureOutcome(arena, was, cls, detail, detail);
+        syslog.emitEmergency(arena, sl, env, cls, detail, args.strict);
+        const code: u8 = if (args.strict) strict_failure_exit else 0;
+        if (args.json) {
+            jsonout.emit(arena, failed, env, false, args.strict, args.shell, code);
+        } else {
+            writeStdout(chain_out, "");
+            emergencyWrite(cls, detail);
+        }
+        return code;
     };
     syslog.emitDecision(arena, sl, outcome, env, guard.last_cached, args.strict);
     if (args.shell) if (outcome.message) |m| if (m.len > 0) writeMessage(arena, 2, m);
     if (std.mem.eql(u8, env.get("EESSI_ARCH_GUARD_VERBOSE") orelse empty, "1")) if (outcome.detail) |d| if (d.len > 0) writeMessage(arena, 2, d);
-    writeStdout(chain_out, body);
-    if (args.strict and outcome.kind == .failed) return strict_failure_exit;
-    return 0;
+    const code: u8 = if (args.strict and outcome.kind == .failed) strict_failure_exit else 0;
+    if (args.json) {
+        jsonout.emit(arena, outcome, env, guard.last_cached, args.strict, args.shell, code);
+    } else {
+        writeStdout(chain_out, body);
+    }
+    return code;
 }
 
 /// Run the command line and return the exit status. Before anything can

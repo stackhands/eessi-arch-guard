@@ -775,7 +775,7 @@ class UnitTests:
         readme = (root / "README.md").read_text(encoding="utf-8")
         body = source.split("def parse_args", 1)[1].split("def _announce", 1)[0]
         flags = set(re.findall(r'["\'](-{1,2}[A-Za-z][A-Za-z0-9-]*)["\']', body))
-        assert flags >= {"--shell", "--restore", "--help", "--version", "--chain", "-h"}
+        assert flags >= {"--shell", "--restore", "--json", "--help", "--version", "--chain", "-h"}
         missing_flags = sorted(flag for flag in flags if flag not in readme)
         assert missing_flags == []
         names = set(re.findall(r'["\']([A-Z][A-Z0-9_]{1,})["\']', source))

@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://stackhands.github.io/eessi-arch-guard/reference/json/restore-reply.schema.json",
+  "title": "eessi-arch-guard --restore reply",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["ok", "missing", "error"],
+  "properties": {
+    "ok": { "type": "boolean" },
+    "env": {
+      "type": "object",
+      "additionalProperties": { "type": "string" }
+    },
+    "missing": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "error": { "type": "string" }
+  }
+}

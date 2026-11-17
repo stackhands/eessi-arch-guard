@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://stackhands.github.io/eessi-arch-guard/reference/json/decision.schema.json",
+  "title": "eessi-arch-guard --json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "kind",
+    "decision",
+    "reload_needed",
+    "cached",
+    "strict",
+    "shell",
+    "was",
+    "now",
+    "cause",
+    "message",
+    "detail",
+    "exit",
+    "exit_semantic"
+  ],
+  "properties": {
+    "schema_version": { "type": "integer", "const": 1 },
+    "kind": { "type": "string", "const": "decision" },
+    "decision": { "type": "string", "enum": ["skip", "noop", "reloaded", "failed"] },
+    "reload_needed": { "type": "boolean" },
+    "cached": { "type": "boolean" },
+    "strict": { "type": "boolean" },
+    "shell": { "type": "boolean" },
+    "was": { "type": ["string", "null"] },
+    "now": { "type": ["string", "null"] },
+    "cause": { "type": ["string", "null"] },
+    "message": { "type": ["string", "null"] },
+    "detail": { "type": ["string", "null"] },
+    "exit": { "type": "integer", "minimum": 0, "maximum": 255 },
+    "exit_semantic": {
+      "type": "string",
+      "enum": ["ok", "strict-failure", "restore-failed"]
+    }
+  }
+}

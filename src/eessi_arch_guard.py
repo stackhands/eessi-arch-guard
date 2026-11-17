@@ -143,7 +143,7 @@ def _seconds_label(value: float) -> str:
 
 HELP = """\
 usage: eessi-arch-guard [--shell] [--strict] [--chain PATH] [--timeout SEC]
-                        [--syslog TARGET] [--restore] [-h|--help] [--version]
+                        [--syslog TARGET] [--json] [--restore] [-h|--help] [--version]
 
 Slurm TaskProlog: when the loaded EESSI CPU or accelerator target is not this
 node's, print export/unset lines for the reloaded module environment.
@@ -153,9 +153,13 @@ node's, print export/unset lines for the reloaded module environment.
 so a site sets this in a wrapper or in a root-owned eessi-arch-guard.conf.
 --timeout SEC bounds the decision. The default is %s seconds.
 --syslog TARGET sends structured RFC 5424 or journald decision events.
---restore reads a JSON restore request on stdin and writes the JSON result.
+--json prints one line of JSON with the decision summary on stdout instead of
+prolog or shell lines. --restore reads a JSON restore request on stdin and writes
+the JSON result.
 -h, --help print this text. --version prints the version.
 """ % _seconds_label(DEFAULT_TIMEOUT)
+
+DECISION_JSON_SCHEMA_VERSION = 1
 
 
 class Outcome(NamedTuple):
@@ -2068,6 +2072,7 @@ class Args(NamedTuple):
     timeout: Optional[str]
     strict: bool = False
     syslog: Optional[str] = None
+    json: bool = False
 
 
 def _option_value(argv: Sequence[str], index: int) -> Tuple[str, int]:
@@ -2083,7 +2088,7 @@ def _option_value(argv: Sequence[str], index: int) -> Tuple[str, int]:
 
 def parse_args(argv: Sequence[str]) -> Args:
     """Parse the prolog argv. Flags other than the documented ones are skipped."""
-    shell = restore = help_ = version = strict = False
+    shell = restore = help_ = version = strict = json = False
     chain = None
     timeout = None
     syslog = None
@@ -2096,6 +2101,8 @@ def parse_args(argv: Sequence[str]) -> Args:
             strict = True
         elif arg == "--restore":
             restore = True
+        elif arg == "--json":
+            json = True
         elif arg in ("-h", "--help"):
             help_ = True
         elif arg == "--version":
@@ -2113,7 +2120,79 @@ def parse_args(argv: Sequence[str]) -> Args:
         elif arg.startswith("--syslog="):
             syslog = arg.split("=", 1)[1]
         index += 1
-    return Args(shell, restore, help_, version, chain, timeout, strict, syslog)
+    return Args(shell, restore, help_, version, chain, timeout, strict, syslog, json)
+
+
+def _exit_semantic(exit_code: int) -> str:
+    if exit_code == STRICT_FAILURE_EXIT:
+        return "strict-failure"
+    if exit_code == 1:
+        return "restore-failed"
+    return "ok"
+
+
+def _reload_needed(kind: str) -> bool:
+    return kind in ("reloaded", "failed")
+
+
+def decision_view(
+    outcome: Outcome,
+    env: Mapping[str, str],
+    cached: bool,
+    strict: bool,
+    shell: bool,
+    exit_code: int,
+) -> Dict[str, object]:
+    """The fields ``--json`` prints as one object."""
+    was = env.get("EESSI_SOFTWARE_SUBDIR") or None
+    now: Optional[str] = None
+    cause: Optional[str] = None
+    kind = outcome.kind
+    if kind == "reloaded":
+        marker = outcome.changes.get("EESSI_ARCH_GUARD_RELOADED") or ""
+        if "->" in marker:
+            was, now = marker.split("->", 1)
+        else:
+            now = outcome.changes.get("EESSI_SOFTWARE_SUBDIR")
+    elif kind == "failed":
+        marker = outcome.changes.get("EESSI_ARCH_GUARD_FAILED") or ""
+        if "->" in marker:
+            was, cause = marker.split("->", 1)
+        else:
+            cause = "failed"
+    elif kind == "skip":
+        cause = _skip_cause(outcome.detail)
+    elif kind == "noop":
+        now = was
+    return {
+        "schema_version": DECISION_JSON_SCHEMA_VERSION,
+        "kind": "decision",
+        "decision": kind,
+        "reload_needed": _reload_needed(kind),
+        "cached": cached,
+        "strict": strict,
+        "shell": shell,
+        "was": was,
+        "now": now,
+        "cause": cause,
+        "message": outcome.message,
+        "detail": outcome.detail,
+        "exit": exit_code,
+        "exit_semantic": _exit_semantic(exit_code),
+    }
+
+
+def emit_decision_json(
+    outcome: Outcome,
+    env: Mapping[str, str],
+    cached: bool,
+    strict: bool,
+    shell: bool,
+    exit_code: int,
+) -> bytes:
+    """Write one minified JSON line for the decision."""
+    payload = decision_view(outcome, env, cached, strict, shell, exit_code)
+    return (json.dumps(payload, ensure_ascii=True, sort_keys=True) + "\n").encode("ascii")
 
 
 class SyslogTarget(NamedTuple):
@@ -2563,34 +2642,41 @@ def _main(argv: Sequence[str]) -> int:
 
     try:
         outcome = limited_decide(env, shell=args.shell, timeout=timeout)
-        text = render_bytes(
-            outcome.changes, outcome.message, args.shell, _announce(env, args.shell)
-        )
     except Exception as exc:
+        failed = _failed(env.get("EESSI_SOFTWARE_SUBDIR", ""), type(exc).__name__, str(exc))
         _emit_decision_syslog(
             syslog_target,
             syslog_all,
-            _failed(env.get("EESSI_SOFTWARE_SUBDIR", ""), type(exc).__name__, str(exc)),
+            failed,
             env,
             False,
             args.strict,
             syslog_pen,
         )
-        _write_stdout(chain_out, b"")
-        _emergency(exc, args.shell)
-        return STRICT_FAILURE_EXIT if args.strict else 0
+        code = STRICT_FAILURE_EXIT if args.strict else 0
+        if args.json:
+            write_fd(1, emit_decision_json(failed, env, False, args.strict, args.shell, code))
+        else:
+            _write_stdout(chain_out, b"")
+            _emergency(exc, args.shell)
+        return code
 
     _emit_decision_syslog(
         syslog_target, syslog_all, outcome, env, _LAST_CACHED, args.strict, syslog_pen
     )
+    code = STRICT_FAILURE_EXIT if (args.strict and outcome.kind == "failed") else 0
     if args.shell and outcome.message:
         write_fd(2, message_bytes(outcome.message) + b"\n")
     if env.get("EESSI_ARCH_GUARD_VERBOSE") == "1" and outcome.detail:
         write_fd(2, message_bytes(outcome.detail) + b"\n")
-    _write_stdout(chain_out, text)
-    if args.strict and outcome.kind == "failed":
-        return STRICT_FAILURE_EXIT
-    return 0
+    if args.json:
+        write_fd(1, emit_decision_json(outcome, env, _LAST_CACHED, args.strict, args.shell, code))
+    else:
+        text = render_bytes(
+            outcome.changes, outcome.message, args.shell, _announce(env, args.shell)
+        )
+        _write_stdout(chain_out, text)
+    return code
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
@@ -2603,7 +2689,28 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     try:
         return _main(argv)
     except (Exception, KeyboardInterrupt) as exc:
-        _emergency(exc, "--shell" in argv)
+        if "--json" in argv and _STRICT_MODE:
+            failed = _failed(
+                os.environ.get("EESSI_SOFTWARE_SUBDIR", ""),
+                type(exc).__name__,
+                str(exc),
+            )
+            payload = emit_decision_json(
+                failed, os.environ, False, True, "--shell" in argv, STRICT_FAILURE_EXIT
+            )
+            write_fd(1, payload)
+        elif "--json" in argv:
+            failed = _failed(
+                os.environ.get("EESSI_SOFTWARE_SUBDIR", ""),
+                type(exc).__name__,
+                str(exc),
+            )
+            payload = emit_decision_json(
+                failed, os.environ, False, False, "--shell" in argv, 0
+            )
+            write_fd(1, payload)
+        else:
+            _emergency(exc, "--shell" in argv)
         return STRICT_FAILURE_EXIT if _STRICT_MODE else 0
     finally:
         _STRICT_MODE = previous
