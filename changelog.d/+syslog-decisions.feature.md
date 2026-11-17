@@ -1,0 +1,1 @@
+Emit structured RFC 5424 syslog or native `systemd-journald` decision events (`--syslog`, `EESSI_ARCH_GUARD_SYSLOG`, and `syslog` in `eessi-arch-guard.conf`) with stable `MSGID` values (`EESSI_ARCH_RELOAD`, `EESSI_ARCH_FAIL`, `EESSI_ARCH_SKIP`, and `EESSI_ARCH_NOOP`).

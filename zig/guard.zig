@@ -79,6 +79,7 @@ pub const Stop = error{ Deadline, Terminated, Os };
 /// the class Python raises for its errno, and its str(), "[Errno N] text",
 /// with ": 'PATH'" after it for an error on a path.
 pub var os_failure: OsFailure = .{};
+pub var last_cached: bool = false;
 
 pub const OsFailure = struct { class: []const u8 = "OSError", text: []const u8 = "" };
 
@@ -1739,6 +1740,7 @@ test "an unopenable cache directory is the OSError Python raises" {
 /// others wait for the lock and read it. Without SLURM_JOB_ID, or without a
 /// usable cache directory or lock file, every task decides on its own.
 pub fn cachedDecide(c: *Ctx, env: Map, shell: bool) Stop!Outcome {
+    last_cached = false;
     const p = cachePath(c, env, shell) orelse return decide(c, env, shell);
     const dirfd = fsx.openDir(fsx.cwd, p.dir, true) catch return decide(c, env, shell);
     defer sys.close(dirfd);
@@ -1748,7 +1750,10 @@ pub fn cachedDecide(c: *Ctx, env: Map, shell: bool) Stop!Outcome {
     const lockfd = (state.openPrivate(dirfd, lock_name, true) catch return decide(c, env, shell)) orelse return decide(c, env, shell);
     defer sys.close(lockfd);
     try lockExclusive(c, lockfd);
-    if (readCache(c, dirfd, p.name, shell)) |o| return o;
+    if (readCache(c, dirfd, p.name, shell)) |o| {
+        last_cached = true;
+        return o;
+    }
     if (c.limit) |l| try l.check();
     const outcome = try decide(c, env, shell);
     if (c.limit) |l| l.committing.store(true, .seq_cst);
@@ -1759,6 +1764,7 @@ pub fn cachedDecide(c: *Ctx, env: Map, shell: bool) Stop!Outcome {
 
 /// The decision under one deadline. A timeout or SIGTERM is not cached.
 pub fn limitedDecide(c: *Ctx, env: Map, shell: bool, timeout_s: f64) error{Os}!Outcome {
+    last_cached = false;
     var limit: Limit = .{ .deadline_ms = nowMs() + @as(i64, @intFromFloat(@min(timeout_s * 1000.0, 9.2e15))) };
     c.limit = &limit;
     installLimit(&limit);
@@ -1772,7 +1778,10 @@ pub fn limitedDecide(c: *Ctx, env: Map, shell: bool, timeout_s: f64) error{Os}!O
             if (cachePath(c, env, shell)) |p| {
                 const dirfd = try openCacheDir(c, p.dir);
                 defer sys.close(dirfd);
-                if (readCache(c, dirfd, p.name, shell)) |o| return o;
+                if (readCache(c, dirfd, p.name, shell)) |o| {
+                    last_cached = true;
+                    return o;
+                }
             }
             return failed(c, was, "timeout", "eessi-arch-guard: decision exceeded the time limit; environment left as it was", null);
         },
