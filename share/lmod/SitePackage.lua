@@ -1,15 +1,38 @@
 -- Warn when a module file under software/linux/SUBDIR/modules is loaded
 -- and EESSI_SOFTWARE_SUBDIR names a different subdirectory.
--- The load continues. Lmod does not run this hook for a job that inherited
--- its modules; the TaskProlog still reloads that stack.
+-- An accelerator module lives at SUBDIR/accel/<vendor>/<target>/modules.
+-- Those segments are not part of SUBDIR.
+-- warn_accel_mismatch = 1, or EESSI_WARN_ACCEL_MISMATCH=1, also warns when
+-- that accelerator differs from eessi_archdetect.sh accelpath. Off unless
+-- a site asks. The load continues. Lmod does not run this hook for a job
+-- that inherited its modules; the TaskProlog still reloads that stack.
 
 local M = {}
 
-function M.software_subdir(fn)
+-- CPU subdirectory, and the accelerator subdirectory when the module
+-- file is under one. The accelerator form matches the guard:
+-- accel/nvidia/cc<digits> or accel/amd/gfx<hex>.
+function M.path_parts(fn)
     if type(fn) ~= "string" then
-        return nil
+        return nil, nil
     end
-    return fn:match("/software/linux/(.-)/modules/")
+    local body = fn:match("/software/linux/(.-)/modules/")
+    if body == nil then
+        return nil, nil
+    end
+    local cpu, accel = body:match("^(.-)/(accel/nvidia/cc%d+)$")
+    if cpu == nil or cpu == "" then
+        cpu, accel = body:match("^(.-)/(accel/amd/gfx[0-9a-f]+)$")
+    end
+    if cpu ~= nil and cpu ~= "" and accel ~= nil then
+        return cpu, accel
+    end
+    return body, nil
+end
+
+function M.software_subdir(fn)
+    local cpu = M.path_parts(fn)
+    return cpu
 end
 
 function M.warn_mismatch(fn, expected, fullname)
@@ -26,6 +49,48 @@ function M.warn_mismatch(fn, expected, fullname)
         name,
         got,
         expected
+    )
+end
+
+function M.module_accel(fn)
+    local _, accel = M.path_parts(fn)
+    return accel
+end
+
+-- nil unless text is one accelerator subdirectory, the form accelpath prints.
+function M.accel_subdir(text)
+    if type(text) ~= "string" then
+        return nil
+    end
+    if text:match("^accel/nvidia/cc%d+$") or text:match("^accel/amd/gfx[0-9a-f]+$") then
+        return text
+    end
+    return nil
+end
+
+function M.warn_accel(fn, node_accel, fullname)
+    local got = M.module_accel(fn)
+    local node = M.accel_subdir(node_accel)
+    if got == nil or node == nil or got == node then
+        return nil
+    end
+    local name = fullname
+    if type(name) ~= "string" or name == "" then
+        name = fn
+    end
+    local got_cc = got:match("^accel/nvidia/(cc%d+)$")
+    local node_cc = node:match("^accel/nvidia/(cc%d+)$")
+    local shown_got = got
+    local shown_node = node
+    if got_cc ~= nil and node_cc ~= nil then
+        shown_got = got_cc
+        shown_node = node_cc
+    end
+    return string.format(
+        "eessi-arch-guard: %s is %s but this node is %s\n",
+        name,
+        shown_got,
+        shown_node
     )
 end
 
@@ -119,14 +184,92 @@ function M.conf_value(text, key)
     return found
 end
 
--- The environment wins when it is set. Otherwise the conf key, which is
--- unset when the text has no hide_toolchains value.
-function M.effective_spec(env_value, conf_text)
+-- The environment wins when it is set. Otherwise the conf key. An empty
+-- environment value is unset, so the key applies.
+function M.effective_key(env_value, conf_text, key)
     local from_env = M.normal_spec(env_value)
     if from_env ~= nil then
         return from_env
     end
-    return M.normal_spec(M.conf_value(conf_text, "hide_toolchains"))
+    return M.normal_spec(M.conf_value(conf_text, key))
+end
+
+function M.effective_spec(env_value, conf_text)
+    return M.effective_key(env_value, conf_text, "hide_toolchains")
+end
+
+-- 1, true and on ask for the accelerator check. 0, false and off do not.
+-- Any other value leaves it off.
+function M.warn_accel_on(env_value, conf_text)
+    local spec = M.effective_key(env_value, conf_text, "warn_accel_mismatch")
+    return spec == "1" or spec == "true" or spec == "on"
+end
+
+-- Absolute, and safe to pass to a shell: no space or metacharacter, no
+-- empty, "." or ".." segment. EESSI_INIT_PREFIX is that kind of path.
+function M.safe_init(path)
+    if type(path) ~= "string" or path:sub(1, 1) ~= "/" then
+        return false
+    end
+    if path:find("[^A-Za-z0-9._+/-]") then
+        return false
+    end
+    for seg in path:gmatch("[^/]+") do
+        if seg == "." or seg == ".." then
+            return false
+        end
+    end
+    return true
+end
+
+function M.archdetect_command(init)
+    return "bash --noprofile --norc -- " .. init .. "/eessi_archdetect.sh accelpath"
+end
+
+function M.command_succeeded(ok)
+    return ok == true or ok == 0
+end
+
+function M.read_command(cmd)
+    local pipe = io.popen(cmd, "r")
+    if pipe == nil then
+        return nil
+    end
+    local text = pipe:read("*a")
+    local ok = pipe:close()
+    if not M.command_succeeded(ok) or type(text) ~= "string" then
+        return nil
+    end
+    local line = text:match("^%s*(.-)%s*$")
+    if line == nil or line == "" or line:find("[\n\r]") then
+        return nil
+    end
+    return M.accel_subdir(line)
+end
+
+-- This node's accelerator, from the same script the guard runs.
+-- A missing script, a failed script, or any other output is nil.
+function M.accel_from_archdetect()
+    local init = os.getenv("EESSI_INIT_PREFIX")
+    if not M.safe_init(init) then
+        return nil
+    end
+    local script = init .. "/eessi_archdetect.sh"
+    local handle = io.open(script, "r")
+    if handle == nil then
+        return nil
+    end
+    handle:close()
+    return M.read_command(M.archdetect_command(init))
+end
+
+function M.read_node_accel()
+    if M.node_accel_cached then
+        return M.node_accel_value
+    end
+    M.node_accel_cached = true
+    M.node_accel_value = M.accel_from_archdetect()
+    return M.node_accel_value
 end
 
 function M.package_dir()
@@ -183,6 +326,16 @@ function M.load_hook(t)
     local msg = M.warn_mismatch(fn, os.getenv("EESSI_SOFTWARE_SUBDIR"), fullname)
     if msg then
         io.stderr:write(msg)
+    end
+    if M.module_accel(fn) == nil then
+        return
+    end
+    if not M.warn_accel_on(os.getenv("EESSI_WARN_ACCEL_MISMATCH"), M.site_conf()) then
+        return
+    end
+    local accel_msg = M.warn_accel(fn, M.read_node_accel(), fullname)
+    if accel_msg then
+        io.stderr:write(accel_msg)
     end
 end
 
