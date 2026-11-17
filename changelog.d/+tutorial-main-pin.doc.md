@@ -1,0 +1,1 @@
+The first tutorial pins to `main` instead of an old detached commit, and its Next steps return to a branch before install how-tos that expect a normal checkout.
