@@ -1,0 +1,76 @@
+#+TITLE: Hide toolchain modules
+#+OPTIONS: toc:nil todo:nil num:nil author:nil title:nil
+#+STARTUP: content
+
+* Hide toolchain modules
+
+Hide the EasyBuild toolchain modules from =module avail=, and leave =module load GCC/13.2.0= working for someone who names it.
+Nothing is hidden until a site asks.
+Lmod's =isVisibleHook= receives =fullName=, =sn=, =fn= and =isVisible=, as [[https://lmod.readthedocs.io/en/latest/170_hooks.html][Lmod hooks]] describes.
+Setting =isVisible= false hides the module from avail. A hidden module can still be loaded by its full name, as [[https://lmod.readthedocs.io/en/latest/079_hidden_modules.html][Hidden Modules]] describes.
+The site package does not refuse the load.
+
+** Before you start
+
+- Lmod, and =LMOD_PACKAGE_PATH= pointing at a directory that holds =SitePackage.lua=, as [[file:warn-at-module-load.org][Warn at module load]] sets up.
+- The file from this repository, which registers =isVisibleHook= beside the =load= hook.
+
+** What is hidden by default
+
+With =EESSI_HIDE_TOOLCHAINS= unset or empty, and with no =hide_toolchains= key in =eessi-arch-guard.conf=, =module avail= lists the toolchain modules as it does without this hook.
+Installing the site package does not change that.
+
+** Steps
+
+1. Turn on the default list. Either of these does it, and the environment wins when both are set:
+
+   #+begin_src bash
+   export EESSI_HIDE_TOOLCHAINS=1
+   #+end_src
+
+   #+begin_example
+   # /etc/eessi-arch-guard.conf
+   hide_toolchains = 1
+   #+end_example
+
+   =true= and =on= are the same as =1=.
+   These short names are then hidden, every version of them: =GCC=, =GCCcore=, =foss=, =gfbf=, =gomkl=, =gompi=, =iimpi=, =intel= and =intel-compilers=.
+   =module avail= no longer lists them. =module load foss/2023b= still loads that module.
+
+   The site package reads the first of =/etc/eessi-arch-guard.conf= and =eessi-arch-guard.conf= beside =SitePackage.lua= that it can open.
+   The line grammar is the one [[file:../reference/configuration.org][The configuration file]] describes.
+   The guard does not use this key. The hook does not apply the guard's ownership checks.
+
+2. Hide one version instead of every toolchain:
+
+   #+begin_src bash
+   export EESSI_HIDE_TOOLCHAINS=foss/2022b,GCC/12.2.0
+   #+end_src
+
+   The same text works as the value of =hide_toolchains=.
+   =foss/2022b= is hidden. =foss/2023b= stays visible. A short name in the list hides every version of that name.
+   A custom list replaces the default list. It does not add to it.
+
+3. Show the toolchains again, including when the configuration file asks for the list:
+
+   #+begin_src bash
+   export EESSI_HIDE_TOOLCHAINS=0
+   #+end_src
+
+   =false= and =off= do the same. An empty value is unset, so the configuration key applies, and with that unset too nothing is hidden.
+
+** If it fails
+
+| What you see | Cause | What to do |
+|---|---|---|
+| =module avail= still lists =GCC= | The variable and the key are unset, or the value is =0=, =false= or =off=, or Lmod is not reading this =SitePackage.lua=. | Set =EESSI_HIDE_TOOLCHAINS=1= or =hide_toolchains = 1=. =module --config= names the site package location. |
+| =module avail= hides =GCC= and nobody set the variable | =hide_toolchains= is set in the configuration file the hook opened. | Set the variable to =0=, or remove the key. The environment wins. |
+| =module load GCC/13.2.0= says the module is hidden and does not load | Another hook, or a modulerc, marks it hidden in a way that also blocks the load. | This hook only sets =isVisible= false. A hidden module loads by its full name; check the other hook. |
+| A module you use as an application disappeared | Its short name is in the default list, or in the custom list. | Set the variable to the names you want hidden, and leave the application out. |
+
+** Related
+
+- [[file:warn-at-module-load.org][Warn at module load]], for installing the same file
+- [[file:../reference/configuration.org][The configuration file]], for the line grammar
+- [[https://lmod.readthedocs.io/en/latest/170_hooks.html][Lmod hooks]], for =isVisibleHook=
+- [[https://lmod.readthedocs.io/en/latest/079_hidden_modules.html][Hidden Modules]], for loading a hidden module by name

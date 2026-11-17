@@ -53,6 +53,65 @@ if written:find("zen4/modules", 1, true) or written:find("Other/2.0", 1, true) t
     failed = true
 end
 
+check("unset hides nothing", sp.toolchain_hidden("GCC/13.2.0", "GCC", nil), false)
+check("empty hides nothing", sp.toolchain_hidden("GCC/13.2.0", "GCC", ""), false)
+check("one turns the default list on", sp.toolchain_hidden("GCC/13.2.0", "GCC", "1"), true)
+check("one leaves an application", sp.toolchain_hidden("GROMACS/2024.1", "GROMACS", "1"), false)
+check("intel-compilers is its own name", sp.toolchain_hidden("intel-compilers/2023.2.0", "intel-compilers", "1"), true)
+check("zero shows every toolchain", sp.toolchain_hidden("GCC/13.2.0", "GCC", "0"), false)
+check("false shows every toolchain", sp.toolchain_hidden("foss/2023b", "foss", "false"), false)
+check("a named version hides that version", sp.toolchain_hidden("foss/2022b", "foss", "foss/2022b"), true)
+check("a named version leaves the other versions", sp.toolchain_hidden("foss/2023b", "foss", "foss/2022b"), false)
+check("a list can name a short name", sp.toolchain_hidden("GCC/12.3.0", "GCC", " foss , GCC "), true)
+
+local conf_on = "chain = /bin/true\nhide_toolchains = 1\n# hide_toolchains = 0\n"
+check("the conf key turns the list on", sp.toolchain_hidden("GCC/13.2.0", "GCC", sp.effective_spec(nil, conf_on)), true)
+check("an empty env falls through to the conf", sp.toolchain_hidden("GCC/13.2.0", "GCC", sp.effective_spec("", conf_on)), true)
+check("the env off wins over the conf", sp.toolchain_hidden("GCC/13.2.0", "GCC", sp.effective_spec("0", conf_on)), false)
+check("a custom env hides only what it names", sp.toolchain_hidden("foss/2023b", "foss", sp.effective_spec("GCC", conf_on)), false)
+check("no key hides nothing", sp.toolchain_hidden("GCC/13.2.0", "GCC", sp.effective_spec(nil, "timeout = 60\n")), false)
+check("the last key wins", sp.toolchain_hidden("GCC/13.2.0", "GCC", sp.effective_spec(nil, "hide_toolchains = 1\nhide_toolchains = 0\n")), false)
+
+sp.conf_paths = { "/no/such/eessi-arch-guard.conf" }
+os.getenv = function(name)
+    if name == "EESSI_HIDE_TOOLCHAINS" or name == "EESSI_SOFTWARE_SUBDIR" then
+        return nil
+    end
+    return saved(name)
+end
+local shown = { fullName = "GCC/13.2.0", sn = "GCC", fn = "/m/GCC/13.2.0.lua", isVisible = true }
+local already = { fullName = "Hidden/1.0", sn = "Hidden", fn = "/m/Hidden/1.0.lua", isVisible = false }
+sp.is_visible_hook(shown)
+sp.is_visible_hook(already)
+check("the hook hides nothing by default", shown.isVisible, true)
+check("the hook leaves a module lmod already hid", already.isVisible, false)
+
+local conf_file = os.tmpname()
+local handle = io.open(conf_file, "w")
+handle:write("hide_toolchains = 1\n")
+handle:close()
+sp.conf_paths = { conf_file }
+local from_conf = { fullName = "GCC/13.2.0", sn = "GCC", fn = "/m/GCC/13.2.0.lua", isVisible = true }
+local app = { fullName = "GROMACS/2024.1", sn = "GROMACS", fn = "/m/GROMACS/2024.1.lua", isVisible = true }
+sp.is_visible_hook(from_conf)
+sp.is_visible_hook(app)
+os.getenv = function(name)
+    if name == "EESSI_HIDE_TOOLCHAINS" then
+        return "0"
+    end
+    if name == "EESSI_SOFTWARE_SUBDIR" then
+        return nil
+    end
+    return saved(name)
+end
+local forced_on = { fullName = "GCC/13.2.0", sn = "GCC", fn = "/m/GCC/13.2.0.lua", isVisible = true }
+sp.is_visible_hook(forced_on)
+os.getenv = saved
+os.remove(conf_file)
+check("the hook reads hide_toolchains=1", from_conf.isVisible, false)
+check("the hook leaves an application", app.isVisible, true)
+check("the env off wins over the file", forced_on.isVisible, true)
+
 if failed then
     os.exit(1)
 end
