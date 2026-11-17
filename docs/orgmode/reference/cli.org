@@ -10,14 +10,14 @@ This page describes the Python guard, =src/eessi_arch_guard.py=; the Zig build b
 ** Synopsis
 
 #+begin_example
-eessi-arch-guard [--shell] [--strict] [--chain PATH] [--timeout SEC] [--restore] [-h|--help] [--version]
+eessi-arch-guard [--shell] [--strict] [--chain PATH] [--timeout SEC] [--syslog TARGET] [--restore] [-h|--help] [--version]
 #+end_example
 
 =eessi-arch-guard --help= prints:
 
 #+begin_example
 usage: eessi-arch-guard [--shell] [--strict] [--chain PATH] [--timeout SEC]
-                        [--restore] [-h|--help] [--version]
+                        [--syslog TARGET] [--restore] [-h|--help] [--version]
 
 Slurm TaskProlog: when the loaded EESSI CPU or accelerator target is not this
 node's, print export/unset lines for the reloaded module environment.
@@ -26,6 +26,7 @@ node's, print export/unset lines for the reloaded module environment.
 --chain PATH runs an existing task prolog first. Slurm does not pass arguments,
 so a site sets this in a wrapper or in a root-owned eessi-arch-guard.conf.
 --timeout SEC bounds the decision. The default is 60 seconds.
+--syslog TARGET sends structured RFC 5424 or journald decision events.
 --restore reads a JSON restore request on stdin and writes the JSON result.
 -h, --help print this text. --version prints the version.
 #+end_example
@@ -43,6 +44,7 @@ Slurm starts a =TaskProlog= with no arguments at all.
 | =--strict=                       | Exit 78 when the decision fails or an unexpected exception interrupts it. The restore and the cache use a private workspace, which must exist (see [[file:environment.org][Environment variables]]), and the restore helper gets =--strict= too.                                                                                                                                                                                                         |
 | =--chain PATH=, =--chain=PATH=   | Run =PATH= first, in prolog mode only, as described under Exit status. =PATH= must be absolute, free of newline, carriage return and NUL, a regular file and executable; otherwise =eessi-arch-guard: --chain is not an absolute executable= goes to stderr and nothing is chained. A value given here, even an empty or a refused one, replaces the =chain= of the configuration file.                                        |
 | =--timeout SEC=, =--timeout=SEC= | The time limit of the decision in seconds, replacing the =timeout= of the configuration file; the default is 60. =SEC= is read as a floating-point number, and must be greater than 0 and at most 2147483.647, the longest wait for a command that Python's =subprocess= can make; otherwise =eessi-arch-guard: --timeout is not a positive number of seconds at most 2147483.647= goes to stderr and the earlier value stays. |
+| =--syslog TARGET=, =--syslog=TARGET= | Send structured decision events to =TARGET= (=journald=, =syslog=, =unix:///path=, =journal+unix:///path=, =udp://host:port=, or =tcp://host:port=), replacing =EESSI_ARCH_GUARD_SYSLOG= and =syslog= in the configuration file. An empty value disables logging. An invalid value writes a warning to stderr and disables logging. |
 | =--restore=                      | Run as the restore helper: read one JSON request on stdin and write one JSON reply on stdout. The guard starts itself this way; a site or a user has no use for it.                                                                                                                                                                                                                                                            |
 | =-h=, =--help=                   | Print the usage text above on stdout and exit 0.                                                                                                                                                                                                                                                                                                                                                                               |
 | =--version=                      | Print the version on stdout and exit 0.                                                                                                                                                                                                                                                                                                                                                                                        |

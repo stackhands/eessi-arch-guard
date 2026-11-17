@@ -10,6 +10,7 @@ const common = @import("zig_common");
 const text = @import("text.zig");
 const envmap = @import("envmap.zig");
 const guard = @import("guard.zig");
+const syslog = @import("syslog.zig");
 
 const sys = common.sys;
 const fsx = common.fsx;
@@ -33,7 +34,7 @@ const timeout_max_text = "2147483.647";
 
 const help_text =
     \\usage: eessi-arch-guard [--shell] [--strict] [--chain PATH] [--timeout SEC]
-    \\                        [--restore] [-h|--help] [--version]
+    \\                        [--syslog TARGET] [--restore] [-h|--help] [--version]
     \\
     \\Slurm TaskProlog: when the loaded EESSI CPU or accelerator target is not this
     \\node's, print export/unset lines for the reloaded module environment.
@@ -42,6 +43,7 @@ const help_text =
     \\--chain PATH runs an existing task prolog first. Slurm does not pass arguments,
     \\so a site sets this in a wrapper or in a root-owned eessi-arch-guard.conf.
     \\--timeout SEC bounds the decision. The default is 60 seconds.
+    \\--syslog TARGET sends structured RFC 5424 or journald decision events.
     \\--restore reads a JSON restore request on stdin and writes the JSON result.
     \\-h, --help print this text. --version prints the version.
     \\
@@ -150,6 +152,7 @@ const Args = struct {
     strict: bool = false,
     chain: ?[]const u8 = null,
     timeout: ?[]const u8 = null,
+    syslog: ?[]const u8 = null,
 };
 
 /// _option_value: the word after argv[i.*], with i.* moved onto it, unless
@@ -185,6 +188,10 @@ fn parseArgs(argv: []const []const u8) Args {
             a.timeout = optionValue(argv, &i);
         } else if (std.mem.startsWith(u8, arg, "--timeout=")) {
             a.timeout = arg["--timeout=".len..];
+        } else if (std.mem.eql(u8, arg, "--syslog")) {
+            a.syslog = optionValue(argv, &i);
+        } else if (std.mem.startsWith(u8, arg, "--syslog=")) {
+            a.syslog = arg["--syslog=".len..];
         }
     }
     return a;
@@ -552,20 +559,26 @@ fn realMain(arena: Allocator, argv0: []const u8, argv: []const []const u8, envp:
 
     const t = resolveTimeout(arena, args.timeout, cfg.settings);
     if (t.warning) |w| writeMessage(arena, 2, w);
+    const sl = syslog.resolve(arena, args.syslog, env, cfg.settings);
+    if (sl.warning) |w| writeMessage(arena, 2, w);
 
     // An OSError the decision does not catch: Python's main reports it as a
     // skip, after the chained output, and leaves the environment.
     const outcome = guard.limitedDecide(&ctx, env, args.shell, t.value) catch {
+        syslog.emitEmergency(arena, sl, env, guard.os_failure.class, guard.os_failure.text, args.strict);
         writeStdout(chain_out, "");
         emergencyWrite(guard.os_failure.class, guard.os_failure.text);
         return if (args.strict) strict_failure_exit else 0;
     };
     const announce = !args.shell and std.mem.eql(u8, env.get("SLURM_LOCALID") orelse "0", "0");
     const body = envmap.render(arena, outcome.changes, outcome.message, args.shell, announce) catch |err| {
+        const cls = if (err == error.OutOfMemory) "MemoryError" else "ValueError";
+        syslog.emitEmergency(arena, sl, env, cls, envmap.renderErrorText(err), args.strict);
         writeStdout(chain_out, "");
-        emergencyWrite(if (err == error.OutOfMemory) "MemoryError" else "ValueError", envmap.renderErrorText(err));
+        emergencyWrite(cls, envmap.renderErrorText(err));
         return if (args.strict) strict_failure_exit else 0;
     };
+    syslog.emitDecision(arena, sl, outcome, env, guard.last_cached, args.strict);
     if (args.shell) if (outcome.message) |m| if (m.len > 0) writeMessage(arena, 2, m);
     if (std.mem.eql(u8, env.get("EESSI_ARCH_GUARD_VERBOSE") orelse empty, "1")) if (outcome.detail) |d| if (d.len > 0) writeMessage(arena, 2, d);
     writeStdout(chain_out, body);
@@ -595,6 +608,7 @@ test {
     _ = text;
     _ = envmap;
     _ = guard;
+    _ = syslog;
 }
 
 test "parseArgs" {

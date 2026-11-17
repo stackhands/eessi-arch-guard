@@ -1,0 +1,62 @@
+#+TITLE: Log architecture decisions to syslog or journald
+#+OPTIONS: toc:nil todo:nil num:nil author:nil title:nil
+#+STARTUP: content
+
+* Log architecture decisions to syslog or journald
+
+Slurm discards the standard error output of a =TaskProlog=, so reload decisions and strict failures on compute nodes leave no record in system logs unless the guard emits them itself.
+Enabling =syslog= in =/etc/eessi-arch-guard.conf= sends structured RFC 5424 messages or native =systemd-journald= fields with a stable =MSGID= for every reload and failure, and optionally for skips and no-ops.
+
+** Before you start
+
+- Install the prolog as [[file:install-the-prolog.org][Install the prolog]] describes.
+- Choose a destination target for your site collector.
+
+| Target | Transport | Protocol |
+|---|---|---|
+| =journald= | =/run/systemd/journal/socket= | Native =systemd-journald= datagram fields |
+| =syslog= | =/dev/log= | RFC 5424 over Unix datagram or stream |
+| =unix:///path/to/sock= | Explicit Unix socket | RFC 5424 over Unix datagram or stream |
+| =journal+unix:///path/to/sock= | Explicit Unix socket | Native =systemd-journald= datagram fields |
+| =udp://host:port= | UDP | RFC 5424 datagram |
+| =tcp://host:port= | TCP | RFC 5424 with RFC 6587 octet-counting |
+
+** Configure the prolog
+
+1. Create or edit =/etc/eessi-arch-guard.conf= owned by =root= with mode =0644=:
+
+   #+begin_src ini
+   syslog = journald
+   #+end_src
+
+   To forward reloads and failures directly to a central rsyslog collector over TCP instead, set =syslog = tcp://loghost.example.org:514=.
+   For RFC 5424 targets, set =syslog_pen= (or =EESSI_ARCH_GUARD_SYSLOG_PEN=) to your site or project IANA Private Enterprise Number; without it, =archGuard@32473= uses the IANA documentation PEN (RFC 5398 and RFC 5424 section 6.3.2) as a placeholder until a PEN is assigned.
+
+2. Optional: to emit =EESSI_ARCH_NOOP= and =EESSI_ARCH_SKIP= events in addition to reloads and failures, add =syslog_all = 1= to the configuration file or export =EESSI_ARCH_GUARD_SYSLOG_ALL=1=.
+
+3. Optional: route or filter events in =rsyslog= by =MSGID= and structured data:
+
+   #+begin_src text
+   if ($app-name == "eessi-arch-guard" and $msgid == "EESSI_ARCH_FAIL") then {
+       action(type="omfile" file="/var/log/eessi-arch-guard-fail.log")
+   }
+   #+end_src
+
+** Check that it worked
+
+Run the guard with a mismatched target and read the emitted record from =journalctl= or your syslog log file:
+
+#+begin_src bash
+EESSI_ARCH_GUARD_SYSLOG=journald eessi-arch-guard --shell
+journalctl -t eessi-arch-guard -n 1 -o json-pretty
+#+end_src
+
+A reload carries =MSGID=EESSI_ARCH_RELOAD=, =ARCH_GUARD_KIND=reloaded=, =ARCH_GUARD_WAS=, and =ARCH_GUARD_NOW=.
+
+** If it fails
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| =eessi-arch-guard: --syslog is not a valid syslog target= | The target scheme or port is malformed. | Use =journald=, =syslog=, =unix:///...=, =journal+unix:///...=, =udp://host:port=, or =tcp://host:port=. |
+| No records appear in =journalctl= | =systemd-journald= is not running or =syslog= is unset. | Check =systemctl is-active systemd-journald= and verify =/etc/eessi-arch-guard.conf= permissions (=0644=, owned by =root=). |
+| No =EESSI_ARCH_NOOP= entries appear | No-ops and skips are suppressed by default. | Set =syslog_all = 1= or =EESSI_ARCH_GUARD_SYSLOG_ALL=1=. |

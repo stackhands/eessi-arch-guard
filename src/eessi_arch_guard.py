@@ -11,6 +11,7 @@ decisions and unexpected exceptions. A non-zero status cancels the task.
 
 from __future__ import annotations
 
+import datetime
 import fcntl
 import hashlib
 import json
@@ -21,6 +22,7 @@ import secrets
 import shlex
 import shutil
 import signal
+import socket
 import stat
 import subprocess
 import sys
@@ -141,7 +143,7 @@ def _seconds_label(value: float) -> str:
 
 HELP = """\
 usage: eessi-arch-guard [--shell] [--strict] [--chain PATH] [--timeout SEC]
-                        [--restore] [-h|--help] [--version]
+                        [--syslog TARGET] [--restore] [-h|--help] [--version]
 
 Slurm TaskProlog: when the loaded EESSI CPU or accelerator target is not this
 node's, print export/unset lines for the reloaded module environment.
@@ -150,6 +152,7 @@ node's, print export/unset lines for the reloaded module environment.
 --chain PATH runs an existing task prolog first. Slurm does not pass arguments,
 so a site sets this in a wrapper or in a root-owned eessi-arch-guard.conf.
 --timeout SEC bounds the decision. The default is %s seconds.
+--syslog TARGET sends structured RFC 5424 or journald decision events.
 --restore reads a JSON restore request on stdin and writes the JSON result.
 -h, --help print this text. --version prints the version.
 """ % _seconds_label(DEFAULT_TIMEOUT)
@@ -1801,6 +1804,9 @@ def _lock_exclusive(lockfd: int) -> None:
             time.sleep(pause)
 
 
+_LAST_CACHED = False
+
+
 def cached_decide(
     env: Mapping[str, str],
     shell: bool,
@@ -1814,6 +1820,8 @@ def cached_decide(
     the lock and read it. Without SLURM_JOB_ID, or without a usable cache
     directory or lock file, every task decides on its own.
     """
+    global _LAST_CACHED
+    _LAST_CACHED = False
     path = cache_file_path(env, shell)
     if path is None or not hasattr(os, "O_NOFOLLOW"):
         return decide(env, shell, cpu_probe, accel_probe, restore)
@@ -1840,6 +1848,7 @@ def cached_decide(
             _lock_exclusive(lockfd)
             loaded = _read_cache(directory, name, shell)
             if loaded is not None:
+                _LAST_CACHED = True
                 return loaded
             if _ACTIVE is not None:
                 _ACTIVE.check()
@@ -1871,7 +1880,8 @@ def limited_decide(
     restore=call_restore,
 ) -> Outcome:
     """Decide under one deadline. A timeout or SIGTERM is not written to the cache."""
-    global _ACTIVE
+    global _ACTIVE, _LAST_CACHED
+    _LAST_CACHED = False
     if _ACTIVE is not None:
         return cached_decide(env, shell, cpu_probe, accel_probe, restore)
     limit = DecisionLimit(timeout)
@@ -1886,6 +1896,7 @@ def limited_decide(
                 directory, name = os.path.split(path)
                 loaded = _read_cache(directory, name, shell)
                 if loaded is not None:
+                    _LAST_CACHED = True
                     return loaded
             return _limit_outcome(
                 env,
@@ -2056,6 +2067,7 @@ class Args(NamedTuple):
     chain: Optional[str]
     timeout: Optional[str]
     strict: bool = False
+    syslog: Optional[str] = None
 
 
 def _option_value(argv: Sequence[str], index: int) -> Tuple[str, int]:
@@ -2074,6 +2086,7 @@ def parse_args(argv: Sequence[str]) -> Args:
     shell = restore = help_ = version = strict = False
     chain = None
     timeout = None
+    syslog = None
     index = 0
     while index < len(argv):
         arg = argv[index]
@@ -2095,8 +2108,379 @@ def parse_args(argv: Sequence[str]) -> Args:
             timeout, index = _option_value(argv, index)
         elif arg.startswith("--timeout="):
             timeout = arg.split("=", 1)[1]
+        elif arg == "--syslog":
+            syslog, index = _option_value(argv, index)
+        elif arg.startswith("--syslog="):
+            syslog = arg.split("=", 1)[1]
         index += 1
-    return Args(shell, restore, help_, version, chain, timeout, strict)
+    return Args(shell, restore, help_, version, chain, timeout, strict, syslog)
+
+
+class SyslogTarget(NamedTuple):
+    """Parsed syslog or journald destination."""
+
+    scheme: str  # rfc5424-unix, journal-unix, rfc5424-udp, rfc5424-tcp
+    host_or_path: str
+    port: int = 0
+
+
+def _split_host_port(addr: str) -> Optional[Tuple[str, int]]:
+    if not addr:
+        return None
+    if addr.startswith("["):
+        end = addr.find("]")
+        if end < 0 or end + 2 > len(addr) or addr[end + 1] != ":":
+            return None
+        host = addr[1:end]
+        port_s = addr[end + 2 :]
+    else:
+        if ":" not in addr:
+            return None
+        host, port_s = addr.rsplit(":", 1)
+    if not host or not port_s.isdigit():
+        return None
+    port = int(port_s)
+    if port < 1 or port > 65535:
+        return None
+    return host, port
+
+
+def parse_syslog_target(raw: str) -> Optional[SyslogTarget]:
+    """Parse a syslog or journald target string, or None when invalid."""
+    text = raw.strip()
+    if not text or any(ch in text for ch in "\r\n\0"):
+        return None
+    if text == "syslog":
+        return SyslogTarget("rfc5424-unix", "/dev/log", 0)
+    if text in ("journald", "journal"):
+        return SyslogTarget("journal-unix", "/run/systemd/journal/socket", 0)
+    if text.startswith("/"):
+        return SyslogTarget("rfc5424-unix", text, 0)
+    if text.startswith("unix://"):
+        path = text[len("unix://") :]
+        if not path.startswith("/"):
+            return None
+        return SyslogTarget("rfc5424-unix", path, 0)
+    if text.startswith("journal+unix://"):
+        path = text[len("journal+unix://") :]
+        if not path.startswith("/"):
+            return None
+        return SyslogTarget("journal-unix", path, 0)
+    if text.startswith("udp://"):
+        hp = _split_host_port(text[len("udp://") :])
+        return SyslogTarget("rfc5424-udp", hp[0], hp[1]) if hp else None
+    if text.startswith("tcp://"):
+        hp = _split_host_port(text[len("tcp://") :])
+        return SyslogTarget("rfc5424-tcp", hp[0], hp[1]) if hp else None
+    return None
+
+
+# IANA documentation Private Enterprise Number (RFC 5398 / RFC 5424 section 6.3.2),
+# used as the default SD-ID suffix until a site or project PEN is assigned.
+DEFAULT_SYSLOG_PEN = "32473"
+
+
+def parse_syslog_pen(raw: str) -> Optional[str]:
+    """Positive decimal Private Enterprise Number of at most 20 digits, or None."""
+    text = raw.strip()
+    if not text or len(text) > 20 or not all("0" <= ch <= "9" for ch in text):
+        return None
+    val = int(text)
+    if val <= 0:
+        return None
+    return str(val)
+
+
+def resolve_syslog_pen(
+    env: Mapping[str, str],
+    settings: Optional[Mapping[str, str]],
+) -> Tuple[str, Optional[str]]:
+    """Resolve the RFC 5424 SD-ID enterprise number: env overrides config, else default."""
+    chosen = DEFAULT_SYSLOG_PEN
+    warnings: List[str] = []
+    if settings and settings.get("syslog_pen"):
+        parsed = parse_syslog_pen(settings["syslog_pen"])
+        if parsed is None:
+            warnings.append(
+                "eessi-arch-guard: config syslog_pen is not a positive integer: %s"
+                % one_line(settings["syslog_pen"], 64)
+            )
+        else:
+            chosen = parsed
+    env_pen = env.get("EESSI_ARCH_GUARD_SYSLOG_PEN", "")
+    if env_pen:
+        parsed = parse_syslog_pen(env_pen)
+        if parsed is None:
+            warnings.append(
+                "eessi-arch-guard: EESSI_ARCH_GUARD_SYSLOG_PEN is not a positive integer: %s"
+                % one_line(env_pen, 64)
+            )
+        else:
+            chosen = parsed
+    if not warnings:
+        return chosen, None
+    return chosen, " ".join(warnings)
+
+
+def resolve_syslog(
+    cli_text: Optional[str],
+    env: Mapping[str, str],
+    settings: Optional[Mapping[str, str]],
+) -> Tuple[Optional[SyslogTarget], bool, Optional[str]]:
+    """Resolve destination, log-all flag, and any warning."""
+    raw: Optional[str] = None
+    source = "syslog"
+    if cli_text is not None:
+        raw = cli_text
+        source = "--syslog"
+    elif env.get("EESSI_ARCH_GUARD_SYSLOG"):
+        raw = env["EESSI_ARCH_GUARD_SYSLOG"]
+        source = "EESSI_ARCH_GUARD_SYSLOG"
+    elif settings and settings.get("syslog"):
+        raw = settings["syslog"]
+        source = "config syslog"
+
+    log_all = env.get("EESSI_ARCH_GUARD_SYSLOG_ALL") == "1" or bool(
+        settings and settings.get("syslog_all") in ("1", "true", "yes")
+    )
+    if raw is None or raw == "":
+        return None, log_all, None
+    target = parse_syslog_target(raw)
+    if target is None:
+        return (
+            None,
+            log_all,
+            "eessi-arch-guard: %s is not a valid syslog target: %s"
+            % (source, one_line(raw, 120)),
+        )
+    return target, log_all, None
+
+
+def _sd_escape(value: str) -> str:
+    return (
+        one_line(value, 256)
+        .replace("\\", "\\\\")
+        .replace('"', '\\"')
+        .replace("]", "\\]")
+    )
+
+
+def _rfc5424_token(value: str, fallback: str = "-") -> str:
+    cleaned = "".join(ch for ch in value if 33 <= ord(ch) <= 126)
+    return cleaned[:255] if cleaned else fallback
+
+
+def _skip_cause(detail: Optional[str]) -> str:
+    text = detail or ""
+    if "EESSI_ARCH_GUARD=0" in text:
+        return "opt-out"
+    if "not loaded" in text:
+        return "not-loaded"
+    if "OVERRIDE" in text:
+        return "pinned"
+    if "ignored" in text:
+        return "no-software-dir-ignored"
+    return "skipped"
+
+
+def _event_fields(
+    outcome: Outcome,
+    env: Mapping[str, str],
+    cached: bool,
+    strict: bool,
+) -> Optional[Tuple[int, str, List[Tuple[str, str]], str]]:
+    kind = outcome.kind
+    was = env.get("EESSI_SOFTWARE_SUBDIR", "")
+    now = ""
+    cause = ""
+    if kind == "reloaded":
+        severity = 5
+        msgid = "EESSI_ARCH_RELOAD"
+        marker = outcome.changes.get("EESSI_ARCH_GUARD_RELOADED") or ""
+        if "->" in marker:
+            was, now = marker.split("->", 1)
+        else:
+            now = outcome.changes.get("EESSI_SOFTWARE_SUBDIR") or ""
+        msg = outcome.message or ("reloaded %s->%s" % (was, now))
+    elif kind == "failed":
+        severity = 3
+        msgid = "EESSI_ARCH_FAIL"
+        marker = outcome.changes.get("EESSI_ARCH_GUARD_FAILED") or ""
+        if "->" in marker:
+            was, cause = marker.split("->", 1)
+        else:
+            cause = "failed"
+        msg = outcome.message or "eessi-arch-guard failed"
+    elif kind == "skip":
+        severity = 6
+        msgid = "EESSI_ARCH_SKIP"
+        cause = _skip_cause(outcome.detail)
+        msg = outcome.detail or "eessi-arch-guard skipped"
+    elif kind == "noop":
+        severity = 6
+        msgid = "EESSI_ARCH_NOOP"
+        now = was
+        msg = outcome.detail or "target already matches this node"
+    else:
+        return None
+
+    params: List[Tuple[str, str]] = [
+        ("kind", kind),
+        ("cached", "1" if cached else "0"),
+        ("strict", "1" if strict else "0"),
+    ]
+    if "SLURM_JOB_ID" in env and env["SLURM_JOB_ID"]:
+        params.append(("job", env["SLURM_JOB_ID"]))
+    if "SLURM_STEP_ID" in env and env["SLURM_STEP_ID"]:
+        params.append(("step", env["SLURM_STEP_ID"]))
+    if "SLURM_LOCALID" in env and env["SLURM_LOCALID"]:
+        params.append(("localid", env["SLURM_LOCALID"]))
+    if was:
+        params.append(("was", was))
+    if now:
+        params.append(("now", now))
+    if cause:
+        params.append(("cause", cause))
+    return severity, msgid, params, one_line(msg, 500)
+
+
+def _format_rfc5424(
+    severity: int,
+    msgid: str,
+    params: Sequence[Tuple[str, str]],
+    msg: str,
+    pen: str = DEFAULT_SYSLOG_PEN,
+) -> bytes:
+    pri = 8 + severity  # facility 1 (user)
+    ts = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+    host = _rfc5424_token(socket.gethostname())
+    pid = str(os.getpid())
+    sd_parts = " ".join('%s="%s"' % (k, _sd_escape(v)) for k, v in params)
+    sd = "[archGuard@%s %s]" % (pen, sd_parts) if sd_parts else "-"
+    line = "<%d>1 %s %s eessi-arch-guard %s %s %s %s" % (
+        pri,
+        ts,
+        host,
+        pid,
+        msgid,
+        sd,
+        msg,
+    )
+    return line.encode("utf-8", "replace")
+
+
+def _journal_kv(key: str, value: str) -> bytes:
+    val_b = value.encode("utf-8", "replace")
+    if b"\n" in val_b or b"\0" in val_b:
+        return key.encode("ascii") + b"\n" + len(val_b).to_bytes(8, "little") + val_b + b"\n"
+    return key.encode("ascii") + b"=" + val_b + b"\n"
+
+
+def _format_journald(
+    severity: int,
+    msgid: str,
+    params: Sequence[Tuple[str, str]],
+    msg: str,
+) -> bytes:
+    entries: List[Tuple[str, str]] = [
+        ("MESSAGE", msg),
+        ("PRIORITY", str(severity)),
+        ("SYSLOG_IDENTIFIER", "eessi-arch-guard"),
+        ("SYSLOG_FACILITY", "1"),
+        ("MSGID", msgid),
+    ]
+    param_map = {
+        "kind": "ARCH_GUARD_KIND",
+        "cached": "ARCH_GUARD_CACHED",
+        "strict": "ARCH_GUARD_STRICT",
+        "was": "ARCH_GUARD_WAS",
+        "now": "ARCH_GUARD_NOW",
+        "cause": "ARCH_GUARD_CAUSE",
+        "job": "SLURM_JOB_ID",
+        "step": "SLURM_STEP_ID",
+        "localid": "SLURM_LOCALID",
+    }
+    for key, value in params:
+        field = param_map.get(key)
+        if field:
+            entries.append((field, one_line(value, 500)))
+    return b"".join(_journal_kv(k, v) for k, v in entries)
+
+
+def _send_unix(path: str, payload: bytes, stream_nl: bool) -> None:
+    try:
+        with socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM) as sock:
+            sock.settimeout(0.5)
+            sock.connect(path)
+            sock.sendall(payload)
+            return
+    except OSError:
+        if not stream_nl:
+            return
+    try:
+        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as sock:
+            sock.settimeout(0.5)
+            sock.connect(path)
+            sock.sendall(payload + b"\n")
+    except OSError:
+        return
+
+
+def _send_syslog(
+    target: SyslogTarget,
+    severity: int,
+    msgid: str,
+    params: Sequence[Tuple[str, str]],
+    msg: str,
+    pen: str = DEFAULT_SYSLOG_PEN,
+) -> None:
+    try:
+        if target.scheme == "journal-unix":
+            payload = _format_journald(severity, msgid, params, msg)
+            _send_unix(target.host_or_path, payload, stream_nl=False)
+            return
+        payload = _format_rfc5424(severity, msgid, params, msg, pen)
+        if target.scheme == "rfc5424-unix":
+            _send_unix(target.host_or_path, payload, stream_nl=True)
+            return
+        if target.scheme == "rfc5424-udp":
+            for family, _, _, _, sockaddr in socket.getaddrinfo(
+                target.host_or_path, target.port, 0, socket.SOCK_DGRAM
+            ):
+                try:
+                    with socket.socket(family, socket.SOCK_DGRAM) as sock:
+                        sock.settimeout(0.5)
+                        sock.sendto(payload, sockaddr)
+                    return
+                except OSError:
+                    continue
+            return
+        if target.scheme == "rfc5424-tcp":
+            frame = ("%d " % len(payload)).encode("ascii") + payload
+            with socket.create_connection((target.host_or_path, target.port), timeout=0.5) as sock:
+                sock.sendall(frame)
+    except Exception:
+        return
+
+
+def _emit_decision_syslog(
+    target: Optional[SyslogTarget],
+    log_all: bool,
+    outcome: Outcome,
+    env: Mapping[str, str],
+    cached: bool,
+    strict: bool,
+    pen: str = DEFAULT_SYSLOG_PEN,
+) -> None:
+    if target is None:
+        return
+    if outcome.kind in ("skip", "noop") and not log_all:
+        return
+    built = _event_fields(outcome, env, cached, strict)
+    if built is None:
+        return
+    severity, msgid, params, msg = built
+    _send_syslog(target, severity, msgid, params, msg, pen)
 
 
 def _announce(env: Mapping[str, str], shell: bool) -> bool:
@@ -2170,6 +2554,12 @@ def _main(argv: Sequence[str]) -> int:
     timeout, timeout_warning = resolve_timeout(args.timeout, settings)
     if timeout_warning:
         write_fd(2, message_bytes(timeout_warning) + b"\n")
+    syslog_target, syslog_all, syslog_warning = resolve_syslog(args.syslog, env, settings)
+    if syslog_warning:
+        write_fd(2, message_bytes(syslog_warning) + b"\n")
+    syslog_pen, pen_warning = resolve_syslog_pen(env, settings)
+    if pen_warning:
+        write_fd(2, message_bytes(pen_warning) + b"\n")
 
     try:
         outcome = limited_decide(env, shell=args.shell, timeout=timeout)
@@ -2177,10 +2567,22 @@ def _main(argv: Sequence[str]) -> int:
             outcome.changes, outcome.message, args.shell, _announce(env, args.shell)
         )
     except Exception as exc:
+        _emit_decision_syslog(
+            syslog_target,
+            syslog_all,
+            _failed(env.get("EESSI_SOFTWARE_SUBDIR", ""), type(exc).__name__, str(exc)),
+            env,
+            False,
+            args.strict,
+            syslog_pen,
+        )
         _write_stdout(chain_out, b"")
         _emergency(exc, args.shell)
         return STRICT_FAILURE_EXIT if args.strict else 0
 
+    _emit_decision_syslog(
+        syslog_target, syslog_all, outcome, env, _LAST_CACHED, args.strict, syslog_pen
+    )
     if args.shell and outcome.message:
         write_fd(2, message_bytes(outcome.message) + b"\n")
     if env.get("EESSI_ARCH_GUARD_VERBOSE") == "1" and outcome.detail:

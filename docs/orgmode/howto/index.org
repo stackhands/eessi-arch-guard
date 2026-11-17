@@ -17,4 +17,5 @@ The title names the task.
    use-in-a-batch-script
    hand-built-software
    read-a-failure
+   log-decisions-to-syslog
 #+end_export
