@@ -44,12 +44,18 @@ Enabling =syslog= in =/etc/eessi-arch-guard.conf= sends structured RFC 5424 mess
 
 ** Check that it worked
 
-Run the guard with a mismatched target and read the emitted record from =journalctl= or your syslog log file:
+1. From a checkout of this repository, build a CPU mismatch reload with syslog turned on:
 
-#+begin_src bash
-EESSI_ARCH_GUARD_SYSLOG=journald eessi-arch-guard --shell
-journalctl -t eessi-arch-guard -n 1 -o json-pretty
-#+end_src
+   #+begin_src bash
+   python3 docs/examples/syslog_journal.py
+   #+end_src
+
+   The script loads modules for one CPU while the stand-in reports another, then runs the guard the way a =TaskProlog= does, with =EESSI_ARCH_GUARD_SYSLOG= set to =journald= (or another target from the table above).
+2. Read the emitted record from =journalctl= or your syslog log file:
+
+   #+begin_src bash
+   journalctl -t eessi-arch-guard -n 1 -o json-pretty
+   #+end_src
 
 A reload carries =MSGID=EESSI_ARCH_RELOAD=, =ARCH_GUARD_KIND=reloaded=, =ARCH_GUARD_WAS=, and =ARCH_GUARD_NOW=.
 
