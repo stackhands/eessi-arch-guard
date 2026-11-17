@@ -19,7 +19,17 @@ The HTML is written to `docs/build/html`. `docs/orgmode/contributing.org` says h
 
 ## Install the prolog
 
-The prolog target is `src/eessi_arch_guard.py` (shebang `#!/usr/bin/python3 -I`). Python 3.9 or newer, standard library only.
+Install the static binary from a [release](https://github.com/stackhands/eessi-arch-guard/releases). It runs once per task, and starts in about 3.5 ms where the Python file takes about 46 ms ([When you need it](#when-you-need-it-and-when-you-do-not)).
+
+```bash
+v=0.2.0 arch=x86_64   # or aarch64
+curl -LO "https://github.com/stackhands/eessi-arch-guard/releases/download/v${v}/eessi-arch-guard-${v}-${arch}-linux-musl"
+curl -LO "https://github.com/stackhands/eessi-arch-guard/releases/download/v${v}/SHA256SUMS"
+sha256sum --check --ignore-missing SHA256SUMS
+sudo install -m 755 "eessi-arch-guard-${v}-${arch}-linux-musl" /usr/local/sbin/eessi-arch-guard
+```
+
+Without a binary for your architecture, install `src/eessi_arch_guard.py` instead (shebang `#!/usr/bin/python3 -I`, Python 3.9 or newer, standard library only); it has the same interface ([COMPAT.md](COMPAT.md)).
 
 ```bash
 sudo install -m 755 src/eessi_arch_guard.py /usr/local/sbin/eessi-arch-guard
