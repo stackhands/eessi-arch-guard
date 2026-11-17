@@ -24,6 +24,9 @@ sphinx-autoapi = "*"
 [feature.docs.tasks]
 # Org pages to reStructuredText, docs/orgmode -> docs/source.
 mkrst = { cmd = "emacs -Q --batch --load export.el", cwd = "docs" }
+# export.el on a page of its own: each code and verbatim text comes out as a
+# literal of the same text.
+exporttest = { cmd = "python docs/tools/test_export.py" }
 # API pages from the code, into docs/source/reference/api/.
 mkapi = { cmd = "zig run docs/tools/zig_api.zig -- --module eessi-arch-guard --root zig/main.zig --out docs/source/reference/api/zig --source-url 'https://github.com/stackhands/eessi-arch-guard/blob/{ref}/' --title 'Zig API' --follow-private-imports" }
 sphinxbld = { cmd = "sphinx-build -W -n --keep-going -d docs/build/doctrees -b html docs/source docs/build/html", depends-on = ["mkrst", "mkapi"] }
@@ -32,7 +35,7 @@ autodoc = { cmd = "zig build docs --prefix docs/build/autodoc && rm -rf docs/bui
 # Every internal link and anchor resolves, and no page names a site. The
 # changelog may name what a release removed; its links are still checked.
 doccheck = { cmd = "python docs/tools/check_site.py docs/build/html --sources docs/orgmode --exempt changelog.html", depends-on = ["autodoc"] }
-docbld = { depends-on = ["doccheck"] }
+docbld = { depends-on = ["exporttest", "doccheck"] }
 # External links; needs the network, so CI runs it as its own step.
 linkcheck = { cmd = "lychee --config lychee.toml --no-progress 'docs/build/html/**/*.html'" }
 # Generated files are the ignored ones under docs/source (see .gitignore).
