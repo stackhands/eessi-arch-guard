@@ -1342,16 +1342,18 @@ fn side(s: []const u8) []const u8 {
     return s;
 }
 
-fn failed(c: *Ctx, was: []const u8, now: []const u8, message: []const u8, detail: ?[]const u8) Outcome {
+/// A failed decision, as ``--json`` and syslog report it.
+pub fn failureOutcome(a: Allocator, was: []const u8, now: []const u8, message: []const u8, detail: ?[]const u8) Outcome {
     var ch: Changes = .empty;
-    const token = c.arena.print("{s}->{s}", .{ side(was), side(now) }) catch "unrecognized->unrecognized";
-    ch.put(c.arena, "EESSI_ARCH_GUARD_FAILED", token) catch main_mod.oom();
-    return .{
-        .changes = ch,
-        .message = line1(c, message, 500),
-        .kind = .failed,
-        .detail = if (detail) |d| (if (d.len > 0) line1(c, d, 500) else null) else null,
-    };
+    const token = a.print("{s}->{s}", .{ side(was), side(now) }) catch "unrecognized->unrecognized";
+    ch.put(a, "EESSI_ARCH_GUARD_FAILED", token) catch main_mod.oom();
+    const msg = text.oneLine(a, message, 500) catch message;
+    const det = if (detail) |d| (if (d.len > 0) (text.oneLine(a, d, 500) catch d) else null) else null;
+    return .{ .changes = ch, .message = msg, .kind = .failed, .detail = det };
+}
+
+fn failed(c: *Ctx, was: []const u8, now: []const u8, message: []const u8, detail: ?[]const u8) Outcome {
+    return failureOutcome(c.arena, was, now, message, detail);
 }
 
 fn fmt(c: *Ctx, comptime f: []const u8, args: anytype) []const u8 {

@@ -1,0 +1,50 @@
+#+TITLE: Machine-readable command output
+#+OPTIONS: toc:nil todo:nil num:nil author:nil title:nil
+#+STARTUP: content
+
+* Machine-readable command output
+
+The guard already speaks JSON on stdin and stdout in =--restore= helper mode.
+Opt-in =--json= on a normal decision run prints one line of JSON on stdout with
+the decision summary instead of Slurm prolog lines or shell =export= / =unset=
+lines. Warnings, the reload message with =--shell=, and verbose detail stay on
+stderr as without the option. Both the Python guard and the Zig build print the
+same document.
+
+** JSON Schema files
+
+Draft 2020-12 schemas live beside this page:
+
+| Mode | Schema file | Notes |
+|------+-------------+-------|
+| =--json= on a decision run | =json/decision.schema.json= | One object; =reload_needed= and =exit_semantic= summarise the outcome |
+| =--restore= reply on stdout | =json/restore-reply.schema.json= | The helper's response object |
+
+** Exit codes with =--json= on stdout
+
+Invalid arguments are not accepted: unknown flags are skipped, as without JSON.
+=--help=, =--version= and =--restore= run before the decision and do not honour
+=--json=.
+
+When a chained prolog exits non-zero, stdout holds its prolog output only; no
+decision JSON is written.
+
+| Situation | JSON on stdout | Exit | =exit_semantic= in JSON when printed |
+|-----------+----------------+------+--------------------------------------|
+| Decision finished (any kind) | Yes, one line | =0=, or =78= with =--strict= on =failed= | =ok= or =strict-failure= |
+| Chained prolog failed | No | Chained status =N= | — |
+| =--restore= could not answer | Helper JSON (not a decision document) | =1= | — |
+| =-h=, =--version= | Usage or version text | =0= | — |
+
+The =exit= field in the decision document is the status the process returns.
+With =--strict=, a failed decision and an unexpected exception that interrupts
+the decision both yield =78= and =strict-failure=; every other successful path
+through the decision returns =0= and =ok=.
+
+=reload_needed= is =true= when the decision kind is =reloaded= or =failed= (a
+reload was required for this node), and =false= for =skip= and =noop=.
+
+** See also
+
+- [[file:cli.org][The eessi-arch-guard command]]
+- [[file:failures.org][Messages and markers]]
