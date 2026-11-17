@@ -48,6 +48,7 @@ On this page an absolute path starts with =/=, has no =..= part, and holds no ne
 | =EESSI_ARCH_GUARD_WORKDIR=          | The restore workspace: an existing directory of the job's user with no group or other permission bits. Set to anything else, every reload fails with =restore-failed=.                                                         |
 | =EESSI_ARCH_GUARD_SYSLOG= | Destination for structured RFC 5424 or native =systemd-journald= decision events (=journald=, =syslog=, =unix:///path=, =journal+unix:///path=, =udp://host:port=, or =tcp://host:port=). Replaces =syslog= in the configuration file; =--syslog= replaces it. |
 | =EESSI_ARCH_GUARD_SYSLOG_ALL= | Set to =1= to also emit =EESSI_ARCH_SKIP= and =EESSI_ARCH_NOOP= events in addition to reloads and failures. |
+| =EESSI_ARCH_GUARD_SYSLOG_PEN= | Positive decimal IANA Private Enterprise Number for the RFC 5424 =SD-ID= (=archGuard@<PEN>=), replacing =syslog_pen=. Unset or empty, defaults to =32473=, the IANA documentation PEN (RFC 5398 and RFC 5424 section 6.3.2) used as a placeholder until a site or project PEN is assigned. An invalid value writes a warning to stderr and keeps the earlier value. |
 
 An override that is set but empty counts as unset.
 

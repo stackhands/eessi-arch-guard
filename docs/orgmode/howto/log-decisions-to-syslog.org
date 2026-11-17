@@ -30,6 +30,7 @@ Enabling =syslog= in =/etc/eessi-arch-guard.conf= sends structured RFC 5424 mess
    #+end_src
 
    To forward reloads and failures directly to a central rsyslog collector over TCP instead, set =syslog = tcp://loghost.example.org:514=.
+   For RFC 5424 targets, set =syslog_pen= (or =EESSI_ARCH_GUARD_SYSLOG_PEN=) to your site or project IANA Private Enterprise Number; without it, =archGuard@32473= uses the IANA documentation PEN (RFC 5398 and RFC 5424 section 6.3.2) as a placeholder until a PEN is assigned.
 
 2. Optional: to emit =EESSI_ARCH_NOOP= and =EESSI_ARCH_SKIP= events in addition to reloads and failures, add =syslog_all = 1= to the configuration file or export =EESSI_ARCH_GUARD_SYSLOG_ALL=1=.
 

@@ -26,14 +26,15 @@ RFC5424_RE = re.compile(
     r"(eessi-arch-guard) "
     r"(\d+|-) "
     r"([A-Z0-9_]+) "
-    r"(\[archGuard@32473 [^\]]*\]) "
+    r"(\[archGuard@([0-9]+) [^\]]*\]) "
     r"(.*)$"
 )
 
 
 def _parse_sd_params(sd_block: str) -> dict[str, str]:
-    assert sd_block.startswith("[archGuard@32473 ") and sd_block.endswith("]")
-    inner = sd_block[len("[archGuard@32473 ") : -1]
+    m = re.match(r"^\[archGuard@[0-9]+ (.*)\]$", sd_block)
+    assert m is not None, sd_block
+    inner = m.group(1)
     out: dict[str, str] = {}
     i = 0
     while i < len(inner):
@@ -305,6 +306,66 @@ class SyslogTests(unittest.TestCase):
         self.assertEqual(bad.returncode, 0)
         self.assertIn("export EESSI_SOFTWARE_SUBDIR=" + ZEN2, bad.stdout)
         self.assertIn("syslog", bad.stderr.lower())
+
+    def test_custom_syslog_pen_from_env_and_config_and_invalid_pen_warns(self):
+        import eessi_arch_guard as guard  # noqa: E402
+
+        self.assertEqual(guard.DEFAULT_SYSLOG_PEN, "32473")
+        pen, warn = guard.resolve_syslog_pen(
+            {"EESSI_ARCH_GUARD_SYSLOG_PEN": "49152"},
+            {"syslog_pen": "12345"},
+        )
+        self.assertEqual(pen, "49152")
+        self.assertIsNone(warn)
+
+        pen_cfg, warn_cfg = guard.resolve_syslog_pen({}, {"syslog_pen": "12345"})
+        self.assertEqual(pen_cfg, "12345")
+        self.assertIsNone(warn_cfg)
+
+        pen_bad, warn_bad = guard.resolve_syslog_pen(
+            {"EESSI_ARCH_GUARD_SYSLOG_PEN": "0"},
+            {"syslog_pen": "12345"},
+        )
+        self.assertEqual(pen_bad, "12345")
+        self.assertIsNotNone(warn_bad)
+
+        sock, path = self._dgram_server("pen.sock")
+        try:
+            env = self._cpu_env(
+                ZEN4,
+                "zen2",
+                {
+                    "EESSI_ARCH_GUARD_SYSLOG": f"unix://{path}",
+                    "EESSI_ARCH_GUARD_SYSLOG_PEN": "55555",
+                },
+            )
+            proc = harness.run_guard(env)
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            raw = sock.recv(65536).decode("utf-8")
+            m = RFC5424_RE.fullmatch(raw)
+            self.assertIsNotNone(m, raw)
+            assert m is not None
+            self.assertEqual(m.group(8), "55555")
+            self.assertIn("[archGuard@55555 ", raw)
+
+            bad_env = self._cpu_env(
+                ZEN4,
+                "zen2",
+                {
+                    "EESSI_ARCH_GUARD_SYSLOG": f"unix://{path}",
+                    "EESSI_ARCH_GUARD_SYSLOG_PEN": "bad-pen",
+                },
+            )
+            p_bad = harness.run_guard(bad_env)
+            self.assertEqual(p_bad.returncode, 0)
+            self.assertIn("syslog_pen", p_bad.stderr.lower())
+            raw_bad = sock.recv(65536).decode("utf-8")
+            m_bad = RFC5424_RE.fullmatch(raw_bad)
+            self.assertIsNotNone(m_bad, raw_bad)
+            assert m_bad is not None
+            self.assertEqual(m_bad.group(8), "32473")
+        finally:
+            sock.close()
 
 
 if __name__ == "__main__":

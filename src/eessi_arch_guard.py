@@ -2175,6 +2175,53 @@ def parse_syslog_target(raw: str) -> Optional[SyslogTarget]:
     return None
 
 
+# IANA documentation Private Enterprise Number (RFC 5398 / RFC 5424 section 6.3.2),
+# used as the default SD-ID suffix until a site or project PEN is assigned.
+DEFAULT_SYSLOG_PEN = "32473"
+
+
+def parse_syslog_pen(raw: str) -> Optional[str]:
+    """Positive decimal Private Enterprise Number of at most 20 digits, or None."""
+    text = raw.strip()
+    if not text or len(text) > 20 or not all("0" <= ch <= "9" for ch in text):
+        return None
+    val = int(text)
+    if val <= 0:
+        return None
+    return str(val)
+
+
+def resolve_syslog_pen(
+    env: Mapping[str, str],
+    settings: Optional[Mapping[str, str]],
+) -> Tuple[str, Optional[str]]:
+    """Resolve the RFC 5424 SD-ID enterprise number: env overrides config, else default."""
+    chosen = DEFAULT_SYSLOG_PEN
+    warnings: List[str] = []
+    if settings and settings.get("syslog_pen"):
+        parsed = parse_syslog_pen(settings["syslog_pen"])
+        if parsed is None:
+            warnings.append(
+                "eessi-arch-guard: config syslog_pen is not a positive integer: %s"
+                % one_line(settings["syslog_pen"], 64)
+            )
+        else:
+            chosen = parsed
+    env_pen = env.get("EESSI_ARCH_GUARD_SYSLOG_PEN", "")
+    if env_pen:
+        parsed = parse_syslog_pen(env_pen)
+        if parsed is None:
+            warnings.append(
+                "eessi-arch-guard: EESSI_ARCH_GUARD_SYSLOG_PEN is not a positive integer: %s"
+                % one_line(env_pen, 64)
+            )
+        else:
+            chosen = parsed
+    if not warnings:
+        return chosen, None
+    return chosen, " ".join(warnings)
+
+
 def resolve_syslog(
     cli_text: Optional[str],
     env: Mapping[str, str],
@@ -2302,13 +2349,14 @@ def _format_rfc5424(
     msgid: str,
     params: Sequence[Tuple[str, str]],
     msg: str,
+    pen: str = DEFAULT_SYSLOG_PEN,
 ) -> bytes:
     pri = 8 + severity  # facility 1 (user)
     ts = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
     host = _rfc5424_token(socket.gethostname())
     pid = str(os.getpid())
     sd_parts = " ".join('%s="%s"' % (k, _sd_escape(v)) for k, v in params)
-    sd = "[archGuard@32473 %s]" % sd_parts if sd_parts else "-"
+    sd = "[archGuard@%s %s]" % (pen, sd_parts) if sd_parts else "-"
     line = "<%d>1 %s %s eessi-arch-guard %s %s %s %s" % (
         pri,
         ts,
@@ -2384,13 +2432,14 @@ def _send_syslog(
     msgid: str,
     params: Sequence[Tuple[str, str]],
     msg: str,
+    pen: str = DEFAULT_SYSLOG_PEN,
 ) -> None:
     try:
         if target.scheme == "journal-unix":
             payload = _format_journald(severity, msgid, params, msg)
             _send_unix(target.host_or_path, payload, stream_nl=False)
             return
-        payload = _format_rfc5424(severity, msgid, params, msg)
+        payload = _format_rfc5424(severity, msgid, params, msg, pen)
         if target.scheme == "rfc5424-unix":
             _send_unix(target.host_or_path, payload, stream_nl=True)
             return
@@ -2421,6 +2470,7 @@ def _emit_decision_syslog(
     env: Mapping[str, str],
     cached: bool,
     strict: bool,
+    pen: str = DEFAULT_SYSLOG_PEN,
 ) -> None:
     if target is None:
         return
@@ -2430,7 +2480,7 @@ def _emit_decision_syslog(
     if built is None:
         return
     severity, msgid, params, msg = built
-    _send_syslog(target, severity, msgid, params, msg)
+    _send_syslog(target, severity, msgid, params, msg, pen)
 
 
 def _announce(env: Mapping[str, str], shell: bool) -> bool:
@@ -2507,6 +2557,9 @@ def _main(argv: Sequence[str]) -> int:
     syslog_target, syslog_all, syslog_warning = resolve_syslog(args.syslog, env, settings)
     if syslog_warning:
         write_fd(2, message_bytes(syslog_warning) + b"\n")
+    syslog_pen, pen_warning = resolve_syslog_pen(env, settings)
+    if pen_warning:
+        write_fd(2, message_bytes(pen_warning) + b"\n")
 
     try:
         outcome = limited_decide(env, shell=args.shell, timeout=timeout)
@@ -2521,13 +2574,14 @@ def _main(argv: Sequence[str]) -> int:
             env,
             False,
             args.strict,
+            syslog_pen,
         )
         _write_stdout(chain_out, b"")
         _emergency(exc, args.shell)
         return STRICT_FAILURE_EXIT if args.strict else 0
 
     _emit_decision_syslog(
-        syslog_target, syslog_all, outcome, env, _LAST_CACHED, args.strict
+        syslog_target, syslog_all, outcome, env, _LAST_CACHED, args.strict, syslog_pen
     )
     if args.shell and outcome.message:
         write_fd(2, message_bytes(outcome.message) + b"\n")

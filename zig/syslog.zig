@@ -24,9 +24,14 @@ pub const Target = struct {
     port: u16 = 0,
 };
 
+/// IANA documentation Private Enterprise Number (RFC 5398 / RFC 5424 section 6.3.2),
+/// used as the default SD-ID suffix until a site or project PEN is assigned.
+pub const default_pen = "32473";
+
 pub const Resolved = struct {
     target: ?Target = null,
     log_all: bool = false,
+    pen: []const u8 = default_pen,
     warning: ?[]const u8 = null,
 };
 
@@ -88,6 +93,15 @@ pub fn parseTarget(raw: []const u8) ?Target {
     return null;
 }
 
+pub fn parsePen(arena: Allocator, raw: []const u8) ?[]const u8 {
+    const s = trimWs(raw);
+    if (s.len == 0 or s.len > 20) return null;
+    for (s) |c| if (c < '0' or c > '9') return null;
+    const val = std.fmt.parseInt(u64, s, 10) catch return null;
+    if (val == 0) return null;
+    return arena.print("{d}", .{val}) catch null;
+}
+
 pub fn resolve(
     arena: Allocator,
     cli_text: ?[]const u8,
@@ -120,14 +134,42 @@ pub fn resolve(
         }
     };
 
-    const spec = raw orelse return .{ .log_all = log_all };
-    if (spec.len == 0) return .{ .log_all = log_all };
-    const target = parseTarget(spec) orelse {
-        const shown = text.oneLine(arena, spec, 120) catch spec;
-        const warn = arena.print("eessi-arch-guard: {s} is not a valid syslog target: {s}", .{ source, shown }) catch null;
-        return .{ .target = null, .log_all = log_all, .warning = warn };
+    var warnings: std.ArrayList([]const u8) = .empty;
+    var pen: []const u8 = default_pen;
+    if (settings) |st| if (st.get("syslog_pen")) |cv| if (cv.len > 0) {
+        if (parsePen(arena, cv)) |p| {
+            pen = p;
+        } else {
+            const shown = text.oneLine(arena, cv, 64) catch cv;
+            if (arena.print("eessi-arch-guard: config syslog_pen is not a positive integer: {s}", .{shown}) catch null) |w| {
+                warnings.append(arena, w) catch {};
+            }
+        }
     };
-    return .{ .target = target, .log_all = log_all, .warning = null };
+    if (env.get("EESSI_ARCH_GUARD_SYSLOG_PEN")) |ev| if (ev.len > 0) {
+        if (parsePen(arena, ev)) |p| {
+            pen = p;
+        } else {
+            const shown = text.oneLine(arena, ev, 64) catch ev;
+            if (arena.print("eessi-arch-guard: EESSI_ARCH_GUARD_SYSLOG_PEN is not a positive integer: {s}", .{shown}) catch null) |w| {
+                warnings.append(arena, w) catch {};
+            }
+        }
+    };
+
+    var target: ?Target = null;
+    if (raw) |spec| if (spec.len > 0) {
+        target = parseTarget(spec) orelse blk: {
+            const shown = text.oneLine(arena, spec, 120) catch spec;
+            if (arena.print("eessi-arch-guard: {s} is not a valid syslog target: {s}", .{ source, shown }) catch null) |w| {
+                warnings.append(arena, w) catch {};
+            }
+            break :blk null;
+        };
+    };
+
+    const warning: ?[]const u8 = if (warnings.items.len == 0) null else (std.mem.join(arena, " ", warnings.items) catch null);
+    return .{ .target = target, .log_all = log_all, .pen = pen, .warning = warning };
 }
 
 fn sdEscape(arena: Allocator, value: []const u8) Allocator.Error![]u8 {
@@ -279,14 +321,14 @@ fn buildEvent(
     };
 }
 
-fn formatRfc5424(arena: Allocator, ev: BuiltEvent) Allocator.Error![]u8 {
+fn formatRfc5424(arena: Allocator, ev: BuiltEvent, pen: []const u8) Allocator.Error![]u8 {
     var out: std.ArrayList(u8) = .empty;
     const pri: u8 = 8 + ev.severity;
     const ts = utcTimestamp(arena);
     const host = hostname(arena);
     const pid = linux.getpid();
-    try out.print(arena, "<{d}>1 {s} {s} eessi-arch-guard {d} {s} [archGuard@32473", .{
-        pri, ts, host, pid, ev.msgid,
+    try out.print(arena, "<{d}>1 {s} {s} eessi-arch-guard {d} {s} [archGuard@{s}", .{
+        pri, ts, host, pid, ev.msgid, pen,
     });
     for (ev.params) |p| {
         const esc = try sdEscape(arena, p.value);
@@ -531,15 +573,15 @@ pub fn emitDecision(
             sendUnix(arena, target.host_or_path, payload, false);
         },
         .rfc5424_unix => {
-            const payload = formatRfc5424(arena, ev) catch return;
+            const payload = formatRfc5424(arena, ev, resolved.pen) catch return;
             sendUnix(arena, target.host_or_path, payload, true);
         },
         .rfc5424_udp => {
-            const payload = formatRfc5424(arena, ev) catch return;
+            const payload = formatRfc5424(arena, ev, resolved.pen) catch return;
             sendInet(arena, target.host_or_path, target.port, false, payload);
         },
         .rfc5424_tcp => {
-            const payload = formatRfc5424(arena, ev) catch return;
+            const payload = formatRfc5424(arena, ev, resolved.pen) catch return;
             sendInet(arena, target.host_or_path, target.port, true, payload);
         },
     }
@@ -560,7 +602,7 @@ pub fn emitEmergency(
     const token = arena.print("{s}->{s}", .{ was_side, kind }) catch "unrecognized->error";
     ch.put(arena, "EESSI_ARCH_GUARD_FAILED", token) catch {};
     const msg = arena.print("eessi-arch-guard: skipped, {s}: {s}", .{ kind, detail }) catch "eessi-arch-guard: skipped";
-    emitDecision(arena, .{ .target = target, .log_all = resolved.log_all }, .{
+    emitDecision(arena, .{ .target = target, .log_all = resolved.log_all, .pen = resolved.pen }, .{
         .changes = ch,
         .message = msg,
         .kind = .failed,
@@ -587,7 +629,7 @@ test "parseTarget accepts unix, journald, udp and tcp" {
     try std.testing.expect(parseTarget("unix://relative") == null);
 }
 
-test "formatRfc5424 escapes structured data values" {
+test "formatRfc5424 escapes structured data values and uses configured PEN" {
     var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena_state.deinit();
     const a = arena_state.allocator();
@@ -599,8 +641,11 @@ test "formatRfc5424 escapes structured data values" {
             .{ .key = "cause", .value = "a\"b\\c]d" },
         },
         .msg = "hello",
-    });
+    }, "55555");
     try std.testing.expect(std.mem.startsWith(u8, msg, "<13>1 "));
     try std.testing.expect(std.mem.find(u8, msg, "eessi-arch-guard ") != null);
-    try std.testing.expect(std.mem.find(u8, msg, "EESSI_ARCH_RELOAD [archGuard@32473 kind=\"reloaded\" cause=\"a\\\"b\\\\c\\]d\"] hello") != null);
+    try std.testing.expect(std.mem.find(u8, msg, "EESSI_ARCH_RELOAD [archGuard@55555 kind=\"reloaded\" cause=\"a\\\"b\\\\c\\]d\"] hello") != null);
+    try std.testing.expect(parsePen(a, "0") == null);
+    try std.testing.expect(parsePen(a, "abc") == null);
+    try std.testing.expectEqualStrings("49152", parsePen(a, "049152").?);
 }
