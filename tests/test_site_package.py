@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
+import shutil
 import subprocess
 import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+LUA = shutil.which("lua")
 
 
+@unittest.skipUnless(LUA, "lua is not installed")
 class SitePackageTests(unittest.TestCase):
     def test_a_mismatch_warns_and_a_match_does_not(self):
         proc = subprocess.run(
