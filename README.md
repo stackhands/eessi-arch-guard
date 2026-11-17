@@ -9,6 +9,30 @@
 
 eessi-arch-guard is a Slurm TaskProlog that reloads an EESSI module stack when the task runs on a CPU or GPU other than the target recorded at `module load`. The EESSI module chooses that target once. Lmod keeps the recorded `MODULEPATH` and the `EBROOT*` paths until the stack is purged and loaded again. The prolog does that purge and load on the compute node, before `execve`, and prints the environment delta for `slurmstepd` to apply.
 
+## When you need it, and when you do not
+
+You do not need it if your jobs load EESSI themselves: `sbatch --export=NONE`, or a batch script that loads the module, runs archdetect on the compute node.
+You need it where a task inherits a stack loaded on another node type: `srun` from a login shell that loaded EESSI, and `sbatch --export=ALL`.
+A `module purge; module load EESSI ...` in the batch script fixes the batch step only; `srun ./a.out` from a shell starts no script that could do it.
+
+Measured on a Slurm 26.05.5 cluster with EESSI 2026.06 and `GSL/2.8-GCC-15.2.0` loaded on a zen2 login node, run on a zen4 node ([the how-to](docs/howto/user_task_prolog.md) has all four cases):
+
+| How the task started | `EESSI_SOFTWARE_SUBDIR` in the task |
+|---|---|
+| `srun` on a zen4 partition, no guard | `x86_64/amd/zen2` |
+| `srun` on a zen4 partition, guard as task prolog | `x86_64/amd/zen4` |
+
+The guard runs once per task, so its own cost is per rank.
+`tests/measure_noop.py`, 50 runs on one x86_64 host, the case where nothing needs reloading:
+
+| | cold, archdetect each run | warm, cached for the job step |
+|---|---|---|
+| Python prolog (`src/eessi_arch_guard.py`) | 46.3 ms | 37.8 ms |
+| Zig binary, ReleaseSafe | 3.5 ms | 0.17 ms |
+
+Python's own start-up is 5.6 ms of that (`python3 -I -c pass`).
+On a 192-rank node the Python prolog spends about 7 s of CPU per step and the binary about 0.03 s.
+
 Documentation: <https://stackhands.github.io/eessi-arch-guard/>, built from the Org pages in `docs/orgmode/`: a tutorial, how-to guides, explanation, and a reference, including the API generated from the Python and Zig code.
 
 ```console
