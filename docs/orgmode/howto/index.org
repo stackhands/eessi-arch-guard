@@ -19,6 +19,7 @@ The title names the task.
    hand-built-software
    warn-at-module-load
    hide-toolchain-modules
+   track-module-usage
    read-a-failure
    log-decisions-to-syslog
 #+end_export

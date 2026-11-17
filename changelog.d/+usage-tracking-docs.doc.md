@@ -1,0 +1,1 @@
+Document opt-in Lmod module usage tracking (`EESSI_USAGE_TRACKING` and `usage_tracking` in `eessi-arch-guard.conf`) in `docs/orgmode/howto/track-module-usage.org`, `docs/orgmode/howto/warn-at-module-load.org`, `docs/orgmode/howto/index.org`, and `docs/orgmode/reference/configuration.org`.

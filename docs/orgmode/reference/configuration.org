@@ -44,7 +44,7 @@ timeout = 60
   A value that is not UTF-8 is kept as the bytes it holds, the other keys still apply, and =eessi-arch-guard: config value kept with its original bytes: KEY= goes to stderr.
 - A key given twice takes its last value.
   Keys other than the five below are read and not used by the guard.
-  The site package reads =hide_toolchains= from the same file, as [[file:../howto/hide-toolchain-modules.org][Hide toolchain modules]] describes, and =warn_accel_mismatch= as [[file:../howto/warn-at-module-load.org][Warn at module load]] describes.
+  The site package reads =hide_toolchains= from the same file, as [[file:../howto/hide-toolchain-modules.org][Hide toolchain modules]] describes, =warn_accel_mismatch= as [[file:../howto/warn-at-module-load.org][Warn at module load]] describes, and =usage_tracking= as [[file:../howto/track-module-usage.org][Track module usage]] describes.
   The guard does not use those keys.
 
 ** Keys
