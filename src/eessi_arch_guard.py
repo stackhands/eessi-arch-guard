@@ -142,20 +142,22 @@ def _seconds_label(value: float) -> str:
 
 
 HELP = """\
-usage: eessi-arch-guard [--shell] [--strict] [--chain PATH] [--timeout SEC]
-                        [--syslog TARGET] [--json] [--restore] [-h|--help] [--version]
+usage: eessi-arch-guard [--shell] [--strict] [--dry-run] [--json]
+                        [--chain PATH] [--timeout SEC] [--syslog TARGET]
+                        [--restore] [-h|--help] [--version]
 
 Slurm TaskProlog: when the loaded EESSI CPU or accelerator target is not this
 node's, print export/unset lines for the reloaded module environment.
 --shell prints bash for: eval "$(eessi-arch-guard --shell)"
 --strict returns 78 on a failed decision or an unexpected exception.
+--dry-run evaluates config, chain, probes, and decision without writing state.
+--json prints one line of JSON with the decision summary on stdout instead of
+prolog or shell lines; with --dry-run it also carries the diagnostic keys.
 --chain PATH runs an existing task prolog first. Slurm does not pass arguments,
 so a site sets this in a wrapper or in a root-owned eessi-arch-guard.conf.
 --timeout SEC bounds the decision. The default is %s seconds.
 --syslog TARGET sends structured RFC 5424 or journald decision events.
---json prints one line of JSON with the decision summary on stdout instead of
-prolog or shell lines. --restore reads a JSON restore request on stdin and writes
-the JSON result.
+--restore reads a JSON restore request on stdin and writes the JSON result.
 -h, --help print this text. --version prints the version.
 """ % _seconds_label(DEFAULT_TIMEOUT)
 
@@ -1105,8 +1107,9 @@ def _private_directory(path: str) -> Optional[str]:
         os.close(fd)
 
 
-def restore_work_base(env: Mapping[str, str]) -> str:
+def restore_work_base(env: Mapping[str, str], strict: Optional[bool] = None) -> str:
     """Select the configured workspace without creating or widening its base."""
+    is_strict = _STRICT_MODE if strict is None else strict
     explicit = env.get("EESSI_ARCH_GUARD_WORKDIR", "")
     if explicit:
         selected = _private_directory(explicit)
@@ -1117,7 +1120,7 @@ def restore_work_base(env: Mapping[str, str]) -> str:
     selected = _private_directory(temporary)
     if selected is not None:
         return selected
-    if _STRICT_MODE:
+    if is_strict:
         state = env.get("XDG_STATE_HOME", "")
         if not state:
             state = os.path.join(env.get("HOME", ""), ".local", "state")
@@ -2020,28 +2023,34 @@ def _chain_path_ok(path: str) -> bool:
     return os.path.isfile(path) and os.access(path, os.X_OK)
 
 
-def site_config(script_path: str) -> Tuple[Optional[Dict[str, str]], Optional[str]]:
-    """Return (settings, warning). The first existing candidate wins."""
+def _config_candidate_path(script_path: str) -> Optional[str]:
     beside = os.path.join(os.path.dirname(os.path.abspath(script_path)), "eessi-arch-guard.conf")
     for path in ("/etc/eessi-arch-guard.conf", beside):
-        if not os.path.exists(path):
-            continue
-        reason = _config_untrusted(path)
-        if reason:
-            return None, "eessi-arch-guard: config ignored: " + reason
-        try:
-            with open(path, "rb") as handle:
-                blob = handle.read()
-        except OSError as exc:
-            return None, "eessi-arch-guard: config ignored: %s" % exc
-        settings, bad = parse_config_bytes(blob)
-        if bad:
-            shown = " ".join(bad)
-            return settings, (
-                "eessi-arch-guard: config value kept with its original bytes: %s" % shown
-            )
-        return settings, None
-    return None, None
+        if os.path.exists(path):
+            return path
+    return None
+
+
+def site_config(script_path: str) -> Tuple[Optional[Dict[str, str]], Optional[str]]:
+    """Return (settings, warning). The first existing candidate wins."""
+    path = _config_candidate_path(script_path)
+    if path is None:
+        return None, None
+    reason = _config_untrusted(path)
+    if reason:
+        return None, "eessi-arch-guard: config ignored: " + reason
+    try:
+        with open(path, "rb") as handle:
+            blob = handle.read()
+    except OSError as exc:
+        return None, "eessi-arch-guard: config ignored: %s" % exc
+    settings, bad = parse_config_bytes(blob)
+    if bad:
+        shown = " ".join(bad)
+        return settings, (
+            "eessi-arch-guard: config value kept with its original bytes: %s" % shown
+        )
+    return settings, None
 
 
 def run_chain(path: str, env: Mapping[str, str]) -> Tuple[int, bytes, bytes]:
@@ -2072,6 +2081,7 @@ class Args(NamedTuple):
     timeout: Optional[str]
     strict: bool = False
     syslog: Optional[str] = None
+    dry_run: bool = False
     json: bool = False
 
 
@@ -2088,7 +2098,7 @@ def _option_value(argv: Sequence[str], index: int) -> Tuple[str, int]:
 
 def parse_args(argv: Sequence[str]) -> Args:
     """Parse the prolog argv. Flags other than the documented ones are skipped."""
-    shell = restore = help_ = version = strict = json = False
+    shell = restore = help_ = version = strict = dry_run = json = False
     chain = None
     timeout = None
     syslog = None
@@ -2099,6 +2109,8 @@ def parse_args(argv: Sequence[str]) -> Args:
             shell = True
         elif arg == "--strict":
             strict = True
+        elif arg == "--dry-run":
+            dry_run = True
         elif arg == "--restore":
             restore = True
         elif arg == "--json":
@@ -2120,7 +2132,9 @@ def parse_args(argv: Sequence[str]) -> Args:
         elif arg.startswith("--syslog="):
             syslog = arg.split("=", 1)[1]
         index += 1
-    return Args(shell, restore, help_, version, chain, timeout, strict, syslog, json)
+    return Args(
+        shell, restore, help_, version, chain, timeout, strict, syslog, dry_run, json
+    )
 
 
 def _exit_semantic(exit_code: int) -> str:
@@ -2588,6 +2602,427 @@ def _emergency(exc: BaseException, shell: bool) -> None:
         return
 
 
+class DryRunDecision(NamedTuple):
+    """Read-only decision summary produced by ``--dry-run``.
+
+    ``kind`` is ``skip``, ``noop``, ``reloaded``, or ``failed``.
+    """
+
+    kind: str
+    was_cpu: str = ""
+    now_cpu: str = ""
+    was_accel: str = ""
+    now_accel: str = ""
+    compare_accel: bool = True
+    pin: str = ""
+    eessi: str = ""
+    modules: Tuple[str, ...] = ()
+    marker: str = ""
+    detail: Optional[str] = None
+    message: Optional[str] = None
+
+
+def _read_cache_readonly(path: Optional[str], shell: bool) -> Tuple[bool, Optional[str]]:
+    if path is None or not hasattr(os, "O_NOFOLLOW"):
+        return False, None
+    directory, name = os.path.split(path)
+    try:
+        loaded = _read_cache(directory, name, shell)
+    except OSError:
+        return False, None
+    if loaded is None:
+        return False, None
+    return True, loaded.kind
+
+
+def dry_run_decide(
+    env: Mapping[str, str],
+    shell: bool,
+    strict: bool = False,
+    cpu_probe=probe_cpu,
+    accel_probe=probe_accel,
+) -> DryRunDecision:
+    """Compute the guard decision without running restore or writing any state."""
+    if _ACTIVE is not None:
+        _ACTIVE.check()
+    if env.get("EESSI_ARCH_GUARD") == "0":
+        return DryRunDecision("skip", detail="EESSI_ARCH_GUARD=0")
+    was = env.get("EESSI_SOFTWARE_SUBDIR", "")
+    if not was:
+        return DryRunDecision("skip", detail="EESSI is not loaded")
+    if env.get("EESSI_SOFTWARE_SUBDIR_OVERRIDE"):
+        return DryRunDecision("skip", was_cpu=was, detail="EESSI_SOFTWARE_SUBDIR_OVERRIDE is set")
+    if env.get("EESSI_ARCHDETECT_OPTIONS_OVERRIDE"):
+        return DryRunDecision(
+            "skip", was_cpu=was, detail="EESSI_ARCHDETECT_OPTIONS_OVERRIDE is set"
+        )
+
+    cpu = cpu_probe(env)
+    if cpu.status == "error":
+        return DryRunDecision(
+            "failed",
+            was_cpu=was,
+            marker="%s->%s" % (_side(was), "archdetect-failed"),
+            message=one_line(
+                "eessi-arch-guard: archdetect failed (%s); environment left as it was"
+                % cpu.error
+            ),
+        )
+    if cpu.status == "none":
+        if env.get("EESSI_ARCH_GUARD_MISSING") == "ignore":
+            return DryRunDecision(
+                "skip", was_cpu=was, detail="no EESSI software directory (ignored)"
+            )
+        shown = " ".join(cpu.candidates) or "(none)"
+        return DryRunDecision(
+            "failed",
+            was_cpu=was,
+            marker="%s->%s" % (_side(was), "no-software-dir"),
+            message=one_line(
+                "eessi-arch-guard: no EESSI software directory for this node "
+                "under %s (candidates %s); modules were loaded for %s; "
+                "environment left as it was" % (env.get("EESSI_PREFIX", ""), shown, was)
+            ),
+        )
+
+    compare_accel = not env.get("EESSI_ACCELERATOR_TARGET_OVERRIDE")
+    was_accel = env.get("EESSI_ACCEL_SUBDIR", "")
+    if compare_accel:
+        accel = accel_probe(env)
+        if accel.status == "error":
+            return DryRunDecision(
+                "failed",
+                was_cpu=was,
+                now_cpu=cpu.target,
+                was_accel=was_accel,
+                compare_accel=compare_accel,
+                pin=cpu.override,
+                marker="%s->%s" % (_side(was), "archdetect-failed"),
+                message=one_line(
+                    "eessi-arch-guard: archdetect failed (%s); environment left as it was"
+                    % accel.error
+                ),
+            )
+        now_accel = accel.subdir
+    else:
+        now_accel = was_accel
+
+    now = cpu.target
+    if now == was and now_accel == was_accel:
+        return DryRunDecision(
+            "noop",
+            was_cpu=was,
+            now_cpu=now,
+            was_accel=was_accel,
+            now_accel=now_accel,
+            compare_accel=compare_accel,
+            pin=cpu.override,
+            detail="target already matches this node",
+        )
+
+    if compare_accel and was_accel != now_accel:
+        was_label = "%s %s" % (was, was_accel or "no accel")
+        now_label = "%s %s" % (now, now_accel or "no accel")
+    else:
+        was_label, now_label = was, now
+
+    loaded = parse_loaded_modules(env)
+    if loaded.error:
+        why = (
+            "a loaded module name is not safe to pass to Lmod"
+            if loaded.error == "unsafe-module-name"
+            else "the loaded module list has no single EESSI/<version> entry"
+        )
+        tok = "unsafe-module-name" if loaded.error == "unsafe-module-name" else "restore-failed"
+        return DryRunDecision(
+            "failed",
+            was_cpu=was,
+            now_cpu=now,
+            was_accel=was_accel,
+            now_accel=now_accel,
+            compare_accel=compare_accel,
+            pin=cpu.override,
+            marker="%s->%s" % (_side(was_label), _side(tok)),
+            message=one_line("eessi-arch-guard: %s; environment left as it was" % why),
+        )
+    if not lmod_invocable(env.get("LMOD_CMD", "")):
+        return DryRunDecision(
+            "failed",
+            was_cpu=was,
+            now_cpu=now,
+            was_accel=was_accel,
+            now_accel=now_accel,
+            compare_accel=compare_accel,
+            pin=cpu.override,
+            eessi=loaded.eessi,
+            modules=loaded.others,
+            marker="%s->%s" % (_side(was_label), "lmod-unavailable"),
+            message=one_line(
+                "eessi-arch-guard: LMOD_CMD is missing or not executable; "
+                "this node is %s, the modules were loaded for %s; environment left as it was"
+                % (now_label, was_label)
+            ),
+        )
+    try:
+        restore_work_base(env, strict=strict)
+    except (OSError, ValueError) as exc:
+        return DryRunDecision(
+            "failed",
+            was_cpu=was,
+            now_cpu=now,
+            was_accel=was_accel,
+            now_accel=now_accel,
+            compare_accel=compare_accel,
+            pin=cpu.override,
+            eessi=loaded.eessi,
+            modules=loaded.others,
+            marker="%s->%s" % (_side(was_label), "restore-failed"),
+            message=one_line(
+                "eessi-arch-guard: restore failed (restore workspace unavailable: %s); "
+                "environment left as it was" % exc
+            ),
+        )
+
+    return DryRunDecision(
+        "reloaded",
+        was_cpu=was,
+        now_cpu=now,
+        was_accel=was_accel,
+        now_accel=now_accel,
+        compare_accel=compare_accel,
+        pin=cpu.override,
+        eessi=loaded.eessi,
+        modules=loaded.others,
+        marker="%s->%s" % (_side(was_label), _side(now_label)),
+        message=one_line(
+            "eessi-arch-guard: would reload modules for %s (loaded for %s)"
+            % (now_label, was_label)
+        ),
+    )
+
+
+def limited_dry_run(
+    env: Mapping[str, str],
+    shell: bool,
+    timeout: float = DEFAULT_TIMEOUT,
+    strict: bool = False,
+    cpu_probe=probe_cpu,
+    accel_probe=probe_accel,
+) -> DryRunDecision:
+    """Evaluate a dry-run decision under one deadline without touching the cache."""
+    global _ACTIVE
+    if _ACTIVE is not None:
+        return dry_run_decide(env, shell, strict, cpu_probe, accel_probe)
+    limit = DecisionLimit(timeout)
+    _ACTIVE = limit
+    limit.install()
+    was = env.get("EESSI_SOFTWARE_SUBDIR", "")
+    try:
+        try:
+            return dry_run_decide(env, shell, strict, cpu_probe, accel_probe)
+        except _Deadline:
+            return DryRunDecision(
+                "failed",
+                was_cpu=was,
+                marker="%s->%s" % (_side(was), "timeout"),
+                message="eessi-arch-guard: decision exceeded the time limit; "
+                "environment left as it was",
+            )
+        except _Terminated:
+            return DryRunDecision(
+                "failed",
+                was_cpu=was,
+                marker="%s->%s" % (_side(was), "terminated"),
+                message="eessi-arch-guard: decision was terminated; "
+                "environment left as it was",
+            )
+    finally:
+        limit.restore()
+        _ACTIVE = None
+
+
+def format_syslog_target(target: Optional[SyslogTarget]) -> Optional[str]:
+    """Canonical string representation of a parsed syslog target."""
+    if target is None:
+        return None
+    if target.scheme == "rfc5424-unix":
+        return "unix://" + target.host_or_path
+    if target.scheme == "journal-unix":
+        return "journal+unix://" + target.host_or_path
+    if target.scheme == "rfc5424-udp":
+        return "udp://%s:%d" % (target.host_or_path, target.port)
+    if target.scheme == "rfc5424-tcp":
+        return "tcp://%s:%d" % (target.host_or_path, target.port)
+    return None
+
+
+class DryRunReport(NamedTuple):
+    """Configuration, environment, and decision summary for ``--dry-run``."""
+
+    mode: str
+    strict: bool
+    announce: bool
+    config_path: Optional[str]
+    config_status: str
+    config_warning: Optional[str]
+    chain_path: Optional[str]
+    chain_source: str
+    chain_status: str
+    timeout: float
+    syslog_text: Optional[str]
+    syslog_all: bool
+    syslog_pen: str
+    job_id: str
+    step_id: str
+    local_id: Optional[str]
+    cache_path: Optional[str]
+    cache_hit: bool
+    cached_kind: Optional[str]
+    decision: DryRunDecision
+    exit_code: int
+
+
+def _dry_run_cause(decision: DryRunDecision) -> Optional[str]:
+    if decision.kind == "skip" and decision.detail:
+        return _skip_cause(decision.detail)
+    if decision.kind == "failed" and decision.marker and "->" in decision.marker:
+        return decision.marker.rsplit("->", 1)[-1]
+    return None
+
+
+def _dry_run_payload(report: DryRunReport) -> Dict[str, object]:
+    decision = report.decision
+    kind = decision.kind
+    return {
+        "schema_version": DECISION_JSON_SCHEMA_VERSION,
+        "kind": "decision",
+        "decision": kind,
+        "reload_needed": _reload_needed(kind),
+        "cached": report.cache_hit,
+        "strict": report.strict,
+        "shell": report.mode == "shell",
+        "cause": _dry_run_cause(decision),
+        "mode": report.mode,
+        "announce": report.announce,
+        "config": {
+            "path": report.config_path,
+            "status": report.config_status,
+            "warning": report.config_warning,
+        },
+        "chain": {
+            "path": report.chain_path,
+            "source": report.chain_source,
+            "status": report.chain_status,
+        },
+        "timeout": report.timeout,
+        "syslog": {
+            "target": report.syslog_text,
+            "all": report.syslog_all,
+            "pen": report.syslog_pen,
+        },
+        "job": {
+            "id": report.job_id or None,
+            "step": report.step_id if report.job_id else None,
+            "localid": report.local_id,
+        },
+        "cache": {
+            "path": report.cache_path,
+            "hit": report.cache_hit,
+            "cached_kind": report.cached_kind,
+        },
+        "was": decision.was_cpu or None,
+        "now": decision.now_cpu or None,
+        "was_accel": decision.was_accel or None,
+        "now_accel": decision.now_accel or None,
+        "compare_accel": decision.compare_accel,
+        "pin": decision.pin or None,
+        "eessi": decision.eessi or None,
+        "modules": list(decision.modules),
+        "marker": decision.marker or None,
+        "detail": decision.detail,
+        "message": decision.message,
+        "exit": report.exit_code,
+        "exit_semantic": _exit_semantic(report.exit_code),
+    }
+
+
+def render_dry_run_json(report: DryRunReport) -> bytes:
+    """Format a ``--dry-run --json`` report as one ASCII JSON line."""
+    return (
+        json.dumps(_dry_run_payload(report), ensure_ascii=True, sort_keys=True) + "\n"
+    ).encode("ascii")
+
+
+def render_dry_run_text(report: DryRunReport) -> bytes:
+    """Format a ``--dry-run`` diagnostic report as ``key: value`` lines."""
+    decision = report.decision
+    if report.config_status == "none":
+        config_line = "none"
+    else:
+        shown_cfg = one_line(report.config_path) if report.config_path else "none"
+        config_line = "%s (%s)" % (shown_cfg, report.config_status)
+
+    if report.chain_status == "none":
+        chain_line = "none"
+    elif report.chain_status == "skipped":
+        chain_line = "none (skipped in --shell)"
+    else:
+        shown_chain = one_line(report.chain_path) if report.chain_path else "(empty)"
+        chain_line = "%s (%s, %s)" % (shown_chain, report.chain_source, report.chain_status)
+
+    if not report.job_id:
+        step_line = "none"
+    elif report.step_id:
+        step_line = one_line(report.step_id)
+    else:
+        step_line = "(empty)"
+
+    if report.local_id is None:
+        localid_line = "unset"
+    elif report.local_id:
+        localid_line = one_line(report.local_id)
+    else:
+        localid_line = "(empty)"
+
+    if report.cache_path is None:
+        cache_line = "none"
+    elif report.cache_hit:
+        cache_line = "%s (hit: %s)" % (one_line(report.cache_path), report.cached_kind or "unknown")
+    else:
+        cache_line = "%s (miss)" % one_line(report.cache_path)
+
+    lines = [
+        "mode: %s" % report.mode,
+        "strict: %s" % ("true" if report.strict else "false"),
+        "announce: %s" % ("true" if report.announce else "false"),
+        "config: %s" % config_line,
+        "chain: %s" % chain_line,
+        "timeout: %s" % _seconds_label(report.timeout),
+        "syslog: %s" % (one_line(report.syslog_text) if report.syslog_text else "none"),
+        "syslog_all: %s" % ("true" if report.syslog_all else "false"),
+        "syslog_pen: %s" % report.syslog_pen,
+        "job: %s" % (one_line(report.job_id) if report.job_id else "none"),
+        "step: %s" % step_line,
+        "localid: %s" % localid_line,
+        "cache: %s" % cache_line,
+        "decision: %s" % decision.kind,
+        "was: %s" % (one_line(decision.was_cpu) if decision.was_cpu else "none"),
+        "now: %s" % (one_line(decision.now_cpu) if decision.now_cpu else "none"),
+        "was_accel: %s" % (one_line(decision.was_accel) if decision.was_accel else "none"),
+        "now_accel: %s" % (one_line(decision.now_accel) if decision.now_accel else "none"),
+        "compare_accel: %s" % ("true" if decision.compare_accel else "false"),
+        "pin: %s" % (one_line(decision.pin) if decision.pin else "none"),
+        "eessi: %s" % (one_line(decision.eessi) if decision.eessi else "none"),
+        "modules: %s"
+        % (" ".join(one_line(m) for m in decision.modules) if decision.modules else "none"),
+        "marker: %s" % (one_line(decision.marker) if decision.marker else "none"),
+        "detail: %s" % (one_line(decision.detail) if decision.detail else "none"),
+        "message: %s" % (one_line(decision.message) if decision.message else "none"),
+        "exit: %d" % report.exit_code,
+    ]
+    return ("\n".join(lines) + "\n").encode("utf-8", "replace")
+
+
 def _main(argv: Sequence[str]) -> int:
     args = parse_args(argv)
     if args.restore:
@@ -2602,27 +3037,52 @@ def _main(argv: Sequence[str]) -> int:
     env = dict(os.environ)
     chain_out = b""
     # `timeout` is read for `--shell` and for a `--chain` wrapper too.
+    config_path = _config_candidate_path(__file__)
     settings, config_warning = site_config(__file__)
+    if settings is not None:
+        config_status = "loaded"
+    elif config_path is not None or config_warning is not None:
+        config_status = "ignored"
+    else:
+        config_status = "none"
+
     notes = []
     if config_warning:
         notes.append(config_warning)
     chain = None
-    if not args.shell:
+    chain_path: Optional[str] = None
+    chain_source = "none"
+    chain_status = "none"
+    if args.shell:
+        chain_status = "skipped"
+    else:
         chain = args.chain
         if chain is None:
             chain = config_chain(settings)
-            if chain and not _chain_path_ok(chain):
-                notes.append(
-                    "eessi-arch-guard: config chain is not an absolute executable: %s"
-                    % one_line(chain, 200)
-                )
+            if chain:
+                chain_source = "config"
+                chain_path = chain
+                if _chain_path_ok(chain):
+                    chain_status = "valid"
+                else:
+                    chain_status = "invalid"
+                    notes.append(
+                        "eessi-arch-guard: config chain is not an absolute executable: %s"
+                        % one_line(chain, 200)
+                    )
+                    chain = None
+        else:
+            chain_source = "cli"
+            chain_path = chain
+            if _chain_path_ok(chain):
+                chain_status = "valid"
+            else:
+                chain_status = "invalid"
+                notes.append("eessi-arch-guard: --chain is not an absolute executable")
                 chain = None
-        elif not _chain_path_ok(chain):
-            notes.append("eessi-arch-guard: --chain is not an absolute executable")
-            chain = None
     for note in notes:
         write_fd(2, message_bytes(note) + b"\n")
-    if chain:
+    if chain and not args.dry_run:
         code, chain_out, err = run_chain(chain, env)
         if err:
             write_fd(2, err)
@@ -2639,6 +3099,50 @@ def _main(argv: Sequence[str]) -> int:
     syslog_pen, pen_warning = resolve_syslog_pen(env, settings)
     if pen_warning:
         write_fd(2, message_bytes(pen_warning) + b"\n")
+
+    if args.dry_run:
+        mode = "shell" if args.shell else "prolog"
+        announce = _announce(env, args.shell)
+        job_id = env.get("SLURM_JOB_ID", "")
+        step_id = env.get("SLURM_STEP_ID", "batch")
+        local_id = env.get("SLURM_LOCALID")
+        cache_path = cache_file_path(env, shell=args.shell)
+        cache_hit, cached_kind = _read_cache_readonly(cache_path, shell=args.shell)
+        try:
+            decision = limited_dry_run(
+                env, shell=args.shell, timeout=timeout, strict=args.strict
+            )
+            exit_code = STRICT_FAILURE_EXIT if (args.strict and decision.kind == "failed") else 0
+            formatter = render_dry_run_json if args.json else render_dry_run_text
+            report = DryRunReport(
+                mode=mode,
+                strict=args.strict,
+                announce=announce,
+                config_path=config_path,
+                config_status=config_status,
+                config_warning=config_warning,
+                chain_path=chain_path,
+                chain_source=chain_source,
+                chain_status=chain_status,
+                timeout=timeout,
+                syslog_text=format_syslog_target(syslog_target),
+                syslog_all=syslog_all,
+                syslog_pen=syslog_pen,
+                job_id=job_id,
+                step_id=step_id,
+                local_id=local_id,
+                cache_path=cache_path,
+                cache_hit=cache_hit,
+                cached_kind=cached_kind,
+                decision=decision,
+                exit_code=exit_code,
+            )
+            output = formatter(report)
+        except Exception as exc:
+            _emergency(exc, True)
+            return STRICT_FAILURE_EXIT if args.strict else 0
+        write_fd(1, output)
+        return exit_code
 
     try:
         outcome = limited_decide(env, shell=args.shell, timeout=timeout)
@@ -2689,7 +3193,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     try:
         return _main(argv)
     except (Exception, KeyboardInterrupt) as exc:
-        if "--json" in argv and _STRICT_MODE:
+        if "--dry-run" in argv:
+            _emergency(exc, "--shell" in argv or "--dry-run" in argv)
+        elif "--json" in argv and _STRICT_MODE:
             failed = _failed(
                 os.environ.get("EESSI_SOFTWARE_SUBDIR", ""),
                 type(exc).__name__,

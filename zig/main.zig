@@ -17,7 +17,9 @@ const sys = common.sys;
 const fsx = common.fsx;
 const proc = common.proc;
 const cli = common.cli;
+const json = common.json;
 const Allocator = std.mem.Allocator;
+const Py = json.Py;
 const empty: []const u8 = "";
 
 /// The version `--version` prints first, `.version` of build.zig.zon. The
@@ -34,20 +36,22 @@ const timeout_max: f64 = 2147483.647;
 const timeout_max_text = "2147483.647";
 
 const help_text =
-    \\usage: eessi-arch-guard [--shell] [--strict] [--chain PATH] [--timeout SEC]
-    \\                        [--syslog TARGET] [--json] [--restore] [-h|--help] [--version]
+    \\usage: eessi-arch-guard [--shell] [--strict] [--dry-run] [--json]
+    \\                        [--chain PATH] [--timeout SEC] [--syslog TARGET]
+    \\                        [--restore] [-h|--help] [--version]
     \\
     \\Slurm TaskProlog: when the loaded EESSI CPU or accelerator target is not this
     \\node's, print export/unset lines for the reloaded module environment.
     \\--shell prints bash for: eval "$(eessi-arch-guard --shell)"
     \\--strict returns 78 on a failed decision or an unexpected exception.
+    \\--dry-run evaluates config, chain, probes, and decision without writing state.
+    \\--json prints one line of JSON with the decision summary on stdout instead of
+    \\prolog or shell lines; with --dry-run it also carries the diagnostic keys.
     \\--chain PATH runs an existing task prolog first. Slurm does not pass arguments,
     \\so a site sets this in a wrapper or in a root-owned eessi-arch-guard.conf.
     \\--timeout SEC bounds the decision. The default is 60 seconds.
     \\--syslog TARGET sends structured RFC 5424 or journald decision events.
-    \\--json prints one line of JSON with the decision summary on stdout instead of
-    \\prolog or shell lines. --restore reads a JSON restore request on stdin and writes
-    \\the JSON result.
+    \\--restore reads a JSON restore request on stdin and writes the JSON result.
     \\-h, --help print this text. --version prints the version.
     \\
 ;
@@ -153,6 +157,7 @@ const Args = struct {
     help: bool = false,
     version: bool = false,
     strict: bool = false,
+    dry_run: bool = false,
     json: bool = false,
     chain: ?[]const u8 = null,
     timeout: ?[]const u8 = null,
@@ -178,6 +183,8 @@ fn parseArgs(argv: []const []const u8) Args {
             a.shell = true;
         } else if (std.mem.eql(u8, arg, "--strict")) {
             a.strict = true;
+        } else if (std.mem.eql(u8, arg, "--dry-run")) {
+            a.dry_run = true;
         } else if (std.mem.eql(u8, arg, "--restore")) {
             a.restore = true;
         } else if (std.mem.eql(u8, arg, "--json")) {
@@ -290,6 +297,7 @@ fn parseTimeout(arena: Allocator, s: []const u8) ?f64 {
 const Settings = std.StringArrayHashMapUnmanaged([]const u8);
 
 const Config = struct {
+    path: ?[]const u8 = null,
     settings: ?Settings = null,
     warning: ?[]const u8 = null,
 };
@@ -370,22 +378,22 @@ fn siteConfig(arena: Allocator, invoked: []const u8) Config {
     for ([_][]const u8{ "/etc/" ++ config_name, beside }) |path| {
         if (!exists(path)) continue;
         if (configUntrusted(arena, path)) |reason|
-            return .{ .warning = arena.print("eessi-arch-guard: config ignored: {s}", .{reason}) catch null };
+            return .{ .path = path, .warning = arena.print("eessi-arch-guard: config ignored: {s}", .{reason}) catch null };
         // Checked again on the open file, without following a link.
         const f = fsx.openRegular(fsx.cwd, path, false) catch |err|
-            return .{ .warning = arena.print("eessi-arch-guard: config ignored: {s}: {t}", .{ path, err }) catch null };
+            return .{ .path = path, .warning = arena.print("eessi-arch-guard: config ignored: {s}: {t}", .{ path, err }) catch null };
         defer sys.close(f.fd);
         if (f.stat.uid != 0 or f.stat.mode & 0o022 != 0)
-            return .{ .warning = arena.print("eessi-arch-guard: config ignored: {s} changed while it was read", .{path}) catch null };
+            return .{ .path = path, .warning = arena.print("eessi-arch-guard: config ignored: {s} changed while it was read", .{path}) catch null };
         const blob = fsx.readAll(arena, f.fd, 1 << 20) catch |err|
-            return .{ .warning = arena.print("eessi-arch-guard: config ignored: {s}: {t}", .{ path, err }) catch null };
+            return .{ .path = path, .warning = arena.print("eessi-arch-guard: config ignored: {s}: {t}", .{ path, err }) catch null };
         var bad: std.ArrayList([]const u8) = .empty;
-        const settings = parseConfigBytes(arena, blob, &bad) catch return .{};
+        const settings = parseConfigBytes(arena, blob, &bad) catch return .{ .path = path };
         if (bad.items.len > 0) {
             const shown = std.mem.join(arena, " ", bad.items) catch "";
-            return .{ .settings = settings, .warning = arena.print("eessi-arch-guard: config value kept with its original bytes: {s}", .{shown}) catch null };
+            return .{ .path = path, .settings = settings, .warning = arena.print("eessi-arch-guard: config value kept with its original bytes: {s}", .{shown}) catch null };
         }
-        return .{ .settings = settings };
+        return .{ .path = path, .settings = settings };
     }
     return .{};
 }
@@ -499,6 +507,253 @@ fn selfExe(arena: Allocator) []const u8 {
     return arena.dupe(u8, buf[0..n]) catch "/proc/self/exe";
 }
 
+const DryRunReport = struct {
+    mode: []const u8,
+    strict: bool,
+    announce: bool,
+    config_path: ?[]const u8,
+    config_status: []const u8,
+    config_warning: ?[]const u8,
+    chain_path: ?[]const u8,
+    chain_source: []const u8,
+    chain_status: []const u8,
+    timeout: f64,
+    syslog_text: ?[]const u8,
+    syslog_all: bool,
+    syslog_pen: []const u8,
+    job_id: []const u8,
+    step_id: []const u8,
+    local_id: ?[]const u8,
+    cache_path: ?[]const u8,
+    cache_hit: bool,
+    cached_kind: ?guard.Kind,
+    decision: guard.DryRunDecision,
+    exit_code: u8,
+};
+
+fn writeJsonOptStr(out: *std.ArrayList(u8), arena: Allocator, value: ?[]const u8) Allocator.Error!void {
+    if (value) |s| {
+        try json.writeCacheString(out, arena, s);
+    } else {
+        try out.appendSlice(arena, "null");
+    }
+}
+
+fn writeJsonBool(out: *std.ArrayList(u8), arena: Allocator, value: bool) Allocator.Error!void {
+    try out.appendSlice(arena, if (value) "true" else "false");
+}
+
+fn formatTimeoutText(arena: Allocator, t: f64) Allocator.Error![]const u8 {
+    if (!std.math.isNan(t) and !std.math.isInf(t) and @floor(t) == t and t >= 0.0 and t <= 2147483647.0) {
+        return arena.print("{d}", .{@as(i64, @intFromFloat(t))});
+    }
+    return json.dumps(arena, .{ .float = t }, 0, false);
+}
+
+fn nonEmptySlice(s: []const u8) ?[]const u8 {
+    return if (s.len > 0) s else null;
+}
+
+fn dryRunCause(d: guard.DryRunDecision) ?[]const u8 {
+    if (d.kind == .skip) return jsonout.skipCause(d.detail);
+    if (d.kind == .failed and d.marker.len > 0) {
+        if (std.mem.find(u8, d.marker, "->")) |at| return d.marker[at + 2 ..];
+    }
+    return null;
+}
+
+fn dryRunJsonDoc(arena: Allocator, r: DryRunReport) Allocator.Error!Py {
+    const d = r.decision;
+    const decision_str = @tagName(d.kind);
+
+    var config: std.ArrayList(Py.Entry) = .empty;
+    try config.append(arena, .{ .key = "path", .value = Py.opt(r.config_path) });
+    try config.append(arena, .{ .key = "status", .value = Py.s(r.config_status) });
+    try config.append(arena, .{ .key = "warning", .value = Py.opt(r.config_warning) });
+
+    var chain: std.ArrayList(Py.Entry) = .empty;
+    try chain.append(arena, .{ .key = "path", .value = Py.opt(r.chain_path) });
+    try chain.append(arena, .{ .key = "source", .value = Py.s(r.chain_source) });
+    try chain.append(arena, .{ .key = "status", .value = Py.s(r.chain_status) });
+
+    var syslog_e: std.ArrayList(Py.Entry) = .empty;
+    try syslog_e.append(arena, .{ .key = "target", .value = Py.opt(r.syslog_text) });
+    try syslog_e.append(arena, .{ .key = "all", .value = .{ .bool = r.syslog_all } });
+    try syslog_e.append(arena, .{ .key = "pen", .value = Py.s(r.syslog_pen) });
+
+    var job: std.ArrayList(Py.Entry) = .empty;
+    try job.append(arena, .{ .key = "id", .value = Py.opt(nonEmptySlice(r.job_id)) });
+    try job.append(arena, .{
+        .key = "step",
+        .value = Py.opt(if (r.job_id.len > 0) r.step_id else null),
+    });
+    try job.append(arena, .{ .key = "localid", .value = Py.opt(r.local_id) });
+
+    var cache: std.ArrayList(Py.Entry) = .empty;
+    try cache.append(arena, .{ .key = "path", .value = Py.opt(r.cache_path) });
+    try cache.append(arena, .{ .key = "hit", .value = .{ .bool = r.cache_hit } });
+    try cache.append(arena, .{
+        .key = "cached_kind",
+        .value = Py.opt(if (r.cached_kind) |k| @tagName(k) else null),
+    });
+
+    var modules_list: std.ArrayList(Py) = .empty;
+    for (d.modules) |m| try modules_list.append(arena, Py.s(m));
+
+    var top: std.ArrayList(Py.Entry) = .empty;
+    try top.append(arena, .{ .key = "announce", .value = .{ .bool = r.announce } });
+    try top.append(arena, .{ .key = "cache", .value = .{ .dict = cache.items } });
+    try top.append(arena, .{ .key = "cached", .value = .{ .bool = r.cache_hit } });
+    try top.append(arena, .{ .key = "cause", .value = Py.opt(dryRunCause(d)) });
+    try top.append(arena, .{ .key = "chain", .value = .{ .dict = chain.items } });
+    try top.append(arena, .{ .key = "compare_accel", .value = .{ .bool = d.compare_accel } });
+    try top.append(arena, .{ .key = "config", .value = .{ .dict = config.items } });
+    try top.append(arena, .{ .key = "decision", .value = Py.s(decision_str) });
+    try top.append(arena, .{ .key = "detail", .value = Py.opt(d.detail) });
+    try top.append(arena, .{ .key = "eessi", .value = Py.opt(nonEmptySlice(d.eessi)) });
+    try top.append(arena, .{ .key = "exit", .value = .{ .int = r.exit_code } });
+    try top.append(arena, .{ .key = "exit_semantic", .value = Py.s(jsonout.exitSemantic(r.exit_code)) });
+    try top.append(arena, .{ .key = "job", .value = .{ .dict = job.items } });
+    try top.append(arena, .{ .key = "kind", .value = Py.s("decision") });
+    try top.append(arena, .{ .key = "marker", .value = Py.opt(nonEmptySlice(d.marker)) });
+    try top.append(arena, .{ .key = "message", .value = Py.opt(d.message) });
+    try top.append(arena, .{ .key = "mode", .value = Py.s(r.mode) });
+    try top.append(arena, .{ .key = "modules", .value = .{ .list = modules_list.items } });
+    try top.append(arena, .{ .key = "now", .value = Py.opt(nonEmptySlice(d.now_cpu)) });
+    try top.append(arena, .{ .key = "now_accel", .value = Py.opt(nonEmptySlice(d.now_accel)) });
+    try top.append(arena, .{ .key = "pin", .value = Py.opt(nonEmptySlice(d.pin)) });
+    try top.append(arena, .{ .key = "reload_needed", .value = .{ .bool = jsonout.reloadNeeded(d.kind) } });
+    try top.append(arena, .{ .key = "schema_version", .value = .{ .int = jsonout.schema_version } });
+    try top.append(arena, .{ .key = "shell", .value = .{ .bool = std.mem.eql(u8, r.mode, "shell") } });
+    try top.append(arena, .{ .key = "strict", .value = .{ .bool = r.strict } });
+    try top.append(arena, .{ .key = "syslog", .value = .{ .dict = syslog_e.items } });
+    try top.append(arena, .{ .key = "timeout", .value = .{ .float = r.timeout } });
+    try top.append(arena, .{ .key = "was", .value = Py.opt(nonEmptySlice(d.was_cpu)) });
+    try top.append(arena, .{ .key = "was_accel", .value = Py.opt(nonEmptySlice(d.was_accel)) });
+    return .{ .dict = top.items };
+}
+
+fn compactJsonLine(arena: Allocator, pretty: []const u8) Allocator.Error![]u8 {
+    var out: std.ArrayList(u8) = .empty;
+    for (pretty) |ch| {
+        if (ch != '\n') try out.append(arena, ch) else if (out.items.len > 0 and out.items[out.items.len - 1] == ' ') {
+            _ = out.pop();
+        }
+    }
+    return out.items;
+}
+
+/// Match Python's ``json.dumps`` comma spacing outside quoted strings.
+fn pythonJsonCommas(arena: Allocator, s: []const u8) Allocator.Error![]u8 {
+    var out: std.ArrayList(u8) = .empty;
+    var in_str = false;
+    var esc = false;
+    for (s) |ch| {
+        if (in_str) {
+            try out.append(arena, ch);
+            if (esc) esc = false else if (ch == '\\') esc = true else if (ch == '"') in_str = false;
+            continue;
+        }
+        if (ch == '"') {
+            in_str = true;
+            try out.append(arena, ch);
+            continue;
+        }
+        if (ch == ',') {
+            try out.appendSlice(arena, ", ");
+            continue;
+        }
+        try out.append(arena, ch);
+    }
+    return out.items;
+}
+
+fn renderDryRunJson(arena: Allocator, r: DryRunReport) Allocator.Error![]u8 {
+    const doc = try dryRunJsonDoc(arena, r);
+    const pretty = try json.dumps(arena, doc, 0, true);
+    const compact = try compactJsonLine(arena, pretty);
+    const line = try pythonJsonCommas(arena, compact);
+    return try std.fmt.allocPrint(arena, "{s}\n", .{line});
+}
+
+fn oneLineField(arena: Allocator, s: []const u8) Allocator.Error![]const u8 {
+    return text.oneLine(arena, s, 500);
+}
+
+fn renderDryRunText(arena: Allocator, r: DryRunReport) Allocator.Error![]u8 {
+    var out: std.ArrayList(u8) = .empty;
+    const d = r.decision;
+    const config_line = if (std.mem.eql(u8, r.config_status, "none"))
+        "none"
+    else
+        try arena.print("{s} ({s})", .{ if (r.config_path) |p| try oneLineField(arena, p) else "none", r.config_status });
+
+    const chain_line = if (std.mem.eql(u8, r.chain_status, "none"))
+        "none"
+    else if (std.mem.eql(u8, r.chain_status, "skipped"))
+        "none (skipped in --shell)"
+    else
+        try arena.print("{s} ({s}, {s})", .{
+            if (r.chain_path) |p| (if (p.len > 0) try oneLineField(arena, p) else "(empty)") else "(empty)",
+            r.chain_source,
+            r.chain_status,
+        });
+
+    const step_line = if (r.job_id.len == 0)
+        "none"
+    else if (r.step_id.len > 0)
+        try oneLineField(arena, r.step_id)
+    else
+        "(empty)";
+
+    const localid_line = if (r.local_id) |lid|
+        (if (lid.len > 0) try oneLineField(arena, lid) else "(empty)")
+    else
+        "unset";
+
+    const cache_line = if (r.cache_path) |cp|
+        (if (r.cache_hit)
+            try arena.print("{s} (hit: {s})", .{ try oneLineField(arena, cp), if (r.cached_kind) |k| @tagName(k) else "unknown" })
+        else
+            try arena.print("{s} (miss)", .{try oneLineField(arena, cp)}))
+    else
+        "none";
+
+    var mods_buf: std.ArrayList(u8) = .empty;
+    for (d.modules, 0..) |m, idx| {
+        if (idx > 0) try mods_buf.append(arena, ' ');
+        try mods_buf.appendSlice(arena, try oneLineField(arena, m));
+    }
+
+    try out.print(arena, "mode: {s}\n", .{r.mode});
+    try out.print(arena, "strict: {s}\n", .{if (r.strict) "true" else "false"});
+    try out.print(arena, "announce: {s}\n", .{if (r.announce) "true" else "false"});
+    try out.print(arena, "config: {s}\n", .{config_line});
+    try out.print(arena, "chain: {s}\n", .{chain_line});
+    try out.print(arena, "timeout: {s}\n", .{try formatTimeoutText(arena, r.timeout)});
+    try out.print(arena, "syslog: {s}\n", .{if (r.syslog_text) |s| try oneLineField(arena, s) else "none"});
+    try out.print(arena, "syslog_all: {s}\n", .{if (r.syslog_all) "true" else "false"});
+    try out.print(arena, "syslog_pen: {s}\n", .{r.syslog_pen});
+    try out.print(arena, "job: {s}\n", .{if (r.job_id.len > 0) try oneLineField(arena, r.job_id) else "none"});
+    try out.print(arena, "step: {s}\n", .{step_line});
+    try out.print(arena, "localid: {s}\n", .{localid_line});
+    try out.print(arena, "cache: {s}\n", .{cache_line});
+    try out.print(arena, "decision: {s}\n", .{@tagName(d.kind)});
+    try out.print(arena, "was: {s}\n", .{if (d.was_cpu.len > 0) try oneLineField(arena, d.was_cpu) else "none"});
+    try out.print(arena, "now: {s}\n", .{if (d.now_cpu.len > 0) try oneLineField(arena, d.now_cpu) else "none"});
+    try out.print(arena, "was_accel: {s}\n", .{if (d.was_accel.len > 0) try oneLineField(arena, d.was_accel) else "none"});
+    try out.print(arena, "now_accel: {s}\n", .{if (d.now_accel.len > 0) try oneLineField(arena, d.now_accel) else "none"});
+    try out.print(arena, "compare_accel: {s}\n", .{if (d.compare_accel) "true" else "false"});
+    try out.print(arena, "pin: {s}\n", .{if (d.pin.len > 0) try oneLineField(arena, d.pin) else "none"});
+    try out.print(arena, "eessi: {s}\n", .{if (d.eessi.len > 0) try oneLineField(arena, d.eessi) else "none"});
+    try out.print(arena, "modules: {s}\n", .{if (d.modules.len > 0) mods_buf.items else "none"});
+    try out.print(arena, "marker: {s}\n", .{if (d.marker.len > 0) try oneLineField(arena, d.marker) else "none"});
+    try out.print(arena, "detail: {s}\n", .{if (d.detail) |dt| try oneLineField(arena, dt) else "none"});
+    try out.print(arena, "message: {s}\n", .{if (d.message) |msg| try oneLineField(arena, msg) else "none"});
+    try out.print(arena, "exit: {d}\n", .{r.exit_code});
+    return out.items;
+}
+
 fn realMain(arena: Allocator, argv0: []const u8, argv: []const []const u8, envp: proc.Envp) u8 {
     const args = parseArgs(argv);
     const env = envmap.fromEnvp(arena, envp) catch emergencyExit("MemoryError", "out of memory");
@@ -520,46 +775,73 @@ fn realMain(arena: Allocator, argv0: []const u8, argv: []const []const u8, envp:
 
     var chain_out: []const u8 = "";
     const cfg = siteConfig(arena, invokedPath(arena, argv0));
+    const config_status: []const u8 = if (cfg.settings != null)
+        "loaded"
+    else if (cfg.path != null or cfg.warning != null)
+        "ignored"
+    else
+        "none";
     var notes: std.ArrayList([]const u8) = .empty;
     if (cfg.warning) |w| notes.append(arena, w) catch oom();
     var chain: ?[]const u8 = null;
-    if (!args.shell) {
+    var chain_path: ?[]const u8 = null;
+    var chain_source: []const u8 = "none";
+    var chain_status: []const u8 = "none";
+    if (args.shell) {
+        chain_status = "skipped";
+    } else {
         chain = args.chain;
         if (chain == null) {
             chain = if (cfg.settings) |s| s.get("chain") else null;
             if (chain) |ch| {
                 if (ch.len == 0) {
                     chain = null;
-                } else if (!chainPathOk(ch)) {
-                    notes.append(arena, arena.print("eessi-arch-guard: config chain is not an absolute executable: {s}", .{text.oneLine(arena, ch, 200) catch ch}) catch "") catch oom();
-                    chain = null;
+                } else {
+                    chain_source = "config";
+                    chain_path = ch;
+                    if (chainPathOk(ch)) {
+                        chain_status = "valid";
+                    } else {
+                        chain_status = "invalid";
+                        notes.append(arena, arena.print("eessi-arch-guard: config chain is not an absolute executable: {s}", .{text.oneLine(arena, ch, 200) catch ch}) catch "") catch oom();
+                        chain = null;
+                    }
                 }
             }
-        } else if (!chainPathOk(chain.?)) {
-            notes.append(arena, "eessi-arch-guard: --chain is not an absolute executable") catch oom();
-            chain = null;
+        } else {
+            chain_source = "cli";
+            chain_path = chain.?;
+            if (chainPathOk(chain.?)) {
+                chain_status = "valid";
+            } else {
+                chain_status = "invalid";
+                notes.append(arena, "eessi-arch-guard: --chain is not an absolute executable") catch oom();
+                chain = null;
+            }
         }
     }
     for (notes.items) |n| writeMessage(arena, 2, n);
     if (chain) |path| {
-        const envp_c = envmap.toEnvp(arena, env) catch envp;
-        const r = proc.run(arena, path, &.{path}, envp_c, .{
-            .stdout_limit = 64 << 20,
-            .stderr_limit = 64 << 20,
-            .timeout_ms = null,
-            .new_session = false,
-        }) catch |err| emergencyExit("OSError", @errorName(err));
-        if (r.stderr.len > 0) cli.put(2, r.stderr);
-        // A chain killed by a signal is 1, as a negative returncode is.
-        const code: u8 = switch (r.term) {
-            .exited => |x| x,
-            .signaled => 1,
-        };
-        chain_out = r.stdout;
-        emergency_chain = chain_out;
-        if (code != 0) {
-            writeStdout(chain_out, "");
-            return code;
+        if (!args.dry_run) {
+            const envp_c = envmap.toEnvp(arena, env) catch envp;
+            const r = proc.run(arena, path, &.{path}, envp_c, .{
+                .stdout_limit = 64 << 20,
+                .stderr_limit = 64 << 20,
+                .timeout_ms = null,
+                .new_session = false,
+            }) catch |err| emergencyExit("OSError", @errorName(err));
+            if (r.stderr.len > 0) cli.put(2, r.stderr);
+            // A chain killed by a signal is 1, as a negative returncode is.
+            const code: u8 = switch (r.term) {
+                .exited => |x| x,
+                .signaled => 1,
+            };
+            chain_out = r.stdout;
+            emergency_chain = chain_out;
+            if (code != 0) {
+                writeStdout(chain_out, "");
+                return code;
+            }
         }
     }
 
@@ -567,6 +849,46 @@ fn realMain(arena: Allocator, argv0: []const u8, argv: []const []const u8, envp:
     if (t.warning) |w| writeMessage(arena, 2, w);
     const sl = syslog.resolve(arena, args.syslog, env, cfg.settings);
     if (sl.warning) |w| writeMessage(arena, 2, w);
+
+    if (args.dry_run) {
+        const mode: []const u8 = if (args.shell) "shell" else "prolog";
+        const announce = !args.shell and std.mem.eql(u8, env.get("SLURM_LOCALID") orelse "0", "0");
+        const job_id = env.get("SLURM_JOB_ID") orelse empty;
+        const step_id = env.get("SLURM_STEP_ID") orelse "batch";
+        const local_id = env.get("SLURM_LOCALID");
+        const cache_probe = guard.probeCacheReadonly(&ctx, env, args.shell);
+        const decision = guard.limitedDryRun(&ctx, env, t.value) catch {
+            emergencyWrite(guard.os_failure.class, guard.os_failure.text);
+            return if (args.strict) strict_failure_exit else 0;
+        };
+        const exit_code: u8 = if (args.strict and decision.kind == .failed) strict_failure_exit else 0;
+        const report: DryRunReport = .{
+            .mode = mode,
+            .strict = args.strict,
+            .announce = announce,
+            .config_path = cfg.path,
+            .config_status = config_status,
+            .config_warning = cfg.warning,
+            .chain_path = chain_path,
+            .chain_source = chain_source,
+            .chain_status = chain_status,
+            .timeout = t.value,
+            .syslog_text = syslog.formatTarget(arena, sl.target),
+            .syslog_all = sl.log_all,
+            .syslog_pen = sl.pen,
+            .job_id = job_id,
+            .step_id = step_id,
+            .local_id = local_id,
+            .cache_path = cache_probe.path,
+            .cache_hit = cache_probe.hit,
+            .cached_kind = cache_probe.cached_kind,
+            .decision = decision,
+            .exit_code = exit_code,
+        };
+        const body = (if (args.json) renderDryRunJson(arena, report) else renderDryRunText(arena, report)) catch oom();
+        cli.put(1, body);
+        return exit_code;
+    }
 
     // An OSError the decision does not catch: Python's main reports it as a
     // skip, after the chained output, and leaves the environment.
@@ -629,7 +951,7 @@ pub fn main(init: std.process.Init.Minimal) u8 {
     const argv0: []const u8 = if (all.len > 0) all[0] else "";
     const argv = arena.alloc([]const u8, if (all.len > 0) all.len - 1 else 0) catch emergencyExit("MemoryError", "out of memory");
     for (argv, 0..) |*a, i| a.* = all[i + 1];
-    emergency_shell = contains(argv, "--shell");
+    emergency_shell = contains(argv, "--shell") or contains(argv, "--dry-run");
     emergency_strict = contains(argv, "--strict");
     installCrashHandlers();
     return realMain(arena, argv0, argv, init.environ.block.slice.ptr);
@@ -656,6 +978,60 @@ test "parseArgs" {
     const d = parseArgs(&.{ "--chain", "", "--timeout", "7" });
     try std.testing.expectEqualStrings("", d.chain.?);
     try std.testing.expectEqualStrings("7", d.timeout.?);
+    const e = parseArgs(&.{ "--dry-run", "--json" });
+    try std.testing.expect(e.dry_run and e.json);
+}
+
+test "renderDryRunText and renderDryRunJson format a decision summary" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const a = arena_state.allocator();
+    const mods = [_][]const u8{ "R/4.4.2", "GCC/13.2.0" };
+    const report: DryRunReport = .{
+        .mode = "prolog",
+        .strict = false,
+        .announce = true,
+        .config_path = "/etc/eessi-arch-guard.conf",
+        .config_status = "loaded",
+        .config_warning = null,
+        .chain_path = "/etc/slurm/task_prolog.site",
+        .chain_source = "config",
+        .chain_status = "valid",
+        .timeout = 15.0,
+        .syslog_text = null,
+        .syslog_all = false,
+        .syslog_pen = "32473",
+        .job_id = "42",
+        .step_id = "0",
+        .local_id = "0",
+        .cache_path = "/tmp/cache",
+        .cache_hit = false,
+        .cached_kind = null,
+        .decision = .{
+            .kind = .reloaded,
+            .was_cpu = "x86_64/amd/zen4",
+            .now_cpu = "x86_64/amd/zen2",
+            .eessi = "EESSI/2025.06",
+            .modules = &mods,
+            .marker = "x86_64/amd/zen4->x86_64/amd/zen2",
+            .message = "eessi-arch-guard: would reload modules for x86_64/amd/zen2 (loaded for x86_64/amd/zen4)",
+        },
+        .exit_code = 0,
+    };
+    const txt = try renderDryRunText(a, report);
+    try std.testing.expect(std.mem.find(u8, txt, "config: /etc/eessi-arch-guard.conf (loaded)\n") != null);
+    try std.testing.expect(std.mem.find(u8, txt, "chain: /etc/slurm/task_prolog.site (config, valid)\n") != null);
+    try std.testing.expect(std.mem.find(u8, txt, "timeout: 15\n") != null);
+    try std.testing.expect(std.mem.find(u8, txt, "decision: reloaded\n") != null);
+    try std.testing.expect(std.mem.find(u8, txt, "modules: R/4.4.2 GCC/13.2.0\n") != null);
+    const js = try renderDryRunJson(a, report);
+    try std.testing.expect(std.mem.find(u8, js, "\"schema_version\"") != null);
+    try std.testing.expect(std.mem.find(u8, js, "\"kind\"") != null);
+    try std.testing.expect(std.mem.find(u8, js, "decision") != null);
+    try std.testing.expect(std.mem.find(u8, js, "R/4.4.2") != null);
+    try std.testing.expect(std.mem.find(u8, js, "GCC/13.2.0") != null);
+    try std.testing.expect(std.mem.find(u8, js, "\"exit\": 0") != null);
+    try std.testing.expect(std.mem.endsWith(u8, js, "\n"));
 }
 
 test "localTaskZero reads the first SLURM_LOCALID" {

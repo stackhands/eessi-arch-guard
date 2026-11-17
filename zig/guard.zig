@@ -1764,6 +1764,169 @@ pub fn cachedDecide(c: *Ctx, env: Map, shell: bool) Stop!Outcome {
     return outcome;
 }
 
+/// Read-only decision summary produced by `--dry-run`.
+pub const DryRunDecision = struct {
+    /// What the guard would decide: `skip`, `noop`, `reloaded`, or `failed`.
+    kind: Kind,
+    /// CPU target recorded in `EESSI_SOFTWARE_SUBDIR`.
+    was_cpu: []const u8 = "",
+    /// CPU target selected for this node.
+    now_cpu: []const u8 = "",
+    /// Accelerator target recorded in `EESSI_ACCEL_SUBDIR`.
+    was_accel: []const u8 = "",
+    /// Accelerator target selected for this node.
+    now_accel: []const u8 = "",
+    /// Whether the accelerator target was compared.
+    compare_accel: bool = true,
+    /// Fallback CPU pin passed to the restore helper when waitpkg dropped the first choice.
+    pin: []const u8 = "",
+    /// Loaded `EESSI/<version>` module name when checked.
+    eessi: []const u8 = "",
+    /// Other loaded modules in order when checked.
+    modules: []const []const u8 = &.{},
+    /// Marker token `was->now` for reload or failure outcomes.
+    marker: []const u8 = "",
+    /// Short reason text for `skip` and `noop` outcomes.
+    detail: ?[]const u8 = null,
+    /// Diagnostic or failure message for `reloaded` and `failed` outcomes.
+    message: ?[]const u8 = null,
+};
+
+/// Result of inspecting the cache file without creating a lock or writing.
+pub const CacheProbe = struct {
+    /// Cache file path that would be used, or null when no cache applies.
+    path: ?[]const u8 = null,
+    /// Whether a valid cache entry already exists at `path`.
+    hit: bool = false,
+    /// Outcome kind stored in that cache entry when `hit` is true.
+    cached_kind: ?Kind = null,
+};
+
+/// Inspect the cache entry for `env` without creating a lock file or writing.
+pub fn probeCacheReadonly(c: *Ctx, env: Map, shell: bool) CacheProbe {
+    const p = cachePath(c, env, shell) orelse return .{};
+    const full = std.fs.path.join(c.arena, &.{ p.dir, p.name }) catch return .{};
+    const dirfd = fsx.openDir(fsx.cwd, p.dir, true) catch return .{ .path = full };
+    defer sys.close(dirfd);
+    if (readCache(c, dirfd, p.name, shell)) |o| {
+        return .{ .path = full, .hit = true, .cached_kind = o.kind };
+    }
+    return .{ .path = full };
+}
+
+fn dryRunFailed(c: *Ctx, was_cpu: []const u8, now_cpu: []const u8, was_accel: []const u8, now_accel: []const u8, compare_accel: bool, pin: []const u8, eessi: []const u8, modules: []const []const u8, was_side: []const u8, tok_side: []const u8, message: []const u8) DryRunDecision {
+    return .{
+        .kind = .failed,
+        .was_cpu = was_cpu,
+        .now_cpu = now_cpu,
+        .was_accel = was_accel,
+        .now_accel = now_accel,
+        .compare_accel = compare_accel,
+        .pin = pin,
+        .eessi = eessi,
+        .modules = modules,
+        .marker = fmt(c, "{s}->{s}", .{ side(was_side), side(tok_side) }),
+        .message = line1(c, message, 500),
+    };
+}
+
+/// Evaluate the guard decision without running restore or writing any state.
+pub fn dryRunDecide(c: *Ctx, env: Map) Stop!DryRunDecision {
+    if (c.limit) |l| try l.check();
+    if (std.mem.eql(u8, env.get("EESSI_ARCH_GUARD") orelse empty, "0"))
+        return .{ .kind = .skip, .detail = "EESSI_ARCH_GUARD=0" };
+    const was = env.get("EESSI_SOFTWARE_SUBDIR") orelse empty;
+    if (was.len == 0) return .{ .kind = .skip, .detail = "EESSI is not loaded" };
+    if (nonEmpty(env, "EESSI_SOFTWARE_SUBDIR_OVERRIDE"))
+        return .{ .kind = .skip, .was_cpu = was, .detail = "EESSI_SOFTWARE_SUBDIR_OVERRIDE is set" };
+    if (nonEmpty(env, "EESSI_ARCHDETECT_OPTIONS_OVERRIDE"))
+        return .{ .kind = .skip, .was_cpu = was, .detail = "EESSI_ARCHDETECT_OPTIONS_OVERRIDE is set" };
+
+    const cpu = try probeCpu(c, env);
+    if (cpu.status == .@"error")
+        return dryRunFailed(c, was, "", "", "", true, "", "", &.{}, was, "archdetect-failed", fmt(c, "eessi-arch-guard: archdetect failed ({s}); environment left as it was", .{cpu.err}));
+    if (cpu.status == .none) {
+        if (std.mem.eql(u8, env.get("EESSI_ARCH_GUARD_MISSING") orelse empty, "ignore"))
+            return .{ .kind = .skip, .was_cpu = was, .detail = "no EESSI software directory (ignored)" };
+        const shown = if (cpu.candidates.len > 0) std.mem.join(c.arena, " ", cpu.candidates) catch "(none)" else "(none)";
+        return dryRunFailed(c, was, "", "", "", true, "", "", &.{}, was, "no-software-dir", fmt(c, "eessi-arch-guard: no EESSI software directory for this node under {s} (candidates {s}); modules were loaded for {s}; environment left as it was", .{ env.get("EESSI_PREFIX") orelse empty, shown, was }));
+    }
+
+    const compare_accel = !nonEmpty(env, "EESSI_ACCELERATOR_TARGET_OVERRIDE");
+    const was_accel = env.get("EESSI_ACCEL_SUBDIR") orelse empty;
+    var now_accel = was_accel;
+    if (compare_accel) {
+        const accel = try probeAccel(c, env);
+        if (accel.status == .@"error")
+            return dryRunFailed(c, was, cpu.target, was_accel, "", compare_accel, cpu.override, "", &.{}, was, "archdetect-failed", fmt(c, "eessi-arch-guard: archdetect failed ({s}); environment left as it was", .{accel.err}));
+        now_accel = accel.subdir;
+    }
+    const now = cpu.target;
+    if (std.mem.eql(u8, now, was) and std.mem.eql(u8, now_accel, was_accel)) {
+        return .{
+            .kind = .noop,
+            .was_cpu = was,
+            .now_cpu = now,
+            .was_accel = was_accel,
+            .now_accel = now_accel,
+            .compare_accel = compare_accel,
+            .pin = cpu.override,
+            .detail = "target already matches this node",
+        };
+    }
+
+    var was_label = was;
+    var now_label = now;
+    if (compare_accel and !std.mem.eql(u8, was_accel, now_accel)) {
+        was_label = fmt(c, "{s} {s}", .{ was, if (was_accel.len > 0) was_accel else "no accel" });
+        now_label = fmt(c, "{s} {s}", .{ now, if (now_accel.len > 0) now_accel else "no accel" });
+    }
+
+    const loaded = parseLoaded(c, env);
+    if (loaded.err.len > 0) {
+        const unsafe_name = std.mem.eql(u8, loaded.err, "unsafe-module-name");
+        const why = if (unsafe_name) "a loaded module name is not safe to pass to Lmod" else "the loaded module list has no single EESSI/<version> entry";
+        return dryRunFailed(c, was, now, was_accel, now_accel, compare_accel, cpu.override, "", &.{}, was_label, if (unsafe_name) "unsafe-module-name" else "restore-failed", fmt(c, "eessi-arch-guard: {s}; environment left as it was", .{why}));
+    }
+    if (!lmodInvocable(env.get("LMOD_CMD") orelse empty))
+        return dryRunFailed(c, was, now, was_accel, now_accel, compare_accel, cpu.override, loaded.eessi, loaded.others, was_label, "lmod-unavailable", fmt(c, "eessi-arch-guard: LMOD_CMD is missing or not executable; this node is {s}, the modules were loaded for {s}; environment left as it was", .{ now_label, was_label }));
+
+    var work_why: []const u8 = "";
+    _ = restoreWorkBase(c, env, &work_why) catch
+        return dryRunFailed(c, was, now, was_accel, now_accel, compare_accel, cpu.override, loaded.eessi, loaded.others, was_label, "restore-failed", fmt(c, "eessi-arch-guard: restore failed (restore workspace unavailable: {s}); environment left as it was", .{work_why}));
+
+    return .{
+        .kind = .reloaded,
+        .was_cpu = was,
+        .now_cpu = now,
+        .was_accel = was_accel,
+        .now_accel = now_accel,
+        .compare_accel = compare_accel,
+        .pin = cpu.override,
+        .eessi = loaded.eessi,
+        .modules = loaded.others,
+        .marker = fmt(c, "{s}->{s}", .{ side(was_label), side(now_label) }),
+        .message = fmt(c, "eessi-arch-guard: would reload modules for {s} (loaded for {s})", .{ now_label, was_label }),
+    };
+}
+
+/// Evaluate a dry-run decision under one deadline without touching the cache.
+pub fn limitedDryRun(c: *Ctx, env: Map, timeout_s: f64) error{Os}!DryRunDecision {
+    var limit: Limit = .{ .deadline_ms = nowMs() + @as(i64, @intFromFloat(@min(timeout_s * 1000.0, 9.2e15))) };
+    c.limit = &limit;
+    installLimit(&limit);
+    defer {
+        removeLimit(&limit);
+        c.limit = null;
+    }
+    const was = env.get("EESSI_SOFTWARE_SUBDIR") orelse empty;
+    return dryRunDecide(c, env) catch |err| switch (err) {
+        error.Deadline => dryRunFailed(c, was, "", "", "", true, "", "", &.{}, was, "timeout", "eessi-arch-guard: decision exceeded the time limit; environment left as it was"),
+        error.Terminated => dryRunFailed(c, was, "", "", "", true, "", "", &.{}, was, "terminated", "eessi-arch-guard: decision was terminated; environment left as it was"),
+        error.Os => return error.Os,
+    };
+}
+
 /// The decision under one deadline. A timeout or SIGTERM is not cached.
 pub fn limitedDecide(c: *Ctx, env: Map, shell: bool, timeout_s: f64) error{Os}!Outcome {
     last_cached = false;
@@ -1790,4 +1953,20 @@ pub fn limitedDecide(c: *Ctx, env: Map, shell: bool, timeout_s: f64) error{Os}!O
         error.Terminated => return failed(c, was, "terminated", "eessi-arch-guard: decision was terminated; environment left as it was", null),
         error.Os => return error.Os,
     };
+}
+
+test "dryRunDecide handles skip and missing EESSI without writing" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const a = arena_state.allocator();
+    var env: Map = .empty;
+    var c: Ctx = .{ .arena = a, .env = env, .strict = false, .self_exe = "" };
+    const d1 = try dryRunDecide(&c, env);
+    try std.testing.expectEqual(Kind.skip, d1.kind);
+    try std.testing.expectEqualStrings("EESSI is not loaded", d1.detail.?);
+    try env.put(a, "EESSI_ARCH_GUARD", "0");
+    try env.put(a, "EESSI_SOFTWARE_SUBDIR", "x86_64/amd/zen4");
+    const d2 = try dryRunDecide(&c, env);
+    try std.testing.expectEqual(Kind.skip, d2.kind);
+    try std.testing.expectEqualStrings("EESSI_ARCH_GUARD=0", d2.detail.?);
 }

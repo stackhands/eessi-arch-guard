@@ -17,17 +17,17 @@ fn oom() noreturn {
     cli.die("eessi-arch-guard", "out of memory", .{});
 }
 
-fn reloadNeeded(kind: guard.Kind) bool {
+pub fn reloadNeeded(kind: guard.Kind) bool {
     return kind == .reloaded or kind == .failed;
 }
 
-fn exitSemantic(exit_code: u8) []const u8 {
+pub fn exitSemantic(exit_code: u8) []const u8 {
     if (exit_code == 78) return "strict-failure";
     if (exit_code == 1) return "restore-failed";
     return "ok";
 }
 
-fn skipCause(detail: ?[]const u8) []const u8 {
+pub fn skipCause(detail: ?[]const u8) []const u8 {
     const s = detail orelse "";
     if (std.mem.find(u8, s, "EESSI_ARCH_GUARD=0") != null) return "opt-out";
     if (std.mem.find(u8, s, "not loaded") != null) return "not-loaded";

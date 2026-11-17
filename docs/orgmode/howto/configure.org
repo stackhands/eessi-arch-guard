@@ -67,6 +67,41 @@ exit 0
 The site's prolog ran, and the guard printed nothing else and no warning: with the module environment of the European Environment for Scientific Software Installations (EESSI) not loaded, it has nothing to do.
 For a wrapper, run =/usr/local/sbin/task-prolog= the same way.
 
+To inspect the configuration, =chain= validation, cache state, and target decision inside a job environment without executing the chained prolog, writing cache or lock files, sending syslog events, or reloading modules, run =--dry-run= (or =--dry-run --json= for JSON output):
+
+#+begin_src bash
+/usr/local/sbin/eessi-arch-guard --dry-run
+#+end_src
+
+#+begin_example
+mode: prolog
+strict: false
+announce: true
+config: /etc/eessi-arch-guard.conf (loaded)
+chain: /etc/slurm/task_prolog.site (config, valid)
+timeout: 60
+syslog: none
+syslog_all: false
+syslog_pen: 32473
+job: none
+step: none
+localid: unset
+cache: none
+decision: skip
+was: none
+now: none
+was_accel: none
+now_accel: none
+compare_accel: true
+pin: none
+eessi: none
+modules: none
+marker: none
+detail: EESSI is not loaded
+message: none
+exit: 0
+#+end_example
+
 =docs/examples/check_config.sh= in the repository runs each case of this guide on a copy of the guard in a temporary directory, =$WORK= in its output, with =sudo= for the files owned by root.
 For a configuration file whose first line is a comment holding the byte =0xff=, and which sets =chain= and =timeout = 15=, it shows:
 
