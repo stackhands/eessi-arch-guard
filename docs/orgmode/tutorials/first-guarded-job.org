@@ -23,12 +23,12 @@ A small stand-in for the European Environment for Scientific Software Installati
 
 ** Get the guard
 
-Clone the repository and check out the commit this tutorial was checked with:
+Clone the repository and use the current release branch or tag:
 
 #+begin_src bash
 git clone https://github.com/stackhands/eessi-arch-guard.git
 cd eessi-arch-guard
-git checkout a418152
+git switch main
 #+end_src
 
 The guard is the single Python file =src/eessi_arch_guard.py=.
@@ -154,9 +154,15 @@ removed: docs/examples/_work
 
 ** Next steps
 
+Stay on =main=, or check out a release tag such as =v0.2.0=, before following a how-to that installs from this checkout:
+
+#+begin_src bash
+git switch main
+#+end_src
+
 - [[file:../howto/install-the-prolog.org][Install the prolog]] on a cluster.
 - [[file:../howto/read-a-failure.org][Correct a failed reload]], for each message the guard can print.
 - [[file:../explanation/how-it-decides.org][How the guard decides]] what a node's target is.
 - [[file:../reference/cli.org][The eessi-arch-guard command]], for every option.
 
-Checked with Python 3.12.3 and eessi-arch-guard at commit a418152 on 2026-11-16.
+Checked with Python 3.12.3 and eessi-arch-guard at release =v0.2.0= on =main= on 2026-11-17.

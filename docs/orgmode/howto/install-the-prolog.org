@@ -52,9 +52,13 @@ After that, a task that inherits the European Environment for Scientific Softwar
 
    Then have =slurmd= on every node read the changed file, as for any other =slurm.conf= change.
    Slurm starts a task prolog with no arguments, so the guard runs with its defaults.
-4. If users run =eessi-arch-guard --shell= on the login nodes, install the package there too, for example into a virtual environment:
+   By default the =TaskProlog= is fail-open: after a failed reload the guard still exits 0 and the task starts with the environment it was submitted with.
+   To refuse the task instead, a site-owned wrapper can call the guard with =--strict=, which exits 78 on a failed reload (see [[file:use-in-a-batch-script.org][Run the guard in a batch script]]); leave =TaskProlog= pointing at the default copy unless that behaviour is intentional.
+4. If users run =eessi-arch-guard --shell= on the login nodes, install the package there too, for example into a virtual environment.
+   On Ubuntu, =python3 -m venv= needs the =python3-venv= package:
 
    #+begin_src bash
+   sudo apt-get install -y python3-venv
    sudo python3 -m venv /opt/site/software/eessi-arch-guard
    sudo /opt/site/software/eessi-arch-guard/bin/python -m pip install .
    /opt/site/software/eessi-arch-guard/bin/eessi-arch-guard --version

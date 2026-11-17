@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import importlib.util
+import subprocess
+import sys
 import unittest
 from pathlib import Path
 
@@ -72,6 +74,40 @@ class SitePathTests(unittest.TestCase):
         page = (ROOT / "docs" / "orgmode" / "howto" / "check-the-client-mount.org").read_text()
         self.assertIn("share/sitepath.py", page)
         self.assertIn("site modules", page)
+        self.assertIn("exit status", page.lower())
+
+    def test_require_input_rejects_placeholder_modules_path(self):
+        proc = subprocess.run(
+            [
+                sys.executable,
+                str(ROOT / "share" / "sitepath.py"),
+                "--require-input",
+                "--site",
+                "/modules/all",
+                "--eessi",
+                "/modules/all",
+                "--mountinfo",
+                "/proc/self/mountinfo",
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(proc.returncode, 2, proc.stderr)
+        self.assertIn("--require-input", proc.stderr)
+
+    def test_placeholder_modules_path_without_flag_still_runs(self):
+        sp = load()
+        plain = "36 35 0:36 / / rw - ext4 /dev/sda1 rw\n"
+        code, text = sp.report(
+            plain,
+            "/modules/all",
+            "/cvmfs/software.eessi.io",
+            "/modules/all",
+            "/modules/all",
+        )
+        self.assertEqual(code, 1)
+        self.assertIn("FAIL", text)
 
 
 if __name__ == "__main__":
