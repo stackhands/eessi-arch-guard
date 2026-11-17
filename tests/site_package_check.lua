@@ -23,6 +23,24 @@ if type(msg) ~= "string" or not msg:find("software/linux/x86_64/amd/zen3", 1, tr
     failed = true
 end
 
+-- An accelerator tree is software/linux/<cpu>/accel/<vendor>/<target>/modules/.
+-- The accelerator segments are not another CPU subdirectory.
+local cc90 = "/cvmfs/software.eessi.io/versions/2025.06/software/linux/x86_64/amd/zen4/accel/nvidia/cc90/modules/all/CUDA/12.6.0.lua"
+local gfx = "/cvmfs/software.eessi.io/versions/2025.06/software/linux/x86_64/amd/zen4/accel/amd/gfx90a/modules/all/Example/1.0.lua"
+check("accel path cpu subdir", sp.software_subdir(cc90), "x86_64/amd/zen4")
+check("amd accel path cpu subdir", sp.software_subdir(gfx), "x86_64/amd/zen4")
+check("same cpu under an accel path", sp.warn_mismatch(cc90, "x86_64/amd/zen4", "CUDA/12.6.0"), nil)
+check("same cpu under an amd accel path", sp.warn_mismatch(gfx, "x86_64/amd/zen4", "Example/1.0"), nil)
+local accel_cpu = sp.warn_mismatch(cc90, "x86_64/amd/zen3", "CUDA/12.6.0")
+if type(accel_cpu) ~= "string"
+    or not accel_cpu:find("software/linux/x86_64/amd/zen4", 1, true)
+    or accel_cpu:find("accel/nvidia/cc90", 1, true)
+    or not accel_cpu:find("EESSI_SOFTWARE_SUBDIR is x86_64/amd/zen3", 1, true)
+then
+    io.stderr:write("accel path cpu mismatch\n got " .. tostring(accel_cpu) .. "\n")
+    failed = true
+end
+
 local saved = os.getenv
 os.getenv = function(name)
     if name == "EESSI_SOFTWARE_SUBDIR" then
@@ -50,6 +68,29 @@ if not written:find("Example/1.0 is under software/linux/x86_64/amd/zen3", 1, tr
 end
 if written:find("zen4/modules", 1, true) or written:find("Other/2.0", 1, true) then
     io.stderr:write("load hook warned on a match\n" .. written .. "\n")
+    failed = true
+end
+
+os.getenv = function(name)
+    if name == "EESSI_SOFTWARE_SUBDIR" then
+        return "x86_64/amd/zen4"
+    end
+    return saved(name)
+end
+chunks = {}
+io.stderr = {
+    write = function(_, text)
+        chunks[#chunks + 1] = text
+        return real_err:write(text)
+    end,
+}
+sp.load_hook({ fn = cc90, modFullName = "CUDA/12.6.0" })
+sp.load_hook({ fn = gfx, modFullName = "Example/1.0" })
+io.stderr = real_err
+os.getenv = saved
+written = table.concat(chunks)
+if written:find("CUDA/12.6.0", 1, true) or written:find("accel/", 1, true) then
+    io.stderr:write("load hook warned on an accelerator path with the same cpu\n" .. written .. "\n")
     failed = true
 end
 
