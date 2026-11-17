@@ -45,6 +45,7 @@ pixi run -e docs docbld
 
 The site is in =docs/build/html/=; open =docs/build/html/index.html=.
 The build fails on any Sphinx warning, any cross-reference that does not resolve, any internal link or anchor that does not exist, and, outside the changelog, any name of a real site's machines or paths.
+It also fails when =docs/export.el= writes the code or verbatim text of a test page as a different literal, such as =\*.log= for =*.log=.
 The first build needs the network, to fetch the other stackhands sites' inventories; later builds reuse them for 30 days.
 
 External links are checked separately, as they need the network:
@@ -57,14 +58,15 @@ pixi run -e docs linkcheck
 
 ** Where things are
 
-| Path                       | What it holds                                      |
-|----------------------------+----------------------------------------------------|
-| =docs/orgmode/=            | the pages, in Org: edit these                      |
-| =docs/export.el=           | the Org to reStructuredText export                 |
-| =docs/source/conf.py=      | the Sphinx configuration                           |
-| =docs/source/_ext/=        | the Sphinx domain for Zig declarations             |
-| =docs/tools/zig_api.zig=   | writes the Zig API pages from the doc comments     |
-| =docs/tools/check_site.py= | checks internal links, anchors and forbidden names |
+| Path                        | What it holds                                      |
+|-----------------------------+----------------------------------------------------|
+| =docs/orgmode/=             | the pages, in Org: edit these                      |
+| =docs/export.el=            | the Org to reStructuredText export                 |
+| =docs/source/conf.py=       | the Sphinx configuration                           |
+| =docs/source/_ext/=         | the Sphinx domain for Zig declarations             |
+| =docs/tools/zig_api.zig=    | writes the Zig API pages from the doc comments     |
+| =docs/tools/check_site.py=  | checks internal links, anchors and forbidden names |
+| =docs/tools/test_export.py= | checks the literals that =docs/export.el= writes   |
 
 The =.rst= files under =docs/source/= and everything under =docs/source/reference/api/= are generated and not committed.
 

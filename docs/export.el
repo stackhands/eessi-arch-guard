@@ -104,6 +104,12 @@
 ;; x86_64 and EESSI_USER_INSTALL are names, not subscripts; only _{...} and
 ;; ^{...} are.
 (setq org-export-with-sub-superscripts '{})
+;; ox-rst writes a leading * of ~code~ and =verbatim= as \*, but a
+;; reStructuredText literal takes no backslash escapes: =*.log= showed as
+;; \*.log.
+(setq org-rst-text-markup-alist
+      (append '((code . "``%s``") (verbatim . "``%s``"))
+              org-rst-text-markup-alist))
 
 (defun stackhands-resolve-deferred (tree _backend _info)
   "Replace deferred properties in TREE with their values."
