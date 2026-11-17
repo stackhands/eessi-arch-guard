@@ -1,0 +1,1 @@
+The install how-to states that the default `TaskProlog` is fail-open on a failed reload and that `--strict` exit 78 is opt-in through a site-owned wrapper.
