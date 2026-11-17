@@ -1,0 +1,1 @@
+`share/sitepath.py` reports whether the EESSI repository is on a CVMFS mount and whether the site module directory precedes the EESSI one on `MODULEPATH`. A path that only exists on the root disk is not the client mount. The script changes neither the mount nor `MODULEPATH`.
