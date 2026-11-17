@@ -39,6 +39,36 @@ jobs:
         run: |
           python -m pip install jsonschema
           python -m unittest discover -s tests -v
+      - name: completion and manpage generation pass one
+        uses: stackhands/.github/.github/actions/parser-cli-assets@main
+        with:
+          pythonpath: src
+          parser_ref: eessi_arch_guard.build_arg_parser
+          parser_module: eessi_arch_guard
+          parser_function: build_arg_parser
+          prog: eessi-arch-guard
+          out_completions_dir: ${{ runner.temp }}/eag-cli-one/completions
+          out_man_dir: ${{ runner.temp }}/eag-cli-one/man
+          out_bash_file: eessi-arch-guard.bash
+          out_zsh_file: _eessi-arch-guard
+          out_man_file: eessi-arch-guard.1
+      - name: completion and manpage generation pass two
+        uses: stackhands/.github/.github/actions/parser-cli-assets@main
+        with:
+          pythonpath: src
+          parser_ref: eessi_arch_guard.build_arg_parser
+          parser_module: eessi_arch_guard
+          parser_function: build_arg_parser
+          prog: eessi-arch-guard
+          out_completions_dir: ${{ runner.temp }}/eag-cli-two/completions
+          out_man_dir: ${{ runner.temp }}/eag-cli-two/man
+          out_bash_file: eessi-arch-guard.bash
+          out_zsh_file: _eessi-arch-guard
+          out_man_file: eessi-arch-guard.1
+      - name: completion and manpage generation is reproducible
+        run: |
+          diff -ru "${RUNNER_TEMP}/eag-cli-one" "${RUNNER_TEMP}/eag-cli-two"
+          find "${RUNNER_TEMP}/eag-cli-one" -type f | sort
 
   zig:
     # The Zig build against the same Python suite, through TOOL_BIN.
@@ -65,6 +95,23 @@ jobs:
       - run: zig fmt --check build.zig build.zig.zon zig
       - run: zig build test --summary all
       - run: zig build -Drelease=true
+      - name: generate completion and manpage assets
+        uses: stackhands/.github/.github/actions/parser-cli-assets@main
+        with:
+          pythonpath: src
+          parser_ref: eessi_arch_guard.build_arg_parser
+          parser_module: eessi_arch_guard
+          parser_function: build_arg_parser
+          prog: eessi-arch-guard
+          out_completions_dir: zig-out/share/completions
+          out_man_dir: zig-out/share/man
+          out_bash_file: eessi-arch-guard.bash
+          out_zsh_file: _eessi-arch-guard
+          out_man_file: eessi-arch-guard.1
+      - name: list generated cli assets
+        run: |
+          find zig-out/share -type f | sort
+          test -s zig-out/share/man/eessi-arch-guard.1
       - name: build.zig.zon's version and -Dcommit reach --version
         run: bash tests/build_version.sh
       - name: Python suite against the binary
