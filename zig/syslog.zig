@@ -102,6 +102,17 @@ pub fn parsePen(arena: Allocator, raw: []const u8) ?[]const u8 {
     return arena.print("{d}", .{val}) catch null;
 }
 
+/// Canonical string representation of a parsed syslog target.
+pub fn formatTarget(arena: Allocator, target: ?Target) ?[]const u8 {
+    const t = target orelse return null;
+    return switch (t.scheme) {
+        .rfc5424_unix => arena.print("unix://{s}", .{t.host_or_path}) catch null,
+        .journal_unix => arena.print("journal+unix://{s}", .{t.host_or_path}) catch null,
+        .rfc5424_udp => arena.print("udp://{s}:{d}", .{ t.host_or_path, t.port }) catch null,
+        .rfc5424_tcp => arena.print("tcp://{s}:{d}", .{ t.host_or_path, t.port }) catch null,
+    };
+}
+
 pub fn resolve(
     arena: Allocator,
     cli_text: ?[]const u8,

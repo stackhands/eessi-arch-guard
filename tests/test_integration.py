@@ -1328,9 +1328,267 @@ class IntegrationTests(unittest.TestCase):
             self.assertEqual(proc.stdout.strip(), guard.__version__)
         proc = harness.run_guard({"PATH": "/usr/bin:/bin"}, ["--help"])
         self.assertIn("--shell", proc.stdout)
+        self.assertIn("--dry-run", proc.stdout)
+        self.assertIn("--json", proc.stdout)
         self.assertIn("--restore", proc.stdout)
         self.assertIn("--version", proc.stdout)
         self.assertIn("--chain", proc.stdout)
         self.assertIn("--timeout", proc.stdout)
         self.assertIn("-h", proc.stdout)
         self.assertEqual(proc.returncode, 0)
+
+    def test_dry_run_writes_no_files_and_does_not_run_chain_or_lmod(self):
+        import socket
+
+        scratch = tempfile.mkdtemp(prefix="eag-dryrun-")
+        os.chmod(scratch, 0o700)
+        sockdir = tempfile.mkdtemp(prefix="eag-dryrun-sock-")
+        sock_path = os.path.join(sockdir, "syslog.sock")
+        sock = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
+        sock.bind(sock_path)
+        sock.settimeout(0.1)
+        chain_sentinel = os.path.join(self.site.root, "chain-ran")
+        chain_script = os.path.join(self.site.root, "chain.sh")
+        with open(chain_script, "w", encoding="utf-8") as handle:
+            handle.write("#!/bin/sh\ntouch '%s'\necho 'export FROM_CHAIN=1'\n" % chain_sentinel)
+        os.chmod(chain_script, 0o755)
+        try:
+            env = self._cpu_env(ZEN4, "zen2", modules=("R/4.4.2",))
+            env["TMPDIR"] = scratch
+            env["EESSI_ARCH_GUARD_WORKDIR"] = scratch
+            env["SLURM_JOB_ID"] = "9001"
+            env["SLURM_STEP_ID"] = "0"
+            env["SLURM_LOCALID"] = "0"
+
+            before_scratch = sorted(os.listdir(scratch))
+            self.assertEqual(before_scratch, [])
+
+            for extra in (
+                ["--dry-run", "--chain", chain_script, "--syslog", f"unix://{sock_path}"],
+                ["--dry-run", "--json", "--strict", "--chain", chain_script],
+                ["--dry-run", "--shell"],
+            ):
+                proc = harness.run_guard(env, extra)
+                self.assertEqual(proc.returncode, 0, (extra, proc.stderr, proc.stdout))
+                self.assertEqual(proc.stderr, "", extra)
+                for forbidden in ("export ", "unset ", "print "):
+                    self.assertNotIn(forbidden, proc.stdout, (extra, proc.stdout))
+                self.assertEqual(sorted(os.listdir(scratch)), before_scratch, extra)
+                self.assertFalse(os.path.exists(chain_sentinel), extra)
+                self.assertFalse(os.path.exists(self.site.log), extra)
+                self.assertEqual(harness.log_lines(self.site.log), [], extra)
+
+            with self.assertRaises(socket.timeout):
+                sock.recv(4096)
+
+            text_proc = harness.run_guard(
+                env, ["--dry-run", "--chain", chain_script, "--syslog", f"unix://{sock_path}"]
+            )
+            self.assertIn("mode: prolog\n", text_proc.stdout)
+            self.assertIn(f"chain: {chain_script} (cli, valid)\n", text_proc.stdout)
+            self.assertIn(f"syslog: unix://{sock_path}\n", text_proc.stdout)
+            self.assertIn("(miss)\n", text_proc.stdout)
+            self.assertIn("decision: reloaded\n", text_proc.stdout)
+            self.assertIn(f"was: {ZEN4}\n", text_proc.stdout)
+            self.assertIn(f"now: {ZEN2}\n", text_proc.stdout)
+            self.assertIn("eessi: EESSI/2025.06\n", text_proc.stdout)
+            self.assertIn("modules: R/4.4.2\n", text_proc.stdout)
+            self.assertIn(f"marker: {ZEN4}->{ZEN2}\n", text_proc.stdout)
+            self.assertIn("exit: 0\n", text_proc.stdout)
+
+            json_proc = harness.run_guard(env, ["--dry-run", "--json", "--strict"])
+            payload = json.loads(json_proc.stdout)
+            self.assertEqual(payload["schema_version"], 1)
+            self.assertEqual(payload["kind"], "decision")
+            self.assertEqual(payload["decision"], "reloaded")
+            self.assertTrue(payload["reload_needed"])
+            self.assertEqual(payload["exit_semantic"], "ok")
+            self.assertTrue(payload["strict"])
+            self.assertEqual(payload["was"], ZEN4)
+            self.assertEqual(payload["now"], ZEN2)
+            self.assertEqual(payload["modules"], ["R/4.4.2"])
+            self.assertFalse(payload["cache"]["hit"])
+            self.assertEqual(payload["exit"], 0)
+            self.assertEqual(sorted(os.listdir(scratch)), before_scratch)
+        finally:
+            sock.close()
+            shutil.rmtree(sockdir, ignore_errors=True)
+            shutil.rmtree(scratch, ignore_errors=True)
+
+    def test_dry_run_readonly_tmpdir_and_decisions(self):
+        scratch = tempfile.mkdtemp(prefix="eag-dryrun-ro-")
+        os.chmod(scratch, 0o500)
+        try:
+            skip_proc = harness.run_guard(
+                {"PATH": "/usr/bin:/bin", "TMPDIR": scratch}, ["--dry-run"]
+            )
+            self.assertEqual(skip_proc.returncode, 0, skip_proc.stderr)
+            self.assertIn("decision: skip\n", skip_proc.stdout)
+            self.assertIn("detail: EESSI is not loaded\n", skip_proc.stdout)
+
+            noop_env = self._cpu_env(ZEN2, "zen2")
+            noop_env["TMPDIR"] = scratch
+            noop_env["SLURM_JOB_ID"] = "707"
+            noop_proc = harness.run_guard(noop_env, ["--dry-run", "--json"])
+            self.assertEqual(noop_proc.returncode, 0, noop_proc.stderr)
+            noop_data = json.loads(noop_proc.stdout)
+            self.assertEqual(noop_data["decision"], "noop")
+            self.assertEqual(noop_data["was"], ZEN2)
+            self.assertEqual(noop_data["now"], ZEN2)
+            self.assertFalse(noop_data["cache"]["hit"])
+
+            reload_env = self._cpu_env(ZEN4, "zen2")
+            reload_env["TMPDIR"] = scratch
+            reload_env["SLURM_JOB_ID"] = "708"
+            reload_proc = harness.run_guard(reload_env, ["--dry-run"])
+            self.assertEqual(reload_proc.returncode, 0, reload_proc.stderr)
+            self.assertIn("decision: reloaded\n", reload_proc.stdout)
+
+            strict_env = dict(reload_env)
+            strict_env.pop("TMPDIR", None)
+            strict_fail = harness.run_guard(
+                strict_env, ["--dry-run", "--strict", "--json"]
+            )
+            self.assertEqual(strict_fail.returncode, guard.STRICT_FAILURE_EXIT)
+            strict_data = json.loads(strict_fail.stdout)
+            self.assertEqual(strict_data["decision"], "failed")
+            self.assertEqual(strict_data["exit"], guard.STRICT_FAILURE_EXIT)
+            self.assertTrue(strict_data["marker"].endswith("->restore-failed"))
+            self.assertEqual(sorted(os.listdir(scratch)), [])
+            self.assertEqual(harness.log_lines(self.site.log), [])
+        finally:
+            os.chmod(scratch, 0o700)
+            shutil.rmtree(scratch, ignore_errors=True)
+
+    def test_dry_run_reports_config_and_untrusted_config(self):
+        conf = harness.PROGRAM.with_name("eessi-arch-guard.conf")
+        chain_script = os.path.join(self.site.root, "site-chain.sh")
+        chain_sentinel = os.path.join(self.site.root, "site-chain-ran")
+        with open(chain_script, "w", encoding="utf-8") as handle:
+            handle.write("#!/bin/sh\ntouch '%s'\n" % chain_sentinel)
+        os.chmod(chain_script, 0o755)
+        conf.write_text(f"chain = {chain_script}\ntimeout = 15\n", encoding="utf-8")
+        try:
+            # Untrusted (not owned by root)
+            env = self._cpu_env(ZEN2, "zen2")
+            bad_proc = harness.run_guard(env, ["--dry-run", "--json"])
+            self.assertEqual(bad_proc.returncode, 0)
+            self.assertIn("config ignored:", bad_proc.stderr)
+            bad_data = json.loads(bad_proc.stdout)
+            self.assertEqual(bad_data["config"]["status"], "ignored")
+            self.assertEqual(bad_data["config"]["path"], str(conf))
+            self.assertIn("not owned by root", bad_data["config"]["warning"])
+            self.assertEqual(bad_data["chain"]["status"], "none")
+            self.assertEqual(bad_data["timeout"], 60.0)
+
+            # Root-owned valid config
+            subprocess.check_call(["sudo", "chown", "root:root", str(conf)])
+            subprocess.check_call(["sudo", "chmod", "644", str(conf)])
+            ok_proc = harness.run_guard(env, ["--dry-run", "--json"])
+            self.assertEqual(ok_proc.returncode, 0)
+            self.assertEqual(ok_proc.stderr, "")
+            ok_data = json.loads(ok_proc.stdout)
+            self.assertEqual(ok_data["config"]["status"], "loaded")
+            self.assertEqual(ok_data["chain"]["path"], chain_script)
+            self.assertEqual(ok_data["chain"]["source"], "config")
+            self.assertEqual(ok_data["chain"]["status"], "valid")
+            self.assertEqual(ok_data["timeout"], 15.0)
+            self.assertFalse(os.path.exists(chain_sentinel))
+        finally:
+            subprocess.check_call(["sudo", "rm", "-f", str(conf)])
+
+    def test_dry_run_reads_existing_cache_without_creating_lock(self):
+        scratch = tempfile.mkdtemp(prefix="eag-dryrun-cache-")
+        os.chmod(scratch, 0o700)
+        try:
+            env = self._cpu_env(ZEN4, "zen2")
+            env["TMPDIR"] = scratch
+            env["SLURM_JOB_ID"] = "5150"
+            env["SLURM_STEP_ID"] = "0"
+            cache_path = guard.cache_file_path(env)
+            self.assertIsNotNone(cache_path)
+            guard._write_cache(
+                cache_path,
+                guard.Outcome(
+                    {"EESSI_ARCH_GUARD_RELOADED": f"{ZEN4}->{ZEN2}"},
+                    "cached reload",
+                    "reloaded",
+                ),
+            )
+            before = sorted(os.listdir(scratch))
+            self.assertEqual(len(before), 1)
+            before_bytes = Path(cache_path).read_bytes()
+
+            proc = harness.run_guard(env, ["--dry-run", "--json"])
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            data = json.loads(proc.stdout)
+            self.assertEqual(data["cache"]["path"], cache_path)
+            self.assertTrue(data["cache"]["hit"])
+            self.assertEqual(data["cache"]["cached_kind"], "reloaded")
+            self.assertEqual(data["decision"], "reloaded")
+            self.assertEqual(sorted(os.listdir(scratch)), before)
+            self.assertEqual(Path(cache_path).read_bytes(), before_bytes)
+            self.assertFalse(os.path.exists(cache_path + ".lock"))
+            self.assertEqual(harness.log_lines(self.site.log), [])
+        finally:
+            shutil.rmtree(scratch, ignore_errors=True)
+
+    def test_dry_run_python_and_zig_parity(self):
+        if not harness.TOOL_BIN:
+            return
+        scratch = tempfile.mkdtemp(prefix="eag-dryrun-parity-")
+        os.chmod(scratch, 0o700)
+        chain_script = os.path.join(self.site.root, "parity-chain.sh")
+        with open(chain_script, "w", encoding="utf-8") as handle:
+            handle.write("#!/bin/sh\necho 'export P=1'\n")
+        os.chmod(chain_script, 0o755)
+        try:
+            cases = [
+                ({"PATH": "/usr/bin:/bin", "TMPDIR": scratch}, ["--dry-run"]),
+                ({"PATH": "/usr/bin:/bin", "TMPDIR": scratch}, ["--dry-run", "--json"]),
+                (
+                    {
+                        **self._cpu_env(ZEN4, "zen2", modules=("R/4.4.2",)),
+                        "TMPDIR": scratch,
+                        "EESSI_ARCH_GUARD_WORKDIR": scratch,
+                        "SLURM_JOB_ID": "314",
+                        "SLURM_STEP_ID": "2",
+                        "SLURM_LOCALID": "0",
+                    },
+                    ["--dry-run", "--strict", "--chain", chain_script, "--timeout", "15"],
+                ),
+                (
+                    {
+                        **self._cpu_env(ZEN4, "zen2", modules=("R/4.4.2",)),
+                        "TMPDIR": scratch,
+                        "EESSI_ARCH_GUARD_WORKDIR": scratch,
+                        "SLURM_JOB_ID": "314",
+                        "SLURM_STEP_ID": "2",
+                        "SLURM_LOCALID": "0",
+                    },
+                    [
+                        "--dry-run",
+                        "--json",
+                        "--strict",
+                        "--chain",
+                        chain_script,
+                        "--timeout",
+                        "1.5",
+                    ],
+                ),
+            ]
+            for env, args in cases:
+                zig_proc = harness.run_guard(env, args)
+                py_proc = subprocess.run(
+                    [sys.executable, "-I", str(harness.GUARD), *args],
+                    capture_output=True,
+                    text=True,
+                    env=env,
+                    check=False,
+                )
+                self.assertEqual(zig_proc.returncode, py_proc.returncode, args)
+                self.assertEqual(zig_proc.stderr, py_proc.stderr, args)
+                self.assertEqual(zig_proc.stdout, py_proc.stdout, args)
+            self.assertEqual(os.listdir(scratch), [])
+        finally:
+            shutil.rmtree(scratch, ignore_errors=True)

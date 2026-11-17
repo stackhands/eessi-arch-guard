@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import shutil
@@ -616,6 +617,99 @@ class UnitTests:
         assert args.help and args.timeout == "" and args.chain == "-x"
         args = guard.parse_args(["--chain", "", "--timeout", "7"])
         assert args.chain == "" and args.timeout == "7"
+        dry = guard.parse_args(["--dry-run", "--json"])
+        assert dry.dry_run and dry.json
+
+    def test_dry_run_decide_and_render(self):
+        skip_not_loaded = guard.dry_run_decide({}, shell=False)
+        assert skip_not_loaded.kind == "skip"
+        assert skip_not_loaded.detail == "EESSI is not loaded"
+
+        skip_opt_out = guard.dry_run_decide(_env(EESSI_ARCH_GUARD="0"), shell=False)
+        assert skip_opt_out.kind == "skip"
+        assert skip_opt_out.detail == "EESSI_ARCH_GUARD=0"
+
+        noop = guard.dry_run_decide(
+            _env(),
+            shell=False,
+            cpu_probe=lambda _env: guard.CpuProbe("ok", ZEN4, (ZEN4,), ""),
+            accel_probe=_accel(),
+        )
+        assert noop.kind == "noop"
+        assert noop.now_cpu == ZEN4
+
+        env = _env(
+            EESSI_SOFTWARE_SUBDIR=ZEN4,
+            EESSI_ACCEL_SUBDIR="",
+            LOADEDMODULES="EESSI/2025.06:R/4.4.2",
+        )
+        reloaded = guard.dry_run_decide(
+            env,
+            shell=False,
+            cpu_probe=lambda _env: guard.CpuProbe("ok", ZEN2, (ZEN2,), "", override=ZEN2),
+            accel_probe=_accel("ok", "accel/nvidia/cc90"),
+        )
+        assert reloaded.kind == "reloaded"
+        assert reloaded.pin == ZEN2
+        assert reloaded.eessi == "EESSI/2025.06"
+        assert reloaded.modules == ("R/4.4.2",)
+        assert reloaded.marker == f"{ZEN4} no accel->{ZEN2} accel/nvidia/cc90"
+
+        bad_mod = guard.dry_run_decide(
+            _env(LOADEDMODULES="EESSI/2025.06:bad\nmod/1"),
+            shell=False,
+            cpu_probe=lambda _env: guard.CpuProbe("ok", ZEN2, (ZEN2,), ""),
+            accel_probe=_accel(),
+        )
+        assert bad_mod.kind == "failed"
+        assert bad_mod.marker.endswith("->unsafe-module-name")
+
+        strict_missing = guard.dry_run_decide(
+            _env(EESSI_ARCH_GUARD_WORKDIR="/no/such/private-dir"),
+            shell=False,
+            strict=True,
+            cpu_probe=lambda _env: guard.CpuProbe("ok", ZEN2, (ZEN2,), ""),
+            accel_probe=_accel(),
+        )
+        assert strict_missing.kind == "failed"
+        assert strict_missing.marker.endswith("->restore-failed")
+
+        report = guard.DryRunReport(
+            mode="prolog",
+            strict=False,
+            announce=True,
+            config_path="/etc/eessi-arch-guard.conf",
+            config_status="loaded",
+            config_warning=None,
+            chain_path="/etc/slurm/task_prolog.site",
+            chain_source="config",
+            chain_status="valid",
+            timeout=15.0,
+            syslog_text=None,
+            syslog_all=False,
+            syslog_pen="32473",
+            job_id="42",
+            step_id="0",
+            local_id="0",
+            cache_path="/tmp/cache",
+            cache_hit=False,
+            cached_kind=None,
+            decision=reloaded,
+            exit_code=0,
+        )
+        txt = guard.render_dry_run_text(report).decode("utf-8")
+        assert "config: /etc/eessi-arch-guard.conf (loaded)\n" in txt
+        assert "chain: /etc/slurm/task_prolog.site (config, valid)\n" in txt
+        assert "timeout: 15\n" in txt
+        assert "decision: reloaded\n" in txt
+        parsed = json.loads(guard.render_dry_run_json(report).decode("ascii"))
+        assert parsed["schema_version"] == 1
+        assert parsed["kind"] == "decision"
+        assert parsed["decision"] == "reloaded"
+        assert parsed["reload_needed"] is True
+        assert parsed["exit_semantic"] == "ok"
+        assert parsed["modules"] == ["R/4.4.2"]
+        assert parsed["pin"] == ZEN2
 
     def test_signal_while_a_child_starts_still_kills_it(self):
         limit = guard.DecisionLimit(30)
