@@ -12,6 +12,7 @@ The title names the task.
    :maxdepth: 1
 
    install-the-prolog
+   check-the-client-mount
    configure
    use-as-a-user-task-prolog
    use-in-a-batch-script

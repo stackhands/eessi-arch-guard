@@ -1,0 +1,53 @@
+#+TITLE: Check the client mount and the site module path
+#+OPTIONS: toc:nil todo:nil num:nil author:nil title:nil
+#+STARTUP: content
+
+* Check the client mount and the site module path
+
+See whether this node has the EESSI repository on a CVMFS mount, and whether the site's module directory comes before EESSI's on =MODULEPATH=.
+A directory that merely exists on the root disk is not the client mount.
+The site path in front is what =eval "$(eb-local env)"= arranges, so a module of the same name resolves to the site copy.
+This check changes nothing. It reads the mount table and =MODULEPATH= and prints the answer.
+
+** Before you start
+
+- The EESSI client on this node, as [[file:install-the-prolog.org][Install the prolog]] expects of a compute node.
+- A shell in which EESSI and the site tree are loaded, so =EESSI_SOFTWARE_PATH= and =EESSI_SITE_SOFTWARE_PATH= are set.
+  [[https://www.eessi.io/docs/training-events/2025/tutorial-best-practices-cvmfs-hpc/eessi/using-eessi/][Using EESSI]] is the init that prepends the architecture-specific =modules/all=.
+- Python 3.9 or newer. The script uses the standard library.
+
+** Steps
+
+1. Ask, from a checkout of this repository:
+
+   #+begin_src bash
+   python3 share/sitepath.py \
+     --site "$EESSI_SITE_SOFTWARE_PATH/modules/all" \
+     --eessi "$EESSI_SOFTWARE_PATH/modules/all"
+   #+end_src
+
+   =--repo= defaults to =EESSI_CVMFS_REPO=, or =/cvmfs/software.eessi.io=.
+   The mount table is =/proc/self/mountinfo=. =MODULEPATH= is the environment's.
+   When both checks pass, the exit status is 0 and the lines start with =ok=:
+
+   #+begin_example
+   ok   /cvmfs/software.eessi.io is on a cvmfs mount (fuse.cvmfs)
+   ok   site modules /opt/site/versions/2026.06/software/linux/x86_64/amd/zen4/modules/all precede /cvmfs/software.eessi.io/versions/2026.06/software/linux/x86_64/amd/zen4/modules/all
+   #+end_example
+
+2. A failure is exit status 1. =site modules PATH are behind EESSI= means the site directory is on =MODULEPATH= after the EESSI one, so =module load= of a name that exists in both takes EESSI's. Load the site tree again so it is prepended.
+
+** If it fails
+
+| Message | Cause | What to do |
+|---|---|---|
+| =sitepath.py: need --site and --eessi= | Neither flag was given and the two install variables are unset. | Pass the two =modules/all= directories, or load EESSI and the site tree first. |
+| =FAIL REPO is not on a cvmfs mount= | The path is absent from the mount table, or the mount that holds it is not CVMFS. | Mount the EESSI client repository. A directory on the root disk does not count. |
+| =FAIL site modules PATH are not on MODULEPATH= | The site directory is not an entry. | Prepend it, which the site install's module does. |
+| =FAIL site modules PATH are behind= the EESSI directory | The site entry comes later. | Prepend the site directory so it is the earlier entry. |
+| =sitepath.py: cannot read PATH= | The mount table cannot be opened. | Pass =--mountinfo= with a copy of the table, or run where =/proc= is mounted. |
+
+** Related
+
+- [[file:install-the-prolog.org][Install the prolog]], for the nodes this check is about
+- [[https://www.eessi.io/docs/training-events/2025/tutorial-best-practices-cvmfs-hpc/eessi/using-eessi/][Using EESSI]], for the init that puts =modules/all= on =MODULEPATH=

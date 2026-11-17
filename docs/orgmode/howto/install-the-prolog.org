@@ -107,6 +107,7 @@ Only local task 0 of each node prints the line; every task gets the variable.
 ** Related
 
 - [[file:configure.org][Configure the guard]], to run the site's own prolog first or change the time limit
+- [[file:check-the-client-mount.org][Check the client mount and the site module path]], before relying on the modules a task inherits
 - [[file:read-a-failure.org][Correct a failed reload]]
 - [[file:use-in-a-batch-script.org][Run the guard in a batch script]], for the =--shell= install of step 4
 - [[file:../tutorials/first-guarded-job.org][See the guard reload EESSI for another CPU]]
