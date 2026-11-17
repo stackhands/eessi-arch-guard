@@ -13,6 +13,7 @@ The title names the task.
 
    install-the-prolog
    configure
+   check-the-client-revision
    use-as-a-user-task-prolog
    use-in-a-batch-script
    hand-built-software

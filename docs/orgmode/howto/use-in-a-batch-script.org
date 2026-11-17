@@ -121,5 +121,6 @@ Every message of the guard is listed in [[file:../reference/failures.org][Messag
 ** Related
 
 - [[file:use-as-a-user-task-prolog.org][Use the guard without changing the site TaskProlog]], for =srun= steps
+- [[file:check-the-client-revision.org][Check the client revision]], when a job needs a catalog this node may not have yet
 - [[file:../explanation/output-modes.org][Prolog lines and shell lines]]
 - [[file:../reference/cli.org][The eessi-arch-guard command]]
