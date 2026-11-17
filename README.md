@@ -13,7 +13,8 @@ eessi-arch-guard is a Slurm TaskProlog that reloads an EESSI module stack when t
 
 You do not need it if your jobs load EESSI themselves: `sbatch --export=NONE`, or a batch script that loads the module, runs archdetect on the compute node.
 You need it where a task inherits a stack loaded on another node type: `srun` from a login shell that loaded EESSI, and `sbatch --export=ALL`.
-A `module purge; module load EESSI ...` in the batch script fixes the batch step only; `srun ./a.out` from a shell starts no script that could do it.
+In a batch script, `module reload` at the top is enough for the batch step and the `srun` steps it starts: on a zen4 node, a job from a zen2 login node with `EESSI/2026.06` and `GSL/2.8-GCC-15.2.0` loaded went from `x86_64/amd/zen2` to `x86_64/amd/zen4` on `module reload`, because the EESSI module runs archdetect again.
+The guard is for what no script covers: `srun ./a.out` from a login shell or an `salloc` shell that loaded EESSI, and batch scripts whose authors do not know to reload.
 
 Measured on a Slurm 26.05.5 cluster with EESSI 2026.06 and `GSL/2.8-GCC-15.2.0` loaded on a zen2 login node, run on a zen4 node ([the how-to](docs/howto/user_task_prolog.md) has all four cases):
 
