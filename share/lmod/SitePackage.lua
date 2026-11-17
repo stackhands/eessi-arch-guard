@@ -1,15 +1,36 @@
 -- Warn when a module file under software/linux/SUBDIR/modules is loaded
 -- and EESSI_SOFTWARE_SUBDIR names a different subdirectory.
+-- An accelerator module lives at SUBDIR/accel/<vendor>/<target>/modules.
+-- Those segments are not part of SUBDIR.
 -- The load continues. Lmod does not run this hook for a job that inherited
 -- its modules; the TaskProlog still reloads that stack.
 
 local M = {}
 
-function M.software_subdir(fn)
+-- CPU subdirectory, and the accelerator subdirectory when the module
+-- file is under one. The accelerator form matches the guard:
+-- accel/nvidia/cc<digits> or accel/amd/gfx<hex>.
+function M.path_parts(fn)
     if type(fn) ~= "string" then
-        return nil
+        return nil, nil
     end
-    return fn:match("/software/linux/(.-)/modules/")
+    local body = fn:match("/software/linux/(.-)/modules/")
+    if body == nil then
+        return nil, nil
+    end
+    local cpu, accel = body:match("^(.-)/(accel/nvidia/cc%d+)$")
+    if cpu == nil or cpu == "" then
+        cpu, accel = body:match("^(.-)/(accel/amd/gfx[0-9a-f]+)$")
+    end
+    if cpu ~= nil and cpu ~= "" and accel ~= nil then
+        return cpu, accel
+    end
+    return body, nil
+end
+
+function M.software_subdir(fn)
+    local cpu = M.path_parts(fn)
+    return cpu
 end
 
 function M.warn_mismatch(fn, expected, fullname)

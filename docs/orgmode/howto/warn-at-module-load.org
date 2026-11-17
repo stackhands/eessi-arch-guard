@@ -38,6 +38,11 @@ A job that inherited its modules does not run this hook; the =TaskProlog= is wha
 
 3. A module file that is not under =software/linux/.../modules/=, and a file under the recorded subdirectory, print nothing.
 
+4. A module file under an accelerator directory uses that same CPU subdirectory.
+   A file at =.../software/linux/x86_64/amd/zen4/accel/nvidia/cc90/modules/all/CUDA/12.6.0.lua=, while =EESSI_SOFTWARE_SUBDIR= is =x86_64/amd/zen4=, prints nothing.
+   =accel/nvidia/cc90= is not part of the CPU subdirectory. =accel/amd/gfx90a= is not either.
+   A file under =x86_64/amd/zen3/accel/nvidia/cc90= still warns, and the warning names =x86_64/amd/zen3=.
+
 ** What the hook does not do
 
 It does not purge or reload the stack, and it does not change =MODULEPATH= or any =EBROOT*= variable.
