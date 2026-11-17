@@ -81,3 +81,4 @@ The load still completes.
 It does not purge or reload the stack, and it does not change =MODULEPATH= or any =EBROOT*= variable.
 Lmod runs the =load= hook when a module is loaded in this process.
 A batch job inherits the environment from submission, and that inheritance does not run the hook, so a task on another node still needs the =TaskProlog=.
+To also log module loads to syslog for =eb-keep-logs=, enable opt-in usage tracking as [[file:track-module-usage.org][Track module usage]] describes.

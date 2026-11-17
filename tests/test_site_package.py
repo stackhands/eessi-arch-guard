@@ -1,4 +1,4 @@
-"""The Lmod site package warns when a module file's software subdirectory disagrees."""
+"""The Lmod site package warns on a subdirectory mismatch and can track loads."""
 
 from __future__ import annotations
 
@@ -22,3 +22,115 @@ class SitePackageTests(unittest.TestCase):
         )
         self.assertEqual(proc.returncode, 0, proc.stderr + proc.stdout)
         self.assertIn("ok", proc.stdout)
+
+    def test_usage_tracking_logger_fallback_emits_eb_keep_logs_record(self):
+        import tempfile
+
+        with tempfile.TemporaryDirectory(prefix="eessi-arch-guard-sp-") as tmp:
+            root = Path(tmp)
+            bindir = root / "bin"
+            bindir.mkdir()
+            captured = root / "logger.log"
+            logger_stub = bindir / "logger"
+            logger_stub.write_text(
+                '#!/bin/sh\nprintf "%s\\n" "$*" > ' + f'"{captured}"\n',
+                encoding="utf-8",
+            )
+            logger_stub.chmod(0o755)
+
+            lua_script = root / "run.lua"
+            mod_path = (
+                "/cvmfs/software.eessi.io/versions/2025.06/software/linux/"
+                "x86_64/amd/zen4/modules/all/GROMACS/2024.1.lua"
+            )
+            lua_script.write_text(
+                "\n".join(
+                    [
+                        f'local sp = dofile("{ROOT / "share" / "lmod" / "SitePackage.lua"}")',
+                        "sp.find_posix_syslog = function() return nil end",
+                        f'sp.load_hook({{ fn = "{mod_path}", modFullName = "GROMACS/2024.1" }})',
+                        "local count = sp.flush_usage_records()",
+                        'assert(count == 1, "expected one flushed record")',
+                    ]
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
+            env = {
+                "PATH": f"{bindir}:/usr/bin:/bin",
+                "HOME": "/tmp",
+                "USER": "alice",
+                "HOSTNAME": "node01",
+                "SLURM_JOB_ID": "71234",
+                "EESSI_USAGE_TRACKING": "1",
+            }
+            proc = subprocess.run(
+                [LUA, str(lua_script)],
+                env=env,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertEqual(proc.returncode, 0, proc.stderr + proc.stdout)
+            self.assertTrue(captured.is_file(), "stub logger was not invoked")
+            line = captured.read_text(encoding="utf-8").strip()
+            prefix = "-t ModuleUsageTracking -p local0.info -- "
+            self.assertTrue(line.startswith(prefix), line)
+            payload = line[len(prefix) :]
+            fields = dict(token.split("=", 1) for token in payload.split())
+            self.assertEqual(
+                set(fields),
+                {"user", "jobid", "module", "path", "host", "time"},
+            )
+            self.assertEqual(fields["user"], "alice")
+            self.assertEqual(fields["jobid"], "71234")
+            self.assertEqual(fields["module"], "GROMACS/2024.1")
+            self.assertEqual(fields["path"], mod_path)
+            self.assertTrue(fields["host"])
+            self.assertRegex(fields["time"], r"^\d+(?:\.\d+)?$")
+            self.assertGreaterEqual(float(fields["time"]), 0.0)
+
+    @unittest.skipUnless(
+        Path("/usr/share/lmod/lmod/libexec/lmod").is_file(),
+        "Lmod libexec is not installed",
+    )
+    def test_real_lmod_load_with_usage_tracking(self):
+        import re
+        import tempfile
+
+        lmod = Path("/usr/share/lmod/lmod/libexec/lmod")
+
+        with tempfile.TemporaryDirectory(prefix="eessi-arch-guard-lmod-track-") as tmp:
+            root = Path(tmp)
+            moddir = root / "modules" / "Demo"
+            moddir.mkdir(parents=True)
+            (moddir / "1.0.lua").write_text('setenv("DEMO_LOADED", "1")\n', encoding="utf-8")
+
+            pkgdir = root / "lmod_pkg"
+            pkgdir.mkdir()
+            shutil.copy(ROOT / "share" / "lmod" / "SitePackage.lua", pkgdir / "SitePackage.lua")
+
+            env = {
+                "PATH": "/usr/bin:/bin",
+                "HOME": "/tmp",
+                "USER": "alice",
+                "LANG": "C",
+                "LC_ALL": "C",
+                "MODULEPATH": str(root / "modules"),
+                "EESSI_USAGE_TRACKING": "1",
+                "SLURM_JOB_ID": "8899",
+                "LMOD_PACKAGE_PATH": str(pkgdir),
+            }
+            proc = subprocess.run(
+                [str(lmod), "bash", "load", "Demo/1.0"],
+                env=env,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertEqual(proc.returncode, 0, proc.stderr + proc.stdout)
+            self.assertEqual(proc.stderr, "")
+            self.assertIn("DEMO_LOADED", proc.stdout)
+            self.assertNotIn("ModuleUsageTracking", proc.stdout)
+            self.assertTrue(re.search(r"export\s+DEMO_LOADED", proc.stdout), proc.stdout)

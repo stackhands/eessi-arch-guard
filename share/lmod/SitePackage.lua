@@ -6,6 +6,9 @@
 -- that accelerator differs from eessi_archdetect.sh accelpath. Off unless
 -- a site asks. The load continues. Lmod does not run this hook for a job
 -- that inherited its modules; the TaskProlog still reloads that stack.
+-- Module usage tracking is separate. It stays off unless
+-- EESSI_USAGE_TRACKING or usage_tracking asks. ExitHookA then sends one
+-- ModuleUsageTracking record per load, for eb-keep-logs.
 
 local M = {}
 
@@ -205,6 +208,35 @@ function M.warn_accel_on(env_value, conf_text)
     return spec == "1" or spec == "true" or spec == "on"
 end
 
+-- 1, true, on and yes ask for usage tracking, in any case. Anything else,
+-- including unset, is off. This is not the accelerator check: that one
+-- does not treat "yes" as on, and it does not ignore case.
+function M.flag_enabled(spec)
+    local trimmed = M.normal_spec(spec)
+    if trimmed == nil then
+        return false
+    end
+    local lower = trimmed:lower()
+    return lower == "1" or lower == "true" or lower == "on" or lower == "yes"
+end
+
+-- No arguments reads EESSI_USAGE_TRACKING, then the site file. Passed
+-- arguments are the env value and the conf text, including explicit nil.
+function M.usage_tracking_enabled(...)
+    local env_value, conf_text
+    if select("#", ...) == 0 then
+        env_value = os.getenv("EESSI_USAGE_TRACKING")
+        local from_env = M.normal_spec(env_value)
+        if from_env ~= nil then
+            return M.flag_enabled(from_env)
+        end
+        conf_text = M.site_conf()
+    else
+        env_value, conf_text = ...
+    end
+    return M.flag_enabled(M.effective_key(env_value, conf_text, "usage_tracking"))
+end
+
 -- Absolute, and safe to pass to a shell: no space or metacharacter, no
 -- empty, "." or ".." segment. EESSI_INIT_PREFIX is that kind of path.
 function M.safe_init(path)
@@ -317,6 +349,178 @@ function M.is_visible_hook(modT)
     end
 end
 
+-- Records are buffered during load and flushed via ExitHookA in the
+-- space-delimited key=value format eb-keep-logs parses. jobid is optional
+-- there and is ignored when present.
+M.usage_records = {}
+M.exec_cmd = os.execute
+
+function M.find_posix_syslog()
+    local ok_s, mod_s = pcall(require, "posix.syslog")
+    if ok_s and type(mod_s) == "table" and type(mod_s.syslog) == "function" then
+        return mod_s
+    end
+    local ok_p, mod_p = pcall(require, "posix")
+    if ok_p and type(mod_p) == "table" then
+        if type(mod_p.syslog) == "table" and type(mod_p.syslog.syslog) == "function" then
+            return mod_p.syslog
+        end
+        if type(mod_p.syslog) == "function" then
+            return mod_p
+        end
+    end
+    return nil
+end
+
+local function sanitize_field(value, fallback)
+    if type(value) ~= "string" or not value:match("%S") then
+        return fallback
+    end
+    local cleaned = value:gsub("[%s%c]+", "_")
+    if cleaned == "" then
+        return fallback
+    end
+    return cleaned
+end
+
+local function current_user()
+    local user = os.getenv("USER")
+    if type(user) ~= "string" or user == "" then
+        user = os.getenv("LOGNAME")
+    end
+    return sanitize_field(user, "unknown")
+end
+
+local function current_host()
+    local ok, posix = pcall(require, "posix")
+    if ok and type(posix) == "table" and type(posix.uname) == "function" then
+        local ok_u, host = pcall(posix.uname, "%n")
+        if ok_u and type(host) == "string" and host ~= "" then
+            return sanitize_field(host, "unknown")
+        end
+        if ok_u and type(host) == "table" and type(host.nodename) == "string" and host.nodename ~= "" then
+            return sanitize_field(host.nodename, "unknown")
+        end
+    end
+    local env_host = os.getenv("HOSTNAME")
+    if type(env_host) == "string" and env_host ~= "" then
+        return sanitize_field(env_host, "unknown")
+    end
+    local fh = io.open("/proc/sys/kernel/hostname", "r")
+    if fh then
+        local line = fh:read("*l")
+        fh:close()
+        if type(line) == "string" and line ~= "" then
+            return sanitize_field(line, "unknown")
+        end
+    end
+    return "unknown"
+end
+
+local function current_epoch()
+    local epoch_fn = rawget(_G, "epoch")
+    if type(epoch_fn) == "function" then
+        local ok, value = pcall(epoch_fn)
+        local num = ok and tonumber(value) or nil
+        if num ~= nil and num >= 0 and num == num and num ~= math.huge then
+            return num
+        end
+    end
+    local ok, posix = pcall(require, "posix")
+    if ok and type(posix) == "table" and type(posix.gettimeofday) == "function" then
+        local ok_t, a, b = pcall(posix.gettimeofday)
+        if ok_t then
+            if type(a) == "table" and a.sec ~= nil then
+                return a.sec + (a.usec or 0) * 1.0e-6
+            elseif type(a) == "number" then
+                return a + (type(b) == "number" and b or 0) * 1.0e-6
+            end
+        end
+    end
+    return os.time()
+end
+
+local function shell_quote(text)
+    return "'" .. tostring(text):gsub("'", "'\\''") .. "'"
+end
+
+function M.format_usage_record(t)
+    if type(t) ~= "table" then
+        return nil
+    end
+    local mod_name = sanitize_field(t.modFullName, nil)
+    local fn = sanitize_field(t.fn, nil)
+    if mod_name == nil or fn == nil then
+        return nil
+    end
+    local user = current_user()
+    local jobid = sanitize_field(os.getenv("SLURM_JOB_ID"), "nil")
+    local host = current_host()
+    local ts = string.format("%.6f", current_epoch())
+    return string.format(
+        "user=%s jobid=%s module=%s path=%s host=%s time=%s",
+        user,
+        jobid,
+        mod_name,
+        fn,
+        host,
+        ts
+    )
+end
+
+function M.record_load(t)
+    if not M.usage_tracking_enabled() then
+        return nil
+    end
+    local mode_fn = rawget(_G, "mode")
+    if type(mode_fn) == "function" then
+        local ok, cur = pcall(mode_fn)
+        if not ok or cur ~= "load" then
+            return nil
+        end
+    end
+    local line = M.format_usage_record(t)
+    if line ~= nil then
+        M.usage_records[#M.usage_records + 1] = line
+    end
+    return line
+end
+
+function M.emit_syslog(records)
+    if type(records) ~= "table" or #records == 0 then
+        return true
+    end
+    local sys = M.find_posix_syslog()
+    if sys ~= nil then
+        if type(sys.openlog) == "function" then
+            pcall(sys.openlog, "ModuleUsageTracking", sys.LOG_PID or 0, sys.LOG_LOCAL0 or 128)
+        end
+        local level = sys.LOG_INFO or 6
+        for _, line in ipairs(records) do
+            pcall(sys.syslog, level, line)
+        end
+        if type(sys.closelog) == "function" then
+            pcall(sys.closelog)
+        end
+        return true
+    end
+    for _, line in ipairs(records) do
+        local cmd = "logger -t ModuleUsageTracking -p local0.info -- " .. shell_quote(line) .. " >/dev/null 2>&1"
+        pcall(M.exec_cmd, cmd)
+    end
+    return true
+end
+
+function M.flush_usage_records()
+    local records = M.usage_records
+    M.usage_records = {}
+    if type(records) ~= "table" or #records == 0 then
+        return 0
+    end
+    M.emit_syslog(records)
+    return #records
+end
+
 function M.load_hook(t)
     local fn, fullname
     if type(t) == "table" then
@@ -327,27 +531,51 @@ function M.load_hook(t)
     if msg then
         io.stderr:write(msg)
     end
-    if M.module_accel(fn) == nil then
-        return
+    -- A CPU-only module does not read the node, and a disabled accelerator
+    -- check does not either. Recording runs after both warnings.
+    if M.module_accel(fn) ~= nil
+        and M.warn_accel_on(os.getenv("EESSI_WARN_ACCEL_MISMATCH"), M.site_conf())
+    then
+        local accel_msg = M.warn_accel(fn, M.read_node_accel(), fullname)
+        if accel_msg then
+            io.stderr:write(accel_msg)
+        end
     end
-    if not M.warn_accel_on(os.getenv("EESSI_WARN_ACCEL_MISMATCH"), M.site_conf()) then
-        return
-    end
-    local accel_msg = M.warn_accel(fn, M.read_node_accel(), fullname)
-    if accel_msg then
-        io.stderr:write(accel_msg)
-    end
+    M.record_load(t)
 end
 
-if type(hook) == "table" and type(hook.register) == "function" then
-    -- The third argument appends, since Lmod 8.7.35. An older Lmod rejects it.
+-- Lmod loads this file under tools/strict.lua. `hook` is a local in Lmod's
+-- own files, not a declared global, so a bare read aborts the command.
+-- The unit test installs a global; Lmod itself is require("Hook").
+-- Registrations stay load and isVisibleHook, append on Lmod 8.7.35+,
+-- plain register when an older Lmod rejects the third argument.
+local function resolve_hook()
+    local global_hook = rawget(_G, "hook")
+    if type(global_hook) == "table" and type(global_hook.register) == "function" then
+        return global_hook
+    end
+    local ok, loaded = pcall(require, "Hook")
+    if ok and type(loaded) == "table" and type(loaded.register) == "function" then
+        return loaded
+    end
+    return nil
+end
+
+local hook_tbl = resolve_hook()
+if hook_tbl ~= nil then
     local function register(name, fn)
-        if not pcall(hook.register, name, fn, "append") then
-            hook.register(name, fn)
+        if not pcall(hook_tbl.register, name, fn, "append") then
+            hook_tbl.register(name, fn)
         end
     end
     register("load", M.load_hook)
     register("isVisibleHook", M.is_visible_hook)
+end
+
+-- Older Lmod has no ExitHookA. rawget avoids a missing-global error.
+local exit_hook = rawget(_G, "ExitHookA")
+if type(exit_hook) == "table" and type(exit_hook.register) == "function" then
+    pcall(exit_hook.register, M.flush_usage_records)
 end
 
 return M

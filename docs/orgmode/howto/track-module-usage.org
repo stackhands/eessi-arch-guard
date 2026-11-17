@@ -1,0 +1,84 @@
+#+TITLE: Track module usage
+#+OPTIONS: toc:nil todo:nil num:nil author:nil title:nil
+#+STARTUP: content
+
+* Track module usage
+
+Record every interactive =module load= to syslog under the =ModuleUsageTracking= tag in the format =eb-keep-logs= parses.
+Nothing is logged until a site turns tracking on.
+When enabled, the =load= hook records each load when =mode()= is ="load"=, and Lmod's =ExitHookA= flushes the buffered records on exit via =luaposix= syslog, or via =logger -t ModuleUsageTracking -p local0.info= when =luaposix= has no syslog binding.
+The CPU and accelerator warnings in [[file:warn-at-module-load.org][Warn at module load]] stay as they are. Turning tracking on does not turn the accelerator check on.
+
+** Before you start
+
+- Lmod, and =LMOD_PACKAGE_PATH= pointing at a directory that holds =SitePackage.lua=, as [[file:warn-at-module-load.org][Warn at module load]] sets up.
+- A syslog daemon or journal collector receiving =local0.info= messages, if you want the records stored on disk.
+
+** What is logged by default
+
+With =EESSI_USAGE_TRACKING= unset or empty, and with no =usage_tracking= key in =eessi-arch-guard.conf=, nothing is buffered and nothing is sent to syslog.
+Installing =SitePackage.lua= leaves existing module loads unchanged.
+
+** Steps
+
+1. Turn on usage tracking. Either of these enables it, and the environment wins when both are set:
+
+   #+begin_src bash
+   export EESSI_USAGE_TRACKING=1
+   #+end_src
+
+   #+begin_example
+   # /etc/eessi-arch-guard.conf
+   usage_tracking = 1
+   #+end_example
+
+   =true=, =on= and =yes= (in any case) mean the same as =1=.
+   =0=, =false=, =off= and =no= turn tracking off.
+   An empty value is unset, so the configuration key applies.
+
+   The site package reads the first of =/etc/eessi-arch-guard.conf= and =eessi-arch-guard.conf= beside =SitePackage.lua= that it can open.
+   The line grammar is the one [[file:../reference/configuration.org][The configuration file]] describes.
+   The guard itself does not use this key, and the hook does not apply the guard's ownership checks.
+
+2. Load a module in Lmod.
+   On exit, each loaded module produces one =ModuleUsageTracking= syslog message of this form:
+
+   #+begin_example
+   user=alice jobid=4231 module=GROMACS/2024.1 path=/cvmfs/software.eessi.io/versions/2025.06/software/linux/x86_64/amd/zen4/modules/all/GROMACS/2024.1.lua host=node01 time=1731840001.250000
+   #+end_example
+
+   =jobid= is =SLURM_JOB_ID=, or =nil= when unset or empty.
+   =eb-keep-logs= requires =user=, =module=, =path=, =host= and =time=, in any order, and ignores =jobid=.
+   =time= is the epoch timestamp from Lmod's =epoch()= (or =posix.gettimeofday= / =os.time= outside Lmod).
+   Non-load modes such as =unload= and =spider= are skipped.
+   Whitespace inside a field becomes =_=, so each field stays one token.
+
+3. Query the collected log with =eb-keep-logs=:
+
+   #+begin_src bash
+   eb-keep-logs loads --module GROMACS/2024.1 /var/log/lmod-usage.log
+   eb-keep-logs used --prefix /opt/site/modules /var/log/lmod-usage.log
+   eb-keep-logs usage --software /opt/site/software --modules /opt/site/modules --active /var/log/lmod-usage.log
+   #+end_src
+
+4. Turn tracking off again, including when the configuration file turns it on:
+
+   #+begin_src bash
+   export EESSI_USAGE_TRACKING=0
+   #+end_src
+
+** If it fails
+
+| What you see | Cause | What to do |
+|---|---|---|
+| No =ModuleUsageTracking= lines appear in syslog | =EESSI_USAGE_TRACKING= and =usage_tracking= are unset or disabled, or Lmod is not reading this =SitePackage.lua=. | Set =EESSI_USAGE_TRACKING=1= or =usage_tracking = 1=. =module --config= names the site package location. |
+| Tracking stays on when nobody set the variable | =usage_tracking= is enabled in the configuration file the hook opened. | Set =EESSI_USAGE_TRACKING=0=, or remove the key. The environment wins. |
+| Records appear in =luaposix= hosts but not on minimal hosts | =logger= is absent or =/dev/log= is not accepting datagrams. | Ensure =util-linux= (=logger=) or =lua-posix= is installed and the local syslog socket is running. |
+
+** Related
+
+- [[file:warn-at-module-load.org][Warn at module load]], for installing the same file
+- [[file:hide-toolchain-modules.org][Hide toolchain modules]], for hiding toolchains in the same file
+- [[file:../reference/configuration.org][The configuration file]], for the line grammar
+- [[site:eb-keep-logs:howto/who-loaded-a-module][Who loaded a module]], [[site:eb-keep-logs:howto/check-prefix-use][Check prefix use]] and [[site:eb-keep-logs:howto/review-unused-software][Review unused software]] in =eb-keep-logs=
+- [[https://lmod.readthedocs.io/en/stable/300_tracking_module_usage.html][Tracking Module Usage]], for Lmod's hook model
