@@ -7,6 +7,17 @@
 Use this when a batch job inherits modules loaded on a node of another CPU type and the site has not installed the guard as its =TaskProlog=.
 The guard's shell mode prints the reload as =export= and =unset= lines, which the batch script applies to itself.
 
+** Try =module reload= first
+
+With EESSI's own module, =module reload= at the top of the batch script does the reload without the guard: the EESSI module runs archdetect again on the compute node.
+On a zen4 node, a job submitted with =--export=ALL= from a zen2 login node with =EESSI/2026.06= and =GSL/2.8-GCC-15.2.0= loaded went from =x86_64/amd/zen2= to =x86_64/amd/zen4= on =module reload=.
+
+#+begin_src bash
+module reload
+#+end_src
+
+Use the guard's shell mode instead when you want a loaded module that has no build for the node to be named and to stop the job (=--strict=, exit 78), rather than found later as a missing library.
+
 ** Before you start
 
 - The guard on the compute nodes: installed by the site at =/usr/local/sbin/eessi-arch-guard=, or your own copy, as in step 1 of [[file:use-as-a-user-task-prolog.org][Use the guard without changing the site TaskProlog]].
