@@ -1,0 +1,45 @@
+#+TITLE: Warn at module load
+#+OPTIONS: toc:nil todo:nil num:nil author:nil title:nil
+#+STARTUP: content
+
+* Warn at module load
+
+Warn, at an interactive =module load=, when the module file lives in a software subdirectory other than the one recorded for this node.
+The load still completes.
+A job that inherited its modules does not run this hook; the =TaskProlog= is what reloads that stack, as [[file:install-the-prolog.org][Install the prolog]] describes.
+
+** Before you start
+
+- Lmod, and a directory it reads =SitePackage.lua= from.
+  =LMOD_PACKAGE_PATH= names that directory.
+  The =load= hook is documented in [[https://lmod.readthedocs.io/en/latest/170_hooks.html][Lmod hooks]], and the file itself in [[https://lmod.readthedocs.io/en/stable/250_site_package.html][SitePackage.lua]].
+- The EESSI module has been loaded in this shell, so =EESSI_SOFTWARE_SUBDIR= is set, for example to =x86_64/amd/zen4=.
+- A checkout of the repository.
+
+** Steps
+
+1. Point Lmod at the site package, or copy the file into the directory it already uses:
+
+   #+begin_src bash
+   export LMOD_PACKAGE_PATH=/opt/site/lmod
+   install -m 644 share/lmod/SitePackage.lua "$LMOD_PACKAGE_PATH/SitePackage.lua"
+   #+end_src
+
+   Lmod loads =SitePackage.lua= on every command.
+   The file registers a =load= hook.
+   On Lmod 8.7.35 or newer the hook is appended to any hook the site already registered; an older Lmod registers it on its own.
+
+2. Load a module whose file is under another subdirectory.
+   A file at =.../software/linux/x86_64/amd/zen3/modules/all/Example/1.0.lua=, while =EESSI_SOFTWARE_SUBDIR= is =x86_64/amd/zen4=, prints this on stderr and then loads:
+
+   #+begin_example
+   eessi-arch-guard: Example/1.0 is under software/linux/x86_64/amd/zen3 but EESSI_SOFTWARE_SUBDIR is x86_64/amd/zen4
+   #+end_example
+
+3. A module file that is not under =software/linux/.../modules/=, and a file under the recorded subdirectory, print nothing.
+
+** What the hook does not do
+
+It does not purge or reload the stack, and it does not change =MODULEPATH= or any =EBROOT*= variable.
+Lmod runs the =load= hook when a module is loaded in this process.
+A batch job inherits the environment from submission, and that inheritance does not run the hook, so a task on another node still needs the =TaskProlog=.

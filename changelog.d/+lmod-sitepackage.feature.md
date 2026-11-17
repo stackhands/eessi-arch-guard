@@ -1,0 +1,1 @@
+`share/lmod/SitePackage.lua` warns on stderr when a module file under `software/linux/SUBDIR/modules` is loaded and `EESSI_SOFTWARE_SUBDIR` names a different subdirectory. The load continues. An inherited job environment does not run the hook; the TaskProlog is unchanged.
