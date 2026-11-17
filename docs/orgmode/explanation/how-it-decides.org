@@ -101,6 +101,7 @@ With =--strict=, a failed decision exits 78 instead.
 
 ** Further reading
 
+- [[file:../howto/warn-at-module-load.org][Warn at module load]] is the Lmod =load= hook for an interactive shell. A job that inherited its modules does not run it.
 - [[file:../tutorials/first-guarded-job.org][See the guard reload EESSI for another CPU]] shows a reload and a failure.
 - [[file:design.org][Why a task prolog runs the reload]] covers the prolog, the helper and the failure policy.
 - [[file:output-modes.org][Prolog lines and shell lines]] covers what the guard prints, and how the tasks of a step share one decision.

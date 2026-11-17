@@ -16,5 +16,6 @@ The title names the task.
    use-as-a-user-task-prolog
    use-in-a-batch-script
    hand-built-software
+   warn-at-module-load
    read-a-failure
 #+end_export
