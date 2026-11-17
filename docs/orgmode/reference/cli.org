@@ -11,6 +11,7 @@ This page describes the Python guard, =src/eessi_arch_guard.py=; the Zig build b
 
 #+begin_example
 eessi-arch-guard [--shell] [--strict] [--dry-run] [--json] [--chain PATH] [--timeout SEC] [--syslog TARGET] [--restore] [-h|--help] [--version]
+eessi-arch-guard --check-submit --partition NAME [--constraint NAME] [--eb-stack PATH] [--json]
 #+end_example
 
 =eessi-arch-guard --help= prints:
@@ -19,14 +20,21 @@ eessi-arch-guard [--shell] [--strict] [--dry-run] [--json] [--chain PATH] [--tim
 usage: eessi-arch-guard [--shell] [--strict] [--dry-run] [--json]
                         [--chain PATH] [--timeout SEC] [--syslog TARGET]
                         [--restore] [-h|--help] [--version]
+       eessi-arch-guard --check-submit --partition NAME [--constraint NAME]
+                        [--eb-stack PATH] [--json]
 
 Slurm TaskProlog: when the loaded EESSI CPU or accelerator target is not this
 node's, print export/unset lines for the reloaded module environment.
+--check-submit checks LOADEDMODULES against a mapped target without changing it.
+--partition NAME selects submit_target.partition.NAME from the site config.
+--constraint NAME also requires submit_target.constraint.NAME to select that target.
+--eb-stack PATH selects the eb-stack executable used for the read-only check.
 --shell prints bash for: eval "$(eessi-arch-guard --shell)"
 --strict returns 78 on a failed decision or an unexpected exception.
 --dry-run evaluates config, chain, probes, and decision without writing state.
---json prints one line of JSON with the decision summary on stdout instead of
-prolog or shell lines; with --dry-run it also carries the diagnostic keys.
+--json prints one line of JSON with schema_version 1. On a decision run it
+replaces prolog or shell lines; with --dry-run it also carries the diagnostic
+keys; with --check-submit it replaces the text summary.
 --chain PATH runs an existing task prolog first. Slurm does not pass arguments,
 so a site sets this in a wrapper or in a root-owned eessi-arch-guard.conf.
 --timeout SEC bounds the decision. The default is 60 seconds.
@@ -44,18 +52,23 @@ Slurm starts a =TaskProlog= with no arguments at all.
 
 | Option                           | Meaning                                                                                                                                                                                                                                                                                                                                                                                                                        |
 |----------------------------------+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| =--check-submit=                 | Run the opt-in read-only pre-submit check described in [[file:check-submit.org][Check-submit inputs and statuses]]. It does not run the prolog decision. |
+| =--partition NAME=               | Required with =--check-submit=. Select =submit_target.partition.NAME= from the site configuration. |
+| =--constraint NAME=              | Also select =submit_target.constraint.NAME=; that mapping must equal the partition mapping. |
+| =--eb-stack PATH=                | Replace the =eb_stack= configuration value and the =eb-stack= command name for =--check-submit=. |
 | =--shell=                        | Print bash instead of prolog lines: =export NAME=VALUE= with the value quoted for bash, and =unset NAME=, for =eval "$(eessi-arch-guard --shell)"=. Messages go to stderr. No chained prolog runs.                                                                                                                                                                                                                             |
 | =--strict=                       | Exit 78 when the decision fails or an unexpected exception interrupts it. The restore and the cache use a private workspace, which must exist (see [[file:environment.org][Environment variables]]), and the restore helper gets =--strict= too.                                                                                                                                                                                                         |
 | =--dry-run=                      | Read-only diagnostic mode: load the configuration file, validate =chain= without executing it, resolve timeout and syslog without emitting events, inspect any existing cache entry without locking or writing, probe CPU and accelerator targets, and validate reload preconditions without calling =--restore=. Print =key: value= lines (or JSON with =--json=) and make no environment changes. Exit 78 when =--strict= is set and the decision is =failed=; otherwise exit 0. |
 | =--chain PATH=, =--chain=PATH=   | Run =PATH= first, in prolog mode only, as described under Exit status. =PATH= must be absolute, free of newline, carriage return and NUL, a regular file and executable; otherwise =eessi-arch-guard: --chain is not an absolute executable= goes to stderr and nothing is chained. A value given here, even an empty or a refused one, replaces the =chain= of the configuration file.                                        |
 | =--timeout SEC=, =--timeout=SEC= | The time limit of the decision in seconds, replacing the =timeout= of the configuration file; the default is 60. =SEC= is read as a floating-point number, and must be greater than 0 and at most 2147483.647, the longest wait for a command that Python's =subprocess= can make; otherwise =eessi-arch-guard: --timeout is not a positive number of seconds at most 2147483.647= goes to stderr and the earlier value stays. |
 | =--syslog TARGET=, =--syslog=TARGET= | Send structured decision events to =TARGET= (=journald=, =syslog=, =unix:///path=, =journal+unix:///path=, =udp://host:port=, or =tcp://host:port=), replacing =EESSI_ARCH_GUARD_SYSLOG= and =syslog= in the configuration file. An empty value disables logging. An invalid value writes a warning to stderr and disables logging. |
-| =--json=                         | On a normal decision run, print one line of JSON on stdout with the decision summary instead of prolog or shell lines. With =--dry-run=, print the same decision fields plus the diagnostic keys. [[file:json-output.org][Machine-readable command output]] lists the schema and how exit codes appear in the document. |
+| =--json=                         | Print one line of JSON with =schema_version= 1. On a normal decision run, that line replaces prolog or shell lines. With =--dry-run=, it carries the same decision fields plus the diagnostic keys. With =--check-submit=, it replaces the text summary. [[file:json-output.org][Machine-readable command output]] lists the schema and how exit codes appear in the document. |
 | =--restore=                      | Run as the restore helper: read one JSON request on stdin and write one JSON reply on stdout. The guard starts itself this way; a site or a user has no use for it.                                                                                                                                                                                                                                                            |
 | =-h=, =--help=                   | Print the usage text above on stdout and exit 0.                                                                                                                                                                                                                                                                                                                                                                               |
 | =--version=                      | Print the version on stdout and exit 0.                                                                                                                                                                                                                                                                                                                                                                                        |
 
 - =--restore= comes first, then =--help=, then =--version=; any of them replaces the decision.
+- =--check-submit= comes after those three and replaces the prolog decision, chaining, reload, cache and syslog paths.
 - The value of =--chain= and =--timeout= is the next argument, and empty when there is none.
   An argument that starts with =-= is not taken as the value but read as an option of its own, so =--chain --strict= is a strict run with an empty =--chain=, which is refused.
   =--chain=PATH= and =--timeout=SEC= take the rest of the argument as it is.
@@ -73,11 +86,15 @@ The decision reads the task's environment: the variables the =EESSI= module sets
 |      0 | Every run that is not one of the cases below, a failed decision without =--strict= included: the task starts.                                                                                                      |
 |     78 | =--strict=, and the decision failed or an unexpected exception interrupted it.                                                                                                                                     |
 |      1 | =--restore= could not read its request or answer it, with =eessi-arch-guard: restore failed: TEXT= on stderr.                                                                                                      |
+|      1 | =--check-submit= found at least one loaded application module absent from the mapped target. |
+|      2 | =--check-submit= received invalid input or could not obtain a valid =eb-stack= result. |
 |      N | The chained prolog exited with the status N other than 0, or a signal ended it, which counts as 1. Its stdout is written, and the guard does not decide. Slurm then kills the task, as it would without the guard. |
 
 With =--json=, the decision document's =exit= and =exit_semantic= fields repeat
 the status the process returns for a finished decision; [[file:json-output.org][Machine-readable command output]] lists every case. A chained prolog failure
 prints no JSON on stdout.
+With =--check-submit --json=, stdout is one check document instead of the text
+summary, and its =exit= and =exit_semantic= fields repeat the check status.
 
 ** Files
 
@@ -107,6 +124,8 @@ Slurm applies the =export= and =unset= lines to the task's environment and write
 No line is longer than 4094 bytes, the newline included.
 With =--shell=, stdout holds only the =export= and =unset= lines, and the message goes to stderr.
 With =--dry-run=, stdout holds =key: value= diagnostic lines (or one JSON object with =--json=), no Slurm directive is emitted, =--chain= is validated without running, no syslog event is sent, and no cache or lock file is written.
+With =--check-submit=, stdout holds one availability line when every loaded application module is present, and nothing when one is absent or the check is invalid.
+With =--check-submit --json=, that line is one JSON object instead, and the absence and error lines stay on stderr.
 [[file:failures.org][Messages and markers]] lists the messages.
 
 *** Standard error

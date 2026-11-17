@@ -1330,6 +1330,8 @@ class IntegrationTests(unittest.TestCase):
         self.assertIn("--shell", proc.stdout)
         self.assertIn("--dry-run", proc.stdout)
         self.assertIn("--json", proc.stdout)
+        self.assertIn("--check-submit", proc.stdout)
+        self.assertIn("--partition", proc.stdout)
         self.assertIn("--restore", proc.stdout)
         self.assertIn("--version", proc.stdout)
         self.assertIn("--chain", proc.stdout)

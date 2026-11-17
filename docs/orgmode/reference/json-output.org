@@ -18,6 +18,7 @@ Draft 2020-12 schemas live beside this page:
 | Mode | Schema file | Notes |
 |------+-------------+-------|
 | =--json= on a decision run | =json/decision.schema.json= | One object; =reload_needed= and =exit_semantic= summarise the outcome |
+| =--check-submit --json= | =json/check-submit.schema.json= | One object; =kind= is =check-submit= and =exit_semantic= is =ok=, =missing=, or =invalid= |
 | =--restore= reply on stdout | =json/restore-reply.schema.json= | The helper's response object |
 
 ** Exit codes with =--json= on stdout
@@ -43,6 +44,21 @@ through the decision returns =0= and =ok=.
 
 =reload_needed= is =true= when the decision kind is =reloaded= or =failed= (a
 reload was required for this node), and =false= for =skip= and =noop=.
+
+** Check-submit
+
+=--check-submit --json= prints one line on stdout instead of the text summary.
+The document uses the same =schema_version= 1 and the same =json.dumps= rules
+(=sort_keys=, ASCII, one trailing newline) as a decision document.
+=kind= is =check-submit=.
+=partition=, =constraint=, and =target= are strings or null.
+=loaded= is the number of application modules compared, or null when the check
+stops before that count exists.
+=missing= is the list of loaded application modules absent from the target.
+=message= is the success sentence or the invalid-input reason, and null when
+=missing= carries the result.
+Absence lines and invalid-input lines stay on stderr.
+=--help=, =--version=, and =--restore= still ignore =--json=.
 
 ** See also
 

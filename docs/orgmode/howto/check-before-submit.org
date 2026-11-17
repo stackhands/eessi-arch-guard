@@ -1,0 +1,58 @@
+#+TITLE: Check loaded modules before submitting
+#+OPTIONS: toc:nil todo:nil num:nil author:nil title:nil
+#+STARTUP: content
+
+* Check loaded modules before submitting
+
+Use =--check-submit= when a job must not start with modules that are absent from its intended architecture.
+The check reads =LOADEDMODULES= and the mapped target's module tree, then asks =eb-stack stack arch= to compare them.
+It never loads, unloads, rebuilds, or provisions software.
+
+** Before you start
+
+- Load the European Environment for Scientific Software Installations (EESSI) and the application modules for the job.
+- Ask the administrator which partition and optional constraint select the target.
+- The administrator must configure the mappings described in [[file:../reference/check-submit.org][Check-submit inputs and statuses]].
+
+** Check and submit
+
+1. Check a partition:
+
+   #+begin_src bash
+   eessi-arch-guard --check-submit --partition cpu
+   #+end_src
+
+2. Add the constraint when the job will use one:
+
+   #+begin_src bash
+   eessi-arch-guard --check-submit --partition cpu --constraint zen4
+   #+end_src
+
+3. Submit only after the check exits 0.
+   =docs/examples/check_submit.sh= is a small wrapper:
+
+   #+begin_src bash
+   EESSI_SUBMIT_PARTITION=cpu \
+   EESSI_SUBMIT_CONSTRAINT=zen4 \
+     docs/examples/check_submit.sh job.sh
+   #+end_src
+
+   The wrapper passes the same selectors to the check and to =sbatch=.
+   A failed check stops before =sbatch=.
+
+** If it fails
+
+| Message | Meaning | What to do |
+|---|---|---|
+| =loaded module absent from TARGET: NAME= | =eb-stack= did not find =NAME= in that target's module-tree inventory. | Choose a target where it is installed, or change the job's loaded modules. |
+| =site config has no ... mapping= | The site map does not describe that selector. | Ask the administrator for a mapped selector. |
+| =partition ... and constraint ... select different targets= | The two selectors disagree. | Correct one selector before submitting. |
+| =eb-stack is not executable= | The configured planner cannot be started. | Set =eb_stack= in the site configuration or pass =--eb-stack PATH=. |
+
+The check does not repair any of these conditions.
+
+** Related
+
+- [[file:../reference/check-submit.org][Check-submit inputs and statuses]]
+- [[file:../explanation/pre-submit-checks.org][Why the pre-submit check is separate]]
+- [[file:use-in-a-batch-script.org][Run the guard in a batch script]]

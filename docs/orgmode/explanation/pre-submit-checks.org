@@ -1,0 +1,32 @@
+#+TITLE: Why the pre-submit check is separate
+#+OPTIONS: toc:nil todo:nil num:nil author:nil title:nil
+#+STARTUP: content
+
+* Why the pre-submit check is separate
+
+The task guard and the pre-submit check answer different questions.
+
+The =TaskProlog= runs after Slurm has placed a task on a node.
+It can inspect that node and, when enabled, reload an inherited EESSI environment for the node's architecture.
+Submission itself has no task prolog.
+A job can therefore carry a login-shell module list toward a partition whose architecture tree does not contain every module.
+
+=--check-submit= runs before =sbatch= and answers: “does the site map's intended target contain every loaded application module?”
+It uses the partition and optional constraint as intent.
+It does not probe the login node and mistake that node for the future target.
+
+The two responsibilities stay separate for three reasons:
+
+1. The check is explicit.
+   Existing prolog behavior is unchanged until a user or wrapper passes =--check-submit=.
+2. The check is read-only.
+   It inventories module files and delegates the comparison to =eb-stack=.
+   It never reloads modules or attempts to fill a missing target tree.
+3. The scheduler remains authoritative.
+   The wrapper passes the same selectors to the check and to =sbatch=, but only Slurm accepts or places the job.
+
+The site map is deliberately root-owned configuration.
+Users choose among selectors the site publishes; they do not provide an arbitrary target path.
+Requiring partition and constraint mappings to agree makes ambiguous intent an input error instead of silently choosing one.
+
+See [[file:../howto/check-before-submit.org][Check loaded modules before submitting]] for the workflow and [[file:../reference/check-submit.org][Check-submit inputs and statuses]] for the exact contract.
