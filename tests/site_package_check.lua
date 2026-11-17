@@ -362,6 +362,233 @@ else
     os.execute("rm -rf " .. init_dir)
 end
 
+-- Usage tracking stays off until EESSI_USAGE_TRACKING or usage_tracking asks.
+check("usage tracking defaults off", sp.usage_tracking_enabled(nil, nil), false)
+check("usage tracking empty off", sp.usage_tracking_enabled("", ""), false)
+check("usage tracking 0 off", sp.usage_tracking_enabled("0", "usage_tracking = 1\n"), false)
+check("usage tracking false off", sp.usage_tracking_enabled("false", nil), false)
+check("usage tracking off off", sp.usage_tracking_enabled("off", nil), false)
+check("usage tracking 1 on", sp.usage_tracking_enabled("1", nil), true)
+check("usage tracking true on", sp.usage_tracking_enabled("true", nil), true)
+check("usage tracking ON on", sp.usage_tracking_enabled("ON", nil), true)
+check("usage tracking yes on", sp.usage_tracking_enabled("yes", nil), true)
+check("usage tracking conf 1 on", sp.usage_tracking_enabled(nil, "usage_tracking = 1\n# usage_tracking = 0\n"), true)
+check("usage tracking empty env falls back to conf", sp.usage_tracking_enabled("", "usage_tracking = 1\n"), true)
+check("usage tracking last key wins", sp.usage_tracking_enabled(nil, "usage_tracking = 1\nusage_tracking = 0\n"), false)
+-- "yes" turns tracking on. The accelerator check still treats it as off.
+check("yes does not enable the accelerator check", sp.warn_accel_on("yes", nil), false)
+
+sp.conf_paths = { "/no/such/eessi-arch-guard.conf" }
+sp.usage_records = {}
+local called_cmds = {}
+local saved_exec = sp.exec_cmd
+local saved_finder = sp.find_posix_syslog
+sp.exec_cmd = function(cmd)
+    called_cmds[#called_cmds + 1] = cmd
+    return true
+end
+sp.find_posix_syslog = function()
+    return nil
+end
+os.getenv = function(name)
+    if name == "EESSI_USAGE_TRACKING" or name == "EESSI_SOFTWARE_SUBDIR" or name == "SLURM_JOB_ID" or name == "EESSI_WARN_ACCEL_MISMATCH" then
+        return nil
+    end
+    return saved(name)
+end
+sp.load_hook({ fn = zen3, modFullName = "Example/1.0" })
+check("disabled records nothing", #sp.usage_records, 0)
+check("disabled flush returns 0", sp.flush_usage_records(), 0)
+check("disabled flush runs no command", #called_cmds, 0)
+
+local cur_mode = "load"
+local saved_mode = rawget(_G, "mode")
+local saved_epoch = rawget(_G, "epoch")
+_G.mode = function()
+    return cur_mode
+end
+_G.epoch = function()
+    return 1731840001.25
+end
+
+local env_map = {
+    EESSI_USAGE_TRACKING = "1",
+    USER = "alice",
+    HOSTNAME = "node01",
+    SLURM_JOB_ID = nil,
+    EESSI_SOFTWARE_SUBDIR = nil,
+    EESSI_WARN_ACCEL_MISMATCH = nil,
+}
+os.getenv = function(name)
+    if env_map[name] ~= nil or name == "EESSI_USAGE_TRACKING" or name == "USER" or name == "HOSTNAME" or name == "SLURM_JOB_ID" or name == "EESSI_SOFTWARE_SUBDIR" or name == "EESSI_WARN_ACCEL_MISMATCH" then
+        return env_map[name]
+    end
+    return saved(name)
+end
+
+cur_mode = "unload"
+sp.load_hook({ fn = zen3, modFullName = "Example/1.0" })
+check("unload mode skips recording", #sp.usage_records, 0)
+
+cur_mode = "load"
+sp.load_hook({ fn = "", modFullName = "Example/1.0" })
+sp.load_hook({ fn = zen3, modFullName = "" })
+check("empty path or module skips recording", #sp.usage_records, 0)
+
+sp.load_hook({ fn = zen3, modFullName = "GROMACS/2024.1" })
+env_map.SLURM_JOB_ID = "4231"
+sp.load_hook({ fn = "/opt/site/modules/Other'Mod/2.0.lua", modFullName = "Other'Mod/2.0" })
+check("two loads buffered", #sp.usage_records, 2)
+
+local rec1 = sp.usage_records[1]
+local rec2 = sp.usage_records[2]
+local function parse_kv(line)
+    local kv = {}
+    local count = 0
+    for token in string.gmatch(line, "%S+") do
+        local k, v = token:match("^([^=]+)=(.+)$")
+        if k and v then
+            kv[k] = v
+            count = count + 1
+        end
+    end
+    return kv, count
+end
+
+local kv1, c1 = parse_kv(rec1)
+check("rec1 has 6 fields", c1, 6)
+check("rec1 user", kv1.user, "alice")
+check("rec1 jobid nil when unset", kv1.jobid, "nil")
+check("rec1 module", kv1.module, "GROMACS/2024.1")
+check("rec1 path", kv1.path, zen3)
+check("rec1 time", kv1.time, "1731840001.250000")
+if type(kv1.host) ~= "string" or kv1.host == "" then
+    io.stderr:write("rec1 host missing\n")
+    failed = true
+end
+
+local kv2, c2 = parse_kv(rec2)
+check("rec2 has 6 fields", c2, 6)
+check("rec2 jobid", kv2.jobid, "4231")
+check("rec2 module", kv2.module, "Other'Mod/2.0")
+
+check("logger flush count", sp.flush_usage_records(), 2)
+check("buffer cleared after flush", #sp.usage_records, 0)
+check("second flush is empty", sp.flush_usage_records(), 0)
+check("logger called twice", #called_cmds, 2)
+if not called_cmds[1]:find("^logger %-t ModuleUsageTracking %-p local0%.info %-%- ") then
+    io.stderr:write("unexpected logger command: " .. tostring(called_cmds[1]) .. "\n")
+    failed = true
+end
+if not called_cmds[2]:find("Other'\\''Mod/2.0", 1, true) then
+    io.stderr:write("logger single quote not escaped: " .. tostring(called_cmds[2]) .. "\n")
+    failed = true
+end
+
+local syslog_calls = { open = 0, msgs = {}, close = 0 }
+sp.find_posix_syslog = function()
+    return {
+        LOG_PID = 1,
+        LOG_LOCAL0 = 128,
+        LOG_INFO = 6,
+        openlog = function(ident, opt, fac)
+            syslog_calls.open = syslog_calls.open + 1
+            syslog_calls.ident = ident
+            syslog_calls.opt = opt
+            syslog_calls.fac = fac
+        end,
+        syslog = function(level, msg)
+            syslog_calls.msgs[#syslog_calls.msgs + 1] = { level = level, msg = msg }
+        end,
+        closelog = function()
+            syslog_calls.close = syslog_calls.close + 1
+        end,
+    }
+end
+called_cmds = {}
+sp.load_hook({ fn = zen3, modFullName = "GROMACS/2024.1" })
+check("posix.syslog flush count", sp.flush_usage_records(), 1)
+check("posix.syslog openlog called", syslog_calls.open, 1)
+check("posix.syslog ident", syslog_calls.ident, "ModuleUsageTracking")
+check("posix.syslog closelog called", syslog_calls.close, 1)
+check("posix.syslog msg count", #syslog_calls.msgs, 1)
+check("posix.syslog msg level", syslog_calls.msgs[1].level, 6)
+check("posix.syslog msg body", syslog_calls.msgs[1].msg:find("module=GROMACS/2024.1", 1, true) ~= nil, true)
+check("posix.syslog skips logger fallback", #called_cmds, 0)
+
+-- An accelerator module still warns, and the same load is recorded.
+local real_read = sp.read_node_accel
+local accel_probes = 0
+sp.read_node_accel = function()
+    accel_probes = accel_probes + 1
+    return "accel/nvidia/cc80"
+end
+env_map.EESSI_SOFTWARE_SUBDIR = "x86_64/amd/zen4"
+env_map.EESSI_WARN_ACCEL_MISMATCH = "1"
+local accel_chunks = {}
+local real_err = io.stderr
+io.stderr = {
+    write = function(_, text)
+        accel_chunks[#accel_chunks + 1] = text
+        return real_err:write(text)
+    end,
+}
+sp.load_hook({ fn = cc90, modFullName = "CUDA/12.6.0" })
+io.stderr = real_err
+local accel_written = table.concat(accel_chunks)
+if not accel_written:find("CUDA/12.6.0 is cc90 but this node is cc80", 1, true) then
+    io.stderr:write("tracking left the accelerator warning off\n" .. accel_written .. "\n")
+    failed = true
+end
+check("tracking still reads the node for an accelerator module", accel_probes, 1)
+check("an accelerator load is recorded", #sp.usage_records, 1)
+if sp.usage_records[1] == nil or not sp.usage_records[1]:find("module=CUDA/12.6.0", 1, true) then
+    io.stderr:write("accelerator load record\n" .. tostring(sp.usage_records[1]) .. "\n")
+    failed = true
+end
+sp.usage_records = {}
+sp.read_node_accel = real_read
+env_map.EESSI_WARN_ACCEL_MISMATCH = nil
+env_map.EESSI_SOFTWARE_SUBDIR = nil
+
+local usage_conf = os.tmpname()
+local ufh = io.open(usage_conf, "w")
+ufh:write("usage_tracking = 1\n")
+ufh:close()
+sp.conf_paths = { usage_conf }
+env_map.EESSI_USAGE_TRACKING = nil
+sp.load_hook({ fn = zen3, modFullName = "FromConf/1.0" })
+os.remove(usage_conf)
+check("conf enables usage tracking", #sp.usage_records, 1)
+sp.usage_records = {}
+
+local registered_hooks = {}
+local registered_exit = {}
+local saved_hook = rawget(_G, "hook")
+local saved_exit_hook = rawget(_G, "ExitHookA")
+_G.hook = {
+    register = function(name, fn)
+        registered_hooks[name] = fn
+    end,
+}
+_G.ExitHookA = {
+    register = function(fn)
+        registered_exit[#registered_exit + 1] = fn
+    end,
+}
+local sp2 = dofile(root .. "/share/lmod/SitePackage.lua")
+_G.hook = saved_hook
+_G.ExitHookA = saved_exit_hook
+_G.mode = saved_mode
+_G.epoch = saved_epoch
+sp.exec_cmd = saved_exec
+sp.find_posix_syslog = saved_finder
+os.getenv = saved
+check("load hook registered", registered_hooks["load"], sp2.load_hook)
+check("isVisibleHook registered", registered_hooks["isVisibleHook"], sp2.is_visible_hook)
+check("ExitHookA registered", #registered_exit, 1)
+check("ExitHookA flushes records", registered_exit[1], sp2.flush_usage_records)
+
 if failed then
     os.exit(1)
 end
