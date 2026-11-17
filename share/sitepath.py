@@ -124,6 +124,11 @@ def _modules(value: str) -> str:
     return value.rstrip("/") + "/modules/all"
 
 
+def _placeholder_modules_path(value: str) -> bool:
+    """True when a shell expanded an unset install variable to /modules/all."""
+    return _norm(value) == "/modules/all"
+
+
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(prog="sitepath.py")
     parser.add_argument("--repo", default=os.environ.get("EESSI_CVMFS_REPO") or "/cvmfs/software.eessi.io")
@@ -131,11 +136,22 @@ def main(argv=None) -> int:
     parser.add_argument("--eessi", default="")
     parser.add_argument("--modulepath", default=os.environ.get("MODULEPATH") or "")
     parser.add_argument("--mountinfo", default="")
+    parser.add_argument(
+        "--require-input",
+        action="store_true",
+        help="exit 2 when install paths are missing or expand to /modules/all alone",
+    )
     args = parser.parse_args(argv)
     site = args.site or os.environ.get("EESSI_SITE_SOFTWARE_PATH") or ""
     eessi = args.eessi or os.environ.get("EESSI_SOFTWARE_PATH") or ""
     if not site or not eessi:
         sys.stderr.write("sitepath.py: need --site and --eessi, or EESSI_SITE_SOFTWARE_PATH and EESSI_SOFTWARE_PATH\n")
+        return 2
+    if args.require_input and (_placeholder_modules_path(site) or _placeholder_modules_path(eessi)):
+        sys.stderr.write(
+            "sitepath.py: --require-input: install paths are missing "
+            "(unset shell variables expand to /modules/all)\n"
+        )
         return 2
     if not args.site:
         site = _modules(site)
