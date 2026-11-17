@@ -1,0 +1,1 @@
+`pip install` now installs `share/sitepath.py` and `share/lmod/SitePackage.lua` under `share/eessi-arch-guard/`, and the README stackhands table lists eb-pipeline.
