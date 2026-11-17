@@ -39,14 +39,21 @@ const help_text =
     \\usage: eessi-arch-guard [--shell] [--strict] [--dry-run] [--json]
     \\                        [--chain PATH] [--timeout SEC] [--syslog TARGET]
     \\                        [--restore] [-h|--help] [--version]
+    \\       eessi-arch-guard --check-submit --partition NAME [--constraint NAME]
+    \\                        [--eb-stack PATH] [--json]
     \\
     \\Slurm TaskProlog: when the loaded EESSI CPU or accelerator target is not this
     \\node's, print export/unset lines for the reloaded module environment.
+    \\--check-submit checks LOADEDMODULES against a mapped target without changing it.
+    \\--partition NAME selects submit_target.partition.NAME from the site config.
+    \\--constraint NAME also requires submit_target.constraint.NAME to select that target.
+    \\--eb-stack PATH selects the eb-stack executable used for the read-only check.
     \\--shell prints bash for: eval "$(eessi-arch-guard --shell)"
     \\--strict returns 78 on a failed decision or an unexpected exception.
     \\--dry-run evaluates config, chain, probes, and decision without writing state.
-    \\--json prints one line of JSON with the decision summary on stdout instead of
-    \\prolog or shell lines; with --dry-run it also carries the diagnostic keys.
+    \\--json prints one line of JSON with schema_version 1. On a decision run it
+    \\replaces prolog or shell lines; with --dry-run it also carries the diagnostic
+    \\keys; with --check-submit it replaces the text summary.
     \\--chain PATH runs an existing task prolog first. Slurm does not pass arguments,
     \\so a site sets this in a wrapper or in a root-owned eessi-arch-guard.conf.
     \\--timeout SEC bounds the decision. The default is 60 seconds.
@@ -162,6 +169,10 @@ const Args = struct {
     chain: ?[]const u8 = null,
     timeout: ?[]const u8 = null,
     syslog: ?[]const u8 = null,
+    check_submit: bool = false,
+    partition: ?[]const u8 = null,
+    constraint: ?[]const u8 = null,
+    eb_stack: ?[]const u8 = null,
 };
 
 /// _option_value: the word after argv[i.*], with i.* moved onto it, unless
@@ -205,6 +216,20 @@ fn parseArgs(argv: []const []const u8) Args {
             a.syslog = optionValue(argv, &i);
         } else if (std.mem.startsWith(u8, arg, "--syslog=")) {
             a.syslog = arg["--syslog=".len..];
+        } else if (std.mem.eql(u8, arg, "--check-submit")) {
+            a.check_submit = true;
+        } else if (std.mem.eql(u8, arg, "--partition")) {
+            a.partition = optionValue(argv, &i);
+        } else if (std.mem.startsWith(u8, arg, "--partition=")) {
+            a.partition = arg["--partition=".len..];
+        } else if (std.mem.eql(u8, arg, "--constraint")) {
+            a.constraint = optionValue(argv, &i);
+        } else if (std.mem.startsWith(u8, arg, "--constraint=")) {
+            a.constraint = arg["--constraint=".len..];
+        } else if (std.mem.eql(u8, arg, "--eb-stack")) {
+            a.eb_stack = optionValue(argv, &i);
+        } else if (std.mem.startsWith(u8, arg, "--eb-stack=")) {
+            a.eb_stack = arg["--eb-stack=".len..];
         }
     }
     return a;
@@ -754,6 +779,343 @@ fn renderDryRunText(arena: Allocator, r: DryRunReport) Allocator.Error![]u8 {
     return out.items;
 }
 
+fn submitSelector(s: []const u8) bool {
+    if (s.len == 0 or s.len > 64) return false;
+    for (s) |ch| {
+        if (!std.ascii.isAlphanumeric(ch) and ch != '_' and ch != '.' and ch != '+' and ch != '-') return false;
+    }
+    return true;
+}
+
+fn submitTarget(arena: Allocator, settings: ?Settings, partition: []const u8, constraint: []const u8, why: *[]const u8) ?[]const u8 {
+    if (!submitSelector(partition)) {
+        why.* = "--partition needs one safe partition name";
+        return null;
+    }
+    if (constraint.len > 0 and !submitSelector(constraint)) {
+        why.* = "--constraint needs one safe constraint name";
+        return null;
+    }
+    const s = settings orelse {
+        why.* = "site config has no submit target mappings";
+        return null;
+    };
+    const part_key = arena.print("submit_target.partition.{s}", .{partition}) catch oom();
+    const target = s.get(part_key) orelse {
+        why.* = arena.print("site config has no {s} mapping", .{part_key}) catch part_key;
+        return null;
+    };
+    if (!text.safeRelSubdir(target)) {
+        why.* = arena.print("{s} is not a safe relative target", .{part_key}) catch part_key;
+        return null;
+    }
+    if (constraint.len > 0) {
+        const constraint_key = arena.print("submit_target.constraint.{s}", .{constraint}) catch oom();
+        const other = s.get(constraint_key) orelse {
+            why.* = arena.print("site config has no {s} mapping", .{constraint_key}) catch constraint_key;
+            return null;
+        };
+        if (!text.safeRelSubdir(other)) {
+            why.* = arena.print("{s} is not a safe relative target", .{constraint_key}) catch constraint_key;
+            return null;
+        }
+        if (!std.mem.eql(u8, target, other)) {
+            why.* = arena.print("{s} and {s} select different targets", .{ part_key, constraint_key }) catch "submit selectors select different targets";
+            return null;
+        }
+    }
+    return target;
+}
+
+fn findExecutable(arena: Allocator, env: envmap.Map, selected: []const u8) ?[]const u8 {
+    if (std.mem.findScalar(u8, selected, '/') != null)
+        return if (guard.lmodInvocable(selected)) selected else null;
+    var paths = std.mem.splitScalar(u8, env.get("PATH") orelse "", ':');
+    while (paths.next()) |dir| {
+        if (dir.len == 0) continue;
+        const candidate = std.fs.path.join(arena, &.{ dir, selected }) catch return null;
+        if (guard.lmodInvocable(candidate)) return candidate;
+    }
+    return null;
+}
+
+fn submitWorkDir(arena: Allocator) ?[]const u8 {
+    var tries: usize = 0;
+    while (tries < 100) : (tries += 1) {
+        var random: [8]u8 = undefined;
+        _ = sys.call(linux.getrandom, .{ &random, random.len, 0 }) catch return null;
+        const name = std.fmt.bytesToHex(random, .lower);
+        const path = arena.print("/tmp/eessi-arch-guard-submit-{s}", .{name}) catch return null;
+        var buf: [sys.path_max:0]u8 = undefined;
+        const z = sys.z(&buf, path) catch return null;
+        switch (linux.errno(linux.mkdirat(linux.AT.FDCWD, z.ptr, 0o700))) {
+            .SUCCESS => return path,
+            .EXIST => continue,
+            else => return null,
+        }
+    }
+    return null;
+}
+
+const SubmitModule = struct {
+    name: []const u8,
+    file: []const u8,
+};
+
+fn plannerModule(arena: Allocator, module: []const u8) []const u8 {
+    const hex = "0123456789abcdef";
+    var out: std.ArrayList(u8) = .empty;
+    out.appendSlice(arena, "EAGCheck") catch oom();
+    for (module) |ch| {
+        out.append(arena, hex[ch >> 4]) catch oom();
+        out.append(arena, hex[ch & 15]) catch oom();
+    }
+    out.appendSlice(arena, "/1.0") catch oom();
+    return out.items;
+}
+
+fn easyconfigFilename(arena: Allocator, module: []const u8) []const u8 {
+    const identity = plannerModule(arena, module);
+    return arena.print("{s}-1.0.eb", .{identity[0 .. identity.len - "/1.0".len]}) catch oom();
+}
+
+fn loadedSubmitModules(arena: Allocator, env: envmap.Map, why: *[]const u8) ?[]SubmitModule {
+    const raw = env.get("LOADEDMODULES") orelse "";
+    var found: std.ArrayList(SubmitModule) = .empty;
+    var any = false;
+    var parts = std.mem.splitScalar(u8, raw, ':');
+    while (parts.next()) |name| {
+        if (name.len == 0) continue;
+        any = true;
+        if (!text.moduleName(name)) {
+            why.* = "LOADEDMODULES contains an unsafe module name";
+            return null;
+        }
+        if (std.mem.startsWith(u8, name, "EESSI/") and std.mem.findScalar(u8, name["EESSI/".len..], '/') == null) continue;
+        found.append(arena, .{ .name = name, .file = easyconfigFilename(arena, name) }) catch oom();
+    }
+    if (!any) {
+        why.* = "LOADEDMODULES is empty";
+        return null;
+    }
+    return found.items;
+}
+
+fn walkInventory(arena: Allocator, dir: sys.fd_t, prefix: []const u8, found: *std.ArrayList([]const u8)) void {
+    var it = fsx.DirIter.init(arena, dir) catch return;
+    defer it.deinit(arena);
+    while (it.next() catch null) |entry| {
+        const kind = fsx.entryType(dir, entry) catch continue;
+        const relative = if (prefix.len > 0)
+            std.fs.path.join(arena, &.{ prefix, entry.name }) catch oom()
+        else
+            arena.dupe(u8, entry.name) catch oom();
+        if (kind == fsx.DT.DIR) {
+            if (entry.name.len == 0 or entry.name[0] == '.') continue;
+            const child = fsx.openDir(dir, entry.name, false) catch continue;
+            defer sys.close(child);
+            walkInventory(arena, child, relative, found);
+            continue;
+        }
+        if (kind != fsx.DT.REG and kind != fsx.DT.LNK) continue;
+        if (kind == fsx.DT.LNK) {
+            const file = fsx.openRegular(dir, entry.name, true) catch continue;
+            sys.close(file.fd);
+        }
+        const base = entry.name;
+        if (base.len == 0 or base[0] == '.' or std.mem.eql(u8, base, "default") or std.mem.eql(u8, base, "modulerc")) continue;
+        var name = relative;
+        if (std.mem.endsWith(u8, base, ".lua")) {
+            name = name[0 .. name.len - 4];
+        }
+        if (text.moduleName(name)) found.append(arena, arena.dupe(u8, name) catch oom()) catch oom();
+    }
+}
+
+fn inventoryModules(arena: Allocator, root: []const u8) []const []const u8 {
+    const dir = fsx.openDir(fsx.cwd, root, true) catch return &.{};
+    defer sys.close(dir);
+    var found: std.ArrayList([]const u8) = .empty;
+    walkInventory(arena, dir, "", &found);
+    std.mem.sort([]const u8, found.items, {}, struct {
+        fn less(_: void, a: []const u8, b: []const u8) bool {
+            return std.mem.order(u8, a, b) == .lt;
+        }
+    }.less);
+    return found.items;
+}
+
+fn writeSubmitFile(path: []const u8, data: []const u8) bool {
+    const fd = sys.openat(fsx.cwd, path, .{ .ACCMODE = .WRONLY, .CREAT = true, .TRUNC = true, .NOFOLLOW = true }, 0o600) catch return false;
+    defer sys.close(fd);
+    sys.writeAll(fd, data) catch return false;
+    return true;
+}
+
+fn checkSubmitSemantic(code: u8) []const u8 {
+    if (code == 0) return "ok";
+    if (code == 1) return "missing";
+    return "invalid";
+}
+
+fn optSelector(s: []const u8) ?[]const u8 {
+    return if (s.len > 0) s else null;
+}
+
+/// One ASCII JSON line for ``--check-submit --json``, schema_version 1.
+fn renderCheckSubmitJson(
+    arena: Allocator,
+    code: u8,
+    partition: []const u8,
+    constraint: []const u8,
+    target: ?[]const u8,
+    loaded: ?usize,
+    missing: []const []const u8,
+    message: ?[]const u8,
+) Allocator.Error![]u8 {
+    var missing_list: std.ArrayList(Py) = .empty;
+    for (missing) |name| try missing_list.append(arena, Py.s(name));
+    const loaded_value: Py = if (loaded) |n| .{ .int = @intCast(n) } else .null;
+    var top: std.ArrayList(Py.Entry) = .empty;
+    try top.append(arena, .{ .key = "constraint", .value = Py.opt(optSelector(constraint)) });
+    try top.append(arena, .{ .key = "exit", .value = .{ .int = code } });
+    try top.append(arena, .{ .key = "exit_semantic", .value = Py.s(checkSubmitSemantic(code)) });
+    try top.append(arena, .{ .key = "kind", .value = Py.s("check-submit") });
+    try top.append(arena, .{ .key = "loaded", .value = loaded_value });
+    try top.append(arena, .{ .key = "message", .value = Py.opt(message) });
+    try top.append(arena, .{ .key = "missing", .value = .{ .list = missing_list.items } });
+    try top.append(arena, .{ .key = "partition", .value = Py.opt(optSelector(partition)) });
+    try top.append(arena, .{ .key = "schema_version", .value = .{ .int = jsonout.schema_version } });
+    try top.append(arena, .{ .key = "target", .value = Py.opt(target) });
+    const pretty = try json.dumps(arena, .{ .dict = top.items }, 0, true);
+    const compact = try compactJsonLine(arena, pretty);
+    const line = try pythonJsonCommas(arena, compact);
+    return try std.fmt.allocPrint(arena, "{s}\n", .{line});
+}
+
+fn listed(missing: []const []const u8, name: []const u8) bool {
+    for (missing) |item| if (std.mem.eql(u8, item, name)) return true;
+    return false;
+}
+
+fn finishCheckSubmit(
+    arena: Allocator,
+    args: Args,
+    partition: []const u8,
+    constraint: []const u8,
+    code: u8,
+    target: ?[]const u8,
+    loaded: ?usize,
+    missing: []const []const u8,
+    message: ?[]const u8,
+    stderr_lines: []const []const u8,
+) u8 {
+    for (stderr_lines) |line| writeMessage(arena, 2, line);
+    if (args.json) {
+        const body = renderCheckSubmitJson(arena, code, partition, constraint, target, loaded, missing, message) catch oom();
+        cli.put(1, body);
+    } else if (code == 0) {
+        if (message) |msg| cli.put(1, arena.print("eessi-arch-guard: check-submit: {s}\n", .{msg}) catch "");
+    }
+    return code;
+}
+
+fn checkSubmit(arena: Allocator, args: Args, env: envmap.Map, settings: ?Settings) u8 {
+    const partition = args.partition orelse "";
+    const constraint = args.constraint orelse "";
+    var why: []const u8 = "";
+    const target = submitTarget(arena, settings, partition, constraint, &why) orelse {
+        const line = arena.print("eessi-arch-guard: check-submit: {s}", .{why}) catch why;
+        return finishCheckSubmit(arena, args, partition, constraint, 2, null, null, &.{}, why, &.{line});
+    };
+    const loaded = loadedSubmitModules(arena, env, &why) orelse {
+        const line = arena.print("eessi-arch-guard: check-submit: {s}", .{why}) catch why;
+        return finishCheckSubmit(arena, args, partition, constraint, 2, null, null, &.{}, why, &.{line});
+    };
+    const prefix = env.get("EESSI_PREFIX") orelse "";
+    const os_type = env.get("EESSI_OS_TYPE") orelse "";
+    if (!text.safeAbsolute(prefix) or !text.safeRelSubdir(os_type)) {
+        const reason = "EESSI_PREFIX or EESSI_OS_TYPE is missing or unsafe";
+        const line = "eessi-arch-guard: check-submit: " ++ reason;
+        return finishCheckSubmit(arena, args, partition, constraint, 2, null, @intCast(loaded.len), &.{}, reason, &.{line});
+    }
+    const configured = if (settings) |s| s.get("eb_stack") orelse "" else "";
+    const selected = args.eb_stack orelse (if (configured.len > 0) configured else "eb-stack");
+    const eb_stack = findExecutable(arena, env, selected) orelse {
+        const shown = text.oneLine(arena, selected, 200) catch selected;
+        const reason = arena.print("eb-stack is not executable: {s}", .{shown}) catch shown;
+        const line = arena.print("eessi-arch-guard: check-submit: {s}", .{reason}) catch reason;
+        return finishCheckSubmit(arena, args, partition, constraint, 2, null, @intCast(loaded.len), &.{}, reason, &.{line});
+    };
+    const module_root = std.fs.path.join(arena, &.{ prefix, "software", os_type, target, "modules", "all" }) catch oom();
+    const installed = inventoryModules(arena, module_root);
+    const work = submitWorkDir(arena) orelse {
+        const reason = "could not create temporary input directory";
+        const line = "eessi-arch-guard: check-submit: " ++ reason;
+        return finishCheckSubmit(arena, args, partition, constraint, 2, target, @intCast(loaded.len), &.{}, reason, &.{line});
+    };
+    defer fsx.deleteTree(arena, fsx.cwd, work) catch {};
+    const easystack = std.fs.path.join(arena, &.{ work, "loaded.yml" }) catch oom();
+    const installed_path = std.fs.path.join(arena, &.{ work, "installed.txt" }) catch oom();
+    const unsupported = std.fs.path.join(arena, &.{ work, "unsupported.toml" }) catch oom();
+    var plan: std.ArrayList(u8) = .empty;
+    plan.appendSlice(arena, "easyconfigs:\n") catch oom();
+    for (loaded) |module| plan.print(arena, "  - {s}\n", .{module.file}) catch oom();
+    var inventory: std.ArrayList(u8) = .empty;
+    for (installed) |name| inventory.print(arena, "{s}\n", .{plannerModule(arena, name)}) catch oom();
+    if (!writeSubmitFile(easystack, plan.items) or !writeSubmitFile(installed_path, inventory.items) or !writeSubmitFile(unsupported, "")) {
+        const reason = "could not write temporary planner inputs";
+        const line = "eessi-arch-guard: check-submit: " ++ reason;
+        return finishCheckSubmit(arena, args, partition, constraint, 2, target, @intCast(loaded.len), &.{}, reason, &.{line});
+    }
+    const child_env = envmap.toEnvp(arena, env) catch {
+        const reason = "could not prepare eb-stack environment";
+        const line = "eessi-arch-guard: check-submit: " ++ reason;
+        return finishCheckSubmit(arena, args, partition, constraint, 2, target, @intCast(loaded.len), &.{}, reason, &.{line});
+    };
+    const child_args = [_][]const u8{ eb_stack, "stack", "arch", "--arch", target, "--easystack", easystack, "--installed", installed_path, "--unsupported", unsupported };
+    const result = proc.run(arena, eb_stack, &child_args, child_env, .{
+        .stdout_limit = 8 << 20,
+        .stderr_limit = 8 << 20,
+        .timeout_ms = null,
+        .new_session = false,
+    }) catch {
+        const reason = "could not run eb-stack";
+        const line = "eessi-arch-guard: check-submit: " ++ reason;
+        return finishCheckSubmit(arena, args, partition, constraint, 2, target, @intCast(loaded.len), &.{}, reason, &.{line});
+    };
+    const code: u8 = switch (result.term) {
+        .exited => |value| value,
+        .signaled => 2,
+    };
+    if (code == 0) {
+        const summary = arena.print("{d} loaded module(s) available for {s}", .{ loaded.len, target }) catch "";
+        return finishCheckSubmit(arena, args, partition, constraint, 0, target, @intCast(loaded.len), &.{}, summary, &.{});
+    }
+    var missing: std.ArrayList([]const u8) = .empty;
+    var lines_out: std.ArrayList([]const u8) = .empty;
+    var stdout_lines = std.mem.splitScalar(u8, result.stdout, '\n');
+    while (stdout_lines.next()) |line| {
+        const marker = " is flagged on ";
+        const cut = std.mem.indexOf(u8, line, marker) orelse continue;
+        const file = line[0..cut];
+        for (loaded) |module| {
+            if (!std.mem.eql(u8, file, module.file)) continue;
+            if (listed(missing.items, module.name)) continue;
+            missing.append(arena, module.name) catch oom();
+            lines_out.append(arena, arena.print("eessi-arch-guard: check-submit: loaded module absent from {s}: {s}", .{ target, module.name }) catch module.name) catch oom();
+        }
+    }
+    if (code == 1 and missing.items.len > 0) {
+        return finishCheckSubmit(arena, args, partition, constraint, 1, target, @intCast(loaded.len), missing.items, null, lines_out.items);
+    }
+    const raw = if (result.stderr.len > 0) result.stderr else if (result.stdout.len > 0) result.stdout else "eb-stack returned no detail";
+    const shown = text.oneLine(arena, raw, 300) catch raw;
+    const reason = arena.print("eb-stack failed: {s}", .{shown}) catch shown;
+    const line = arena.print("eessi-arch-guard: check-submit: {s}", .{reason}) catch reason;
+    return finishCheckSubmit(arena, args, partition, constraint, 2, target, @intCast(loaded.len), &.{}, reason, &.{line});
+}
+
 fn realMain(arena: Allocator, argv0: []const u8, argv: []const []const u8, envp: proc.Envp) u8 {
     const args = parseArgs(argv);
     const env = envmap.fromEnvp(arena, envp) catch emergencyExit("MemoryError", "out of memory");
@@ -783,6 +1145,10 @@ fn realMain(arena: Allocator, argv0: []const u8, argv: []const []const u8, envp:
         "none";
     var notes: std.ArrayList([]const u8) = .empty;
     if (cfg.warning) |w| notes.append(arena, w) catch oom();
+    if (args.check_submit) {
+        for (notes.items) |n| writeMessage(arena, 2, n);
+        return checkSubmit(arena, args, env, cfg.settings);
+    }
     var chain: ?[]const u8 = null;
     var chain_path: ?[]const u8 = null;
     var chain_source: []const u8 = "none";
@@ -980,6 +1346,42 @@ test "parseArgs" {
     try std.testing.expectEqualStrings("7", d.timeout.?);
     const e = parseArgs(&.{ "--dry-run", "--json" });
     try std.testing.expect(e.dry_run and e.json);
+    const f = parseArgs(&.{ "--check-submit", "--json", "--partition", "cpu", "--constraint=zen4", "--eb-stack", "/opt/bin/eb-stack" });
+    try std.testing.expect(f.check_submit and f.json);
+    try std.testing.expectEqualStrings("cpu", f.partition.?);
+    try std.testing.expectEqualStrings("zen4", f.constraint.?);
+    try std.testing.expectEqualStrings("/opt/bin/eb-stack", f.eb_stack.?);
+}
+
+test "submitTarget requires agreeing site mappings" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const a = arena_state.allocator();
+    var settings: Settings = .empty;
+    try settings.put(a, "submit_target.partition.cpu", "x86_64/amd/zen4");
+    try settings.put(a, "submit_target.constraint.zen4", "x86_64/amd/zen4");
+    try settings.put(a, "submit_target.constraint.zen2", "x86_64/amd/zen2");
+    var why: []const u8 = "";
+    try std.testing.expectEqualStrings("x86_64/amd/zen4", submitTarget(a, settings, "cpu", "zen4", &why).?);
+    try std.testing.expect(submitTarget(a, settings, "cpu", "zen2", &why) == null);
+    try std.testing.expect(std.mem.indexOf(u8, why, "different targets") != null);
+}
+
+test "renderCheckSubmitJson is schema_version 1" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const a = arena_state.allocator();
+    const missing = [_][]const u8{"OnlyOther/1.0"};
+    const absent = try renderCheckSubmitJson(a, 1, "cpu", "zen4", "x86_64/amd/zen4", 2, &missing, null);
+    try std.testing.expectEqualStrings(
+        "{\"constraint\": \"zen4\", \"exit\": 1, \"exit_semantic\": \"missing\", \"kind\": \"check-submit\", \"loaded\": 2, \"message\": null, \"missing\": [\"OnlyOther/1.0\"], \"partition\": \"cpu\", \"schema_version\": 1, \"target\": \"x86_64/amd/zen4\"}\n",
+        absent,
+    );
+    const invalid = try renderCheckSubmitJson(a, 2, "", "", null, null, &.{}, "--partition needs one safe partition name");
+    try std.testing.expectEqualStrings(
+        "{\"constraint\": null, \"exit\": 2, \"exit_semantic\": \"invalid\", \"kind\": \"check-submit\", \"loaded\": null, \"message\": \"--partition needs one safe partition name\", \"missing\": [], \"partition\": null, \"schema_version\": 1, \"target\": null}\n",
+        invalid,
+    );
 }
 
 test "renderDryRunText and renderDryRunJson format a decision summary" {

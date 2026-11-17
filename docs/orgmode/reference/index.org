@@ -13,6 +13,7 @@ Each page states facts in the order the thing itself has them.
 
    cli
    json-output
+   check-submit
    configuration
    environment
    failures

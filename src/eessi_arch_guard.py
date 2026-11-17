@@ -145,14 +145,21 @@ HELP = """\
 usage: eessi-arch-guard [--shell] [--strict] [--dry-run] [--json]
                         [--chain PATH] [--timeout SEC] [--syslog TARGET]
                         [--restore] [-h|--help] [--version]
+       eessi-arch-guard --check-submit --partition NAME [--constraint NAME]
+                        [--eb-stack PATH] [--json]
 
 Slurm TaskProlog: when the loaded EESSI CPU or accelerator target is not this
 node's, print export/unset lines for the reloaded module environment.
+--check-submit checks LOADEDMODULES against a mapped target without changing it.
+--partition NAME selects submit_target.partition.NAME from the site config.
+--constraint NAME also requires submit_target.constraint.NAME to select that target.
+--eb-stack PATH selects the eb-stack executable used for the read-only check.
 --shell prints bash for: eval "$(eessi-arch-guard --shell)"
 --strict returns 78 on a failed decision or an unexpected exception.
 --dry-run evaluates config, chain, probes, and decision without writing state.
---json prints one line of JSON with the decision summary on stdout instead of
-prolog or shell lines; with --dry-run it also carries the diagnostic keys.
+--json prints one line of JSON with schema_version 1. On a decision run it
+replaces prolog or shell lines; with --dry-run it also carries the diagnostic
+keys; with --check-submit it replaces the text summary.
 --chain PATH runs an existing task prolog first. Slurm does not pass arguments,
 so a site sets this in a wrapper or in a root-owned eessi-arch-guard.conf.
 --timeout SEC bounds the decision. The default is %s seconds.
@@ -2017,6 +2024,250 @@ def config_chain(settings: Optional[Mapping[str, str]]) -> Optional[str]:
     return settings.get("chain") or None
 
 
+_SUBMIT_SELECTOR_RE = re.compile(r"^[A-Za-z0-9_.+-]{1,64}$")
+
+
+def submit_target(
+    settings: Optional[Mapping[str, str]],
+    partition: str,
+    constraint: str,
+) -> Tuple[Optional[str], Optional[str]]:
+    """Resolve a partition and optional constraint through the site configuration."""
+    if _SUBMIT_SELECTOR_RE.fullmatch(partition or "") is None:
+        return None, "--partition needs one safe partition name"
+    if constraint and _SUBMIT_SELECTOR_RE.fullmatch(constraint) is None:
+        return None, "--constraint needs one safe constraint name"
+    config = settings or {}
+    part_key = "submit_target.partition." + partition
+    target = config.get(part_key, "")
+    if not target:
+        return None, "site config has no %s mapping" % part_key
+    if not safe_rel_subdir(target):
+        return None, "%s is not a safe relative target" % part_key
+    if constraint:
+        constraint_key = "submit_target.constraint." + constraint
+        other = config.get(constraint_key, "")
+        if not other:
+            return None, "site config has no %s mapping" % constraint_key
+        if not safe_rel_subdir(other):
+            return None, "%s is not a safe relative target" % constraint_key
+        if other != target:
+            return None, "%s and %s select different targets" % (part_key, constraint_key)
+    return target, None
+
+
+def target_modules(root: str) -> Tuple[str, ...]:
+    """Module names represented by regular files below one ``modules/all`` tree."""
+    found = set()
+    if not os.path.isdir(root):
+        return ()
+    for directory, dirnames, filenames in os.walk(root, followlinks=False):
+        dirnames[:] = sorted(name for name in dirnames if not name.startswith("."))
+        for filename in filenames:
+            if filename.startswith(".") or filename in ("default", "modulerc"):
+                continue
+            path = os.path.join(directory, filename)
+            if not os.path.isfile(path):
+                continue
+            relative = os.path.relpath(path, root).replace(os.sep, "/")
+            if filename.endswith(".lua"):
+                relative = relative[:-4]
+            if module_name_ok(relative):
+                found.add(relative)
+    return tuple(sorted(found))
+
+
+def _planner_module(module: str) -> str:
+    """Lossless EasyBuild-shaped identity for any safe Lmod module name."""
+    return "EAGCheck" + os.fsencode(module).hex() + "/1.0"
+
+
+def _easyconfig_filename(module: str) -> str:
+    return _planner_module(module).replace("/", "-") + ".eb"
+
+
+def _check_submit_loaded(env: Mapping[str, str]) -> Tuple[Optional[Tuple[str, ...]], str]:
+    raw = env.get("LOADEDMODULES", "")
+    names = tuple(part for part in raw.split(":") if part)
+    if not names:
+        return None, "LOADEDMODULES is empty"
+    if any(not module_name_ok(name) for name in names):
+        return None, "LOADEDMODULES contains an unsafe module name"
+    return tuple(name for name in names if not EESSI_MODULE_RE.fullmatch(name)), ""
+
+
+def _check_submit_semantic(code: int) -> str:
+    if code == 0:
+        return "ok"
+    if code == 1:
+        return "missing"
+    return "invalid"
+
+
+def _finish_check_submit(
+    as_json: bool,
+    code: int,
+    partition: str,
+    constraint: str,
+    target: Optional[str],
+    loaded: Optional[int],
+    missing: Sequence[str],
+    message: Optional[str],
+    stderr_lines: Sequence[str],
+) -> int:
+    """Write the check result. ``--json`` replaces the text summary on stdout."""
+    for line in stderr_lines:
+        sys.stderr.write(line)
+    if as_json:
+        payload = {
+            "schema_version": DECISION_JSON_SCHEMA_VERSION,
+            "kind": "check-submit",
+            "partition": partition or None,
+            "constraint": constraint or None,
+            "target": target,
+            "loaded": loaded,
+            "missing": list(missing),
+            "message": message,
+            "exit": code,
+            "exit_semantic": _check_submit_semantic(code),
+        }
+        sys.stdout.write(
+            json.dumps(payload, ensure_ascii=True, sort_keys=True) + "\n"
+        )
+    elif code == 0 and message:
+        sys.stdout.write("eessi-arch-guard: check-submit: %s\n" % message)
+    return code
+
+
+def check_submit(
+    env: Mapping[str, str],
+    settings: Optional[Mapping[str, str]],
+    partition: str,
+    constraint: str,
+    eb_stack_arg: str,
+    as_json: bool = False,
+) -> int:
+    """Check loaded modules against a mapped target through ``eb-stack stack arch``."""
+
+    def finish(
+        code: int,
+        target: Optional[str] = None,
+        loaded: Optional[int] = None,
+        missing: Sequence[str] = (),
+        message: Optional[str] = None,
+        stderr_lines: Sequence[str] = (),
+    ) -> int:
+        return _finish_check_submit(
+            as_json,
+            code,
+            partition,
+            constraint,
+            target,
+            loaded,
+            missing,
+            message,
+            stderr_lines,
+        )
+
+    target, error = submit_target(settings, partition, constraint)
+    if error or target is None:
+        line = "eessi-arch-guard: check-submit: %s\n" % error
+        return finish(2, message=error, stderr_lines=(line,))
+    loaded, error = _check_submit_loaded(env)
+    if loaded is None:
+        line = "eessi-arch-guard: check-submit: %s\n" % error
+        return finish(2, message=error, stderr_lines=(line,))
+    prefix = env.get("EESSI_PREFIX", "")
+    os_type = env.get("EESSI_OS_TYPE", "")
+    if not safe_absolute(prefix) or not safe_rel_subdir(os_type):
+        reason = "EESSI_PREFIX or EESSI_OS_TYPE is missing or unsafe"
+        return finish(
+            2,
+            message=reason,
+            stderr_lines=("eessi-arch-guard: check-submit: %s\n" % reason,),
+        )
+    configured = (settings or {}).get("eb_stack", "")
+    selected = eb_stack_arg or configured or "eb-stack"
+    eb_stack = shutil.which(selected)
+    if eb_stack is None:
+        reason = "eb-stack is not executable: %s" % one_line(selected, 200)
+        return finish(
+            2,
+            message=reason,
+            stderr_lines=("eessi-arch-guard: check-submit: %s\n" % reason,),
+        )
+
+    module_root = os.path.join(prefix, "software", os_type, target, "modules", "all")
+    installed = target_modules(module_root)
+    files = {_easyconfig_filename(name): name for name in loaded}
+    try:
+        with tempfile.TemporaryDirectory(prefix="eessi-arch-guard-submit-") as work:
+            easystack = os.path.join(work, "loaded.yml")
+            installed_path = os.path.join(work, "installed.txt")
+            unsupported = os.path.join(work, "unsupported.toml")
+            with open(easystack, "w", encoding="utf-8") as handle:
+                handle.write("easyconfigs:\n")
+                for filename in files:
+                    handle.write("  - %s\n" % filename)
+            with open(installed_path, "w", encoding="utf-8") as handle:
+                for name in installed:
+                    handle.write(_planner_module(name) + "\n")
+            open(unsupported, "w", encoding="utf-8").close()
+            proc = subprocess.run(
+                [
+                    eb_stack,
+                    "stack",
+                    "arch",
+                    "--arch",
+                    target,
+                    "--easystack",
+                    easystack,
+                    "--installed",
+                    installed_path,
+                    "--unsupported",
+                    unsupported,
+                ],
+                capture_output=True,
+                text=True,
+                env=strip_startup(env),
+                check=False,
+            )
+    except OSError as exc:
+        reason = "could not run eb-stack: %s" % one_line(str(exc), 200)
+        return finish(
+            2,
+            target=target,
+            loaded=len(loaded),
+            message=reason,
+            stderr_lines=("eessi-arch-guard: check-submit: %s\n" % reason,),
+        )
+
+    if proc.returncode == 0:
+        summary = "%s loaded module(s) available for %s" % (len(loaded), target)
+        return finish(0, target=target, loaded=len(loaded), message=summary)
+    missing: List[str] = []
+    for line in proc.stdout.splitlines():
+        filename = line.split(" is flagged on ", 1)[0]
+        name = files.get(filename)
+        if name and name not in missing:
+            missing.append(name)
+    if proc.returncode == 1 and missing:
+        lines = tuple(
+            "eessi-arch-guard: check-submit: loaded module absent from %s: %s\n" % (target, name)
+            for name in missing
+        )
+        return finish(1, target=target, loaded=len(loaded), missing=missing, stderr_lines=lines)
+    detail = proc.stderr.strip() or proc.stdout.strip() or "exit %s" % proc.returncode
+    reason = "eb-stack failed: %s" % one_line(detail, 300)
+    return finish(
+        2,
+        target=target,
+        loaded=len(loaded),
+        message=reason,
+        stderr_lines=("eessi-arch-guard: check-submit: %s\n" % reason,),
+    )
+
+
 def _chain_path_ok(path: str) -> bool:
     if not path or not path.startswith("/") or any(c in path for c in "\n\r\0"):
         return False
@@ -2083,6 +2334,10 @@ class Args(NamedTuple):
     syslog: Optional[str] = None
     dry_run: bool = False
     json: bool = False
+    check_submit: bool = False
+    partition: Optional[str] = None
+    constraint: Optional[str] = None
+    eb_stack: Optional[str] = None
 
 
 def _option_value(argv: Sequence[str], index: int) -> Tuple[str, int]:
@@ -2098,15 +2353,20 @@ def _option_value(argv: Sequence[str], index: int) -> Tuple[str, int]:
 
 def parse_args(argv: Sequence[str]) -> Args:
     """Parse the prolog argv. Flags other than the documented ones are skipped."""
-    shell = restore = help_ = version = strict = dry_run = json = False
+    shell = restore = help_ = version = strict = dry_run = json = check_submit = False
     chain = None
     timeout = None
     syslog = None
+    partition = None
+    constraint = None
+    eb_stack = None
     index = 0
     while index < len(argv):
         arg = argv[index]
         if arg == "--shell":
             shell = True
+        elif arg == "--check-submit":
+            check_submit = True
         elif arg == "--strict":
             strict = True
         elif arg == "--dry-run":
@@ -2131,9 +2391,34 @@ def parse_args(argv: Sequence[str]) -> Args:
             syslog, index = _option_value(argv, index)
         elif arg.startswith("--syslog="):
             syslog = arg.split("=", 1)[1]
+        elif arg == "--partition":
+            partition, index = _option_value(argv, index)
+        elif arg.startswith("--partition="):
+            partition = arg.split("=", 1)[1]
+        elif arg == "--constraint":
+            constraint, index = _option_value(argv, index)
+        elif arg.startswith("--constraint="):
+            constraint = arg.split("=", 1)[1]
+        elif arg == "--eb-stack":
+            eb_stack, index = _option_value(argv, index)
+        elif arg.startswith("--eb-stack="):
+            eb_stack = arg.split("=", 1)[1]
         index += 1
     return Args(
-        shell, restore, help_, version, chain, timeout, strict, syslog, dry_run, json
+        shell,
+        restore,
+        help_,
+        version,
+        chain,
+        timeout,
+        strict,
+        syslog,
+        dry_run,
+        json,
+        check_submit,
+        partition,
+        constraint,
+        eb_stack,
     )
 
 
@@ -3049,6 +3334,17 @@ def _main(argv: Sequence[str]) -> int:
     notes = []
     if config_warning:
         notes.append(config_warning)
+    if args.check_submit:
+        for note in notes:
+            write_fd(2, message_bytes(note) + b"\n")
+        return check_submit(
+            env,
+            settings,
+            args.partition or "",
+            args.constraint or "",
+            args.eb_stack or "",
+            args.json,
+        )
     chain = None
     chain_path: Optional[str] = None
     chain_source = "none"

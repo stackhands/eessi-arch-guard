@@ -12,6 +12,7 @@ Nothing here is a step to follow.
    :maxdepth: 1
 
    how-it-decides
+   pre-submit-checks
    design
    output-modes
 #+end_export

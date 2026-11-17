@@ -1,0 +1,79 @@
+#+TITLE: Check-submit inputs and statuses
+#+OPTIONS: toc:nil todo:nil num:nil author:nil title:nil
+#+STARTUP: content
+
+* Check-submit inputs and statuses
+
+=--check-submit= is an opt-in, read-only command mode.
+It is not active in the Slurm =TaskProlog= mode.
+
+** Command
+
+#+begin_example
+eessi-arch-guard --check-submit --partition NAME [--constraint NAME] [--eb-stack PATH] [--json]
+#+end_example
+
+| Input | Source | Rule |
+|---|---|---|
+| loaded modules | =LOADEDMODULES= | Colon-separated safe module names. The one =EESSI/VERSION= management module is not part of an architecture module tree and is omitted from the comparison. |
+| partition | =--partition NAME= | Required. =NAME= is 1 to 64 letters, digits, underscores, dots, pluses, or hyphens. |
+| constraint | =--constraint NAME= | Optional, with the same grammar. Its mapping must select the same target as the partition mapping. |
+| target prefix | =EESSI_PREFIX= and =EESSI_OS_TYPE= | The module inventory is =EESSI_PREFIX/software/EESSI_OS_TYPE/TARGET/modules/all=. |
+| planner | =--eb-stack PATH=, then config =eb_stack=, then =eb-stack= on =PATH= | Must be executable. |
+
+Module files below =modules/all= are inventory entries.
+A =.lua= suffix is removed.
+Hidden files, =default=, and =modulerc= are not entries.
+Directories are never changed.
+
+** Site-map keys
+
+The existing =eessi-arch-guard.conf= format holds the selector map:
+
+#+begin_example
+submit_target.partition.cpu = x86_64/amd/zen4
+submit_target.constraint.zen4 = x86_64/amd/zen4
+eb_stack = /opt/stackhands/bin/eb-stack
+#+end_example
+
+The partition mapping is required.
+When =--constraint= is present, its mapping is also required and both targets must be identical.
+Targets are safe relative EESSI subdirectories: no empty segment, absolute path, backslash, or =..= segment.
+
+** Planner call
+
+The guard writes a temporary easystack containing the loaded application modules and an installed-module inventory from the target tree.
+It encodes each complete Lmod name as a lossless =EAGCheck<hex>/1.0= identity in both files.
+This gives =eb-stack='s EasyBuild-shaped comparison one name and one version even for a year module or a hierarchical Lmod name.
+Messages decode the identity back to the loaded name.
+It invokes:
+
+#+begin_example
+eb-stack stack arch --arch TARGET \
+  --easystack TEMP/loaded.yml \
+  --installed TEMP/installed.txt \
+  --unsupported TEMP/unsupported.toml
+#+end_example
+
+The empty =--unsupported= file keeps this command about presence in the installed tree.
+It does not apply =eb-stack='s build-support policy.
+The temporary files are removed after the subprocess exits.
+
+** Exit statuses
+
+| Status | Meaning |
+|---+---|
+| =0= | Every loaded application module is in the target inventory. |
+| =1= | One or more loaded modules are absent. Each missing module is named on standard error. |
+| =2= | An input, mapping, target path, planner executable, or planner result is invalid. |
+
+The mode never invokes Lmod, =--restore=, =sbatch=, or a provisioning command.
+
+** JSON
+
+With =--json=, stdout is one ASCII JSON object instead of the availability line.
+=schema_version= is 1 and =kind= is =check-submit=.
+=exit= repeats the process status.
+=exit_semantic= is =ok=, =missing=, or =invalid=.
+=missing= names the loaded application modules that are absent, and those same lines stay on stderr.
+[[file:json-output.org][Machine-readable command output]] has the schema.
