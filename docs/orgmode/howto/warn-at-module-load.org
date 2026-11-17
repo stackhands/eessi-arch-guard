@@ -43,6 +43,39 @@ A job that inherited its modules does not run this hook; the =TaskProlog= is wha
    =accel/nvidia/cc90= is not part of the CPU subdirectory. =accel/amd/gfx90a= is not either.
    A file under =x86_64/amd/zen3/accel/nvidia/cc90= still warns, and the warning names =x86_64/amd/zen3=.
 
+** Compare the accelerator
+
+The hook does not compare accelerators unless a site asks.
+Either of these turns the check on, and the environment wins when both are set:
+
+#+begin_src bash
+export EESSI_WARN_ACCEL_MISMATCH=1
+#+end_src
+
+#+begin_example
+# /etc/eessi-arch-guard.conf
+warn_accel_mismatch = 1
+#+end_example
+
+=true= and =on= are the same as =1=.
+=0=, =false= and =off= leave the check off.
+An empty value is unset, so the configuration key applies, and with that unset too the check stays off.
+The site package reads the first of =/etc/eessi-arch-guard.conf= and =eessi-arch-guard.conf= beside =SitePackage.lua= that it can open, with the line grammar [[file:../reference/configuration.org][The configuration file]] describes.
+The guard does not use this key.
+
+The node's accelerator is the line =eessi_archdetect.sh accelpath= prints.
+The script is =eessi_archdetect.sh= in =EESSI_INIT_PREFIX=, which is where the guard reads the accelerator.
+A module file under =accel/nvidia/cc90= warns when that line is a different accelerator, for example =accel/nvidia/cc80=:
+
+#+begin_example
+eessi-arch-guard: CUDA/12.6.0 is cc90 but this node is cc80
+#+end_example
+
+When one side is not an =accel/nvidia/cc= path, the warning names the accelerator subdirectories instead of the =cc= suffix.
+A module file with no accelerator segment does not run the script.
+A missing script, a failed script, or a line that is not an accelerator subdirectory does not warn.
+The load still completes.
+
 ** What the hook does not do
 
 It does not purge or reload the stack, and it does not change =MODULEPATH= or any =EBROOT*= variable.
