@@ -3,12 +3,15 @@ usage: eessi-arch-guard [--shell] [--strict] [--dry-run] [--json]
                         [--restore] [-h|--help] [--version]
        eessi-arch-guard --check-submit --partition NAME [--constraint NAME]
                         [--eb-stack PATH] [--json]
+       eessi-arch-guard --check-submit --target TARGET [--eb-stack PATH] [--json]
 
 Slurm TaskProlog: when the loaded EESSI CPU or accelerator target is not this
 node's, print export/unset lines for the reloaded module environment.
 --check-submit checks LOADEDMODULES against a mapped target without changing it.
 --partition NAME selects submit_target.partition.NAME from the site config.
 --constraint NAME also requires submit_target.constraint.NAME to select that target.
+--target TARGET checks against that EESSI CPU target, such as x86_64/amd/zen4,
+with no site config.
 --eb-stack PATH selects the eb-stack executable used for the read-only check.
 --shell prints bash for: eval "$(eessi-arch-guard --shell)"
 --strict returns 78 on a failed decision or an unexpected exception.

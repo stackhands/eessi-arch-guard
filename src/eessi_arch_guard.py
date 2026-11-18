@@ -148,12 +148,15 @@ usage: eessi-arch-guard [--shell] [--strict] [--dry-run] [--json]
                         [--restore] [-h|--help] [--version]
        eessi-arch-guard --check-submit --partition NAME [--constraint NAME]
                         [--eb-stack PATH] [--json]
+       eessi-arch-guard --check-submit --target TARGET [--eb-stack PATH] [--json]
 
 Slurm TaskProlog: when the loaded EESSI CPU or accelerator target is not this
 node's, print export/unset lines for the reloaded module environment.
 --check-submit checks LOADEDMODULES against a mapped target without changing it.
 --partition NAME selects submit_target.partition.NAME from the site config.
 --constraint NAME also requires submit_target.constraint.NAME to select that target.
+--target TARGET checks against that EESSI CPU target, such as x86_64/amd/zen4,
+with no site config.
 --eb-stack PATH selects the eb-stack executable used for the read-only check.
 --shell prints bash for: eval "$(eessi-arch-guard --shell)"
 --strict returns 78 on a failed decision or an unexpected exception.
@@ -2172,6 +2175,17 @@ def _finish_check_submit(
     return code
 
 
+def _direct_target(
+    target: str, partition: Optional[str], constraint: Optional[str]
+) -> Tuple[Optional[str], Optional[str]]:
+    """The target ``--target`` names, refused next to ``--partition`` or ``--constraint``."""
+    if partition or constraint:
+        return None, "--target is used without --partition and --constraint"
+    if not safe_rel_subdir(target):
+        return None, "--target needs one safe relative EESSI target, such as x86_64/amd/zen4"
+    return target, None
+
+
 def check_submit(
     env: Mapping[str, str],
     settings: Optional[Mapping[str, str]],
@@ -2179,8 +2193,13 @@ def check_submit(
     constraint: str,
     eb_stack_arg: str,
     as_json: bool = False,
+    target_arg: str = "",
 ) -> int:
-    """Check loaded modules against a mapped target through ``eb-stack stack arch``."""
+    """Check loaded modules against a mapped target through ``eb-stack stack arch``.
+
+    ``target_arg`` names the target directly, in place of a partition the site
+    config maps; it excludes ``partition`` and ``constraint``.
+    """
 
     def finish(
         code: int,
@@ -2202,7 +2221,10 @@ def check_submit(
             stderr_lines,
         )
 
-    target, error = submit_target(settings, partition, constraint)
+    if target_arg:
+        target, error = _direct_target(target_arg, partition, constraint)
+    else:
+        target, error = submit_target(settings, partition, constraint)
     if error or target is None:
         line = "eessi-arch-guard: check-submit: %s\n" % error
         return finish(2, message=error, stderr_lines=(line,))
@@ -2374,6 +2396,7 @@ class Args(NamedTuple):
     partition: Optional[str] = None
     constraint: Optional[str] = None
     eb_stack: Optional[str] = None
+    target: Optional[str] = None
 
 
 def build_arg_parser() -> argparse.ArgumentParser:
@@ -2391,6 +2414,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--partition", nargs="?", const="", default=None, metavar="NAME")
     parser.add_argument("--constraint", nargs="?", const="", default=None, metavar="NAME")
     parser.add_argument("--eb-stack", nargs="?", const="", default=None, metavar="PATH")
+    parser.add_argument("--target", nargs="?", const="", default=None, metavar="TARGET")
     parser.add_argument("-h", "--help", dest="help", action="store_true")
     parser.add_argument("--version", action="store_true")
     return parser
@@ -2416,6 +2440,7 @@ def parse_args(argv: Sequence[str]) -> Args:
     partition = None
     constraint = None
     eb_stack = None
+    target = None
     index = 0
     while index < len(argv):
         arg = argv[index]
@@ -2459,6 +2484,10 @@ def parse_args(argv: Sequence[str]) -> Args:
             eb_stack, index = _option_value(argv, index)
         elif arg.startswith("--eb-stack="):
             eb_stack = arg.split("=", 1)[1]
+        elif arg == "--target":
+            target, index = _option_value(argv, index)
+        elif arg.startswith("--target="):
+            target = arg.split("=", 1)[1]
         index += 1
     return Args(
         shell,
@@ -2475,6 +2504,7 @@ def parse_args(argv: Sequence[str]) -> Args:
         partition,
         constraint,
         eb_stack,
+        target,
     )
 
 
@@ -3400,6 +3430,7 @@ def _main(argv: Sequence[str]) -> int:
             args.constraint or "",
             args.eb_stack or "",
             args.json,
+            args.target or "",
         )
     chain = None
     chain_path: Optional[str] = None

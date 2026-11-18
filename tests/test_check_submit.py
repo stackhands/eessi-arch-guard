@@ -239,6 +239,84 @@ class CheckSubmitTests(unittest.TestCase):
             self.assertEqual(code, 1)
             self.assertIn("Mine/1.0", err)
 
+    def test_target_needs_no_site_config(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            prefix = root / "prefix"
+            r_dir = prefix / "software" / "linux" / ZEN4 / "modules" / "all" / "R"
+            r_dir.mkdir(parents=True)
+            (r_dir / "4.4.2.lua").write_text("-- module\n", encoding="utf-8")
+            self._install(root / "home" / "eessi", ZEN2, "Mine/1.0")
+            fake = _fake_eb_stack(root)
+            env = {
+                "PATH": "/usr/bin:/bin",
+                "HOME": str(root / "home"),
+                "EESSI_PREFIX": str(prefix),
+                "EESSI_OS_TYPE": "linux",
+                "EESSI_VERSION": "2026.06",
+                "LOADEDMODULES": "EESSI/2026.06:R/4.4.2:Mine/1.0",
+                "EESSI_TEST_EB_STACK_LOG": str(root / "eb-stack.log"),
+            }
+            stderr = io.StringIO()
+            with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(stderr):
+                code = guard.check_submit(env, None, "", "", str(fake), target_arg=ZEN4)
+            self.assertEqual(code, 1)
+            self.assertIn("Mine/1.0", stderr.getvalue())
+            self.assertNotIn("R/4.4.2", stderr.getvalue())
+            self.assertIn("stack arch --arch " + ZEN4, (root / "eb-stack.log").read_text())
+
+    def test_target_is_refused_with_a_partition_or_an_unsafe_value(self) -> None:
+        for partition, target in (("cpu", ZEN4), ("", "../zen4"), ("", "/abs")):
+            with self.subTest(partition=partition, target=target):
+                stderr = io.StringIO()
+                with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(stderr):
+                    code = guard.check_submit({}, None, partition, "", "", target_arg=target)
+                self.assertEqual(code, 2)
+                self.assertIn("--target", stderr.getvalue())
+
+    def test_cli_target_runs_without_a_site_config(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            prefix = root / "prefix"
+            (prefix / "software" / "linux" / ZEN4 / "modules" / "all").mkdir(parents=True)
+            self._install(root / "home" / "eessi", ZEN4, "Mine/1.0")
+            self._install(root / "home" / "eessi", ZEN2, "OnlyZen2/1.0")
+            fake = _fake_eb_stack(root)
+            env = {
+                "PATH": "/usr/bin:/bin",
+                "HOME": str(root / "home"),
+                "LANG": "C",
+                "LC_ALL": "C",
+                "EESSI_PREFIX": str(prefix),
+                "EESSI_OS_TYPE": "linux",
+                "EESSI_VERSION": "2026.06",
+                "LOADEDMODULES": "EESSI/2026.06:Mine/1.0:OnlyZen2/1.0",
+                "EESSI_TEST_EB_STACK_LOG": str(root / "eb-stack.log"),
+            }
+            proc = subprocess.run(
+                [
+                    *harness.GUARD_ARGV,
+                    "--check-submit",
+                    "--json",
+                    "--target",
+                    ZEN4,
+                    "--eb-stack",
+                    str(fake),
+                ],
+                capture_output=True,
+                text=True,
+                env=env,
+                check=False,
+            )
+            self.assertEqual(proc.returncode, 1, proc.stderr)
+            payload = json.loads(proc.stdout)
+            self.assertEqual(payload["missing"], ["OnlyZen2/1.0"])
+            self.assertEqual(payload["target"], ZEN4)
+            self.assertIsNone(payload["partition"])
+            if jsonschema is not None:
+                schema = json.loads(SCHEMA.read_text(encoding="utf-8"))
+                jsonschema.Draft202012Validator(schema).validate(payload)
+
     def test_cli_arguments_are_opt_in(self) -> None:
         plain = guard.parse_args([])
         self.assertFalse(plain.check_submit)
