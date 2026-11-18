@@ -562,6 +562,23 @@ os.remove(usage_conf)
 check("conf enables usage tracking", #sp.usage_records, 1)
 sp.usage_records = {}
 
+local dir_conf = os.tmpname()
+os.remove(dir_conf)
+if os.execute("mkdir -m 700 " .. dir_conf) ~= true then
+    io.stderr:write("could not create " .. dir_conf .. "\n")
+    failed = true
+else
+    local fallback_conf = os.tmpname()
+    local ffh = io.open(fallback_conf, "w")
+    ffh:write("hide_toolchains = 1\n")
+    ffh:close()
+    sp.conf_paths = { dir_conf, fallback_conf }
+    check("site_conf skips directory candidate", sp.site_conf(), "hide_toolchains = 1\n")
+    sp.conf_paths = { "/no/such/eessi-arch-guard.conf" }
+    os.remove(fallback_conf)
+    os.execute("rmdir " .. dir_conf)
+end
+
 local registered_hooks = {}
 local registered_exit = {}
 local saved_hook = rawget(_G, "hook")

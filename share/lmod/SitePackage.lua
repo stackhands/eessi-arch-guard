@@ -330,7 +330,9 @@ function M.site_conf()
         if handle then
             local text = handle:read("*a")
             handle:close()
-            return text
+            if type(text) == "string" then
+                return text
+            end
         end
     end
     return nil
