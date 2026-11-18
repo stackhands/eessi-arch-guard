@@ -111,6 +111,9 @@ def report(mountinfo: str, modulepath: str, repo: str, site: str, eessi: str):
     elif place == "eessi_missing":
         lines.append(f"FAIL EESSI modules {eessi_n} are not on MODULEPATH")
         failed = True
+    elif place == "both_missing":
+        lines.append(f"FAIL neither {site_n} nor {eessi_n} is on MODULEPATH")
+        failed = True
     else:
         lines.append(f"FAIL site modules {site_n} and the EESSI modules are the same path")
         failed = True
