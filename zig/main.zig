@@ -808,6 +808,13 @@ fn directTarget(target: []const u8, partition: []const u8, constraint: []const u
     return target;
 }
 
+fn hasUpperAscii(s: []const u8) bool {
+    for (s) |ch| {
+        if (ch >= 'A' and ch <= 'Z') return true;
+    }
+    return false;
+}
+
 fn submitTarget(arena: Allocator, settings: ?Settings, partition: []const u8, constraint: []const u8, why: *[]const u8) ?[]const u8 {
     if (!submitSelector(partition)) {
         why.* = "--partition needs one safe partition name";
@@ -823,8 +830,12 @@ fn submitTarget(arena: Allocator, settings: ?Settings, partition: []const u8, co
         why.* = arena.print("site config has no {s} mapping", .{part_key}) catch part_key;
         return null;
     };
+    if (!std.mem.eql(u8, text.pyStrip(target), target) or hasUpperAscii(target)) {
+        why.* = arena.print("{s} has invalid target value {s}", .{ part_key, target }) catch part_key;
+        return null;
+    }
     if (!text.safeRelSubdir(target)) {
-        why.* = arena.print("{s} is not a safe relative target", .{part_key}) catch part_key;
+        why.* = arena.print("{s} has invalid target value {s}", .{ part_key, target }) catch part_key;
         return null;
     }
     if (constraint.len > 0) {
@@ -833,8 +844,12 @@ fn submitTarget(arena: Allocator, settings: ?Settings, partition: []const u8, co
             why.* = arena.print("site config has no {s} mapping", .{constraint_key}) catch constraint_key;
             return null;
         };
+        if (!std.mem.eql(u8, text.pyStrip(other), other) or hasUpperAscii(other)) {
+            why.* = arena.print("{s} has invalid target value {s}", .{ constraint_key, other }) catch constraint_key;
+            return null;
+        }
         if (!text.safeRelSubdir(other)) {
-            why.* = arena.print("{s} is not a safe relative target", .{constraint_key}) catch constraint_key;
+            why.* = arena.print("{s} has invalid target value {s}", .{ constraint_key, other }) catch constraint_key;
             return null;
         }
         if (!std.mem.eql(u8, target, other)) {
@@ -925,6 +940,7 @@ fn easyconfigFilename(arena: Allocator, module: []const u8) []const u8 {
 fn loadedSubmitModules(arena: Allocator, env: envmap.Map, why: *[]const u8) ?[]SubmitModule {
     const raw = env.get("LOADEDMODULES") orelse "";
     var found: std.ArrayList(SubmitModule) = .empty;
+    var seen: std.ArrayList([]const u8) = .empty;
     var any = false;
     var parts = std.mem.splitScalar(u8, raw, ':');
     while (parts.next()) |name| {
@@ -935,6 +951,11 @@ fn loadedSubmitModules(arena: Allocator, env: envmap.Map, why: *[]const u8) ?[]S
             return null;
         }
         if (std.mem.startsWith(u8, name, "EESSI/") and std.mem.findScalar(u8, name["EESSI/".len..], '/') == null) continue;
+        if (listed(seen.items, name)) {
+            why.* = arena.print("LOADEDMODULES has duplicate module entry: {s}", .{name}) catch "LOADEDMODULES has duplicate module entry";
+            return null;
+        }
+        seen.append(arena, name) catch oom();
         found.append(arena, .{ .name = name, .file = easyconfigFilename(arena, name) }) catch oom();
     }
     if (!any) {
@@ -1141,6 +1162,11 @@ fn checkSubmit(arena: Allocator, args: Args, env: envmap.Map, settings: ?Setting
         }
     }.less);
     const installed = all_found.items;
+    if (installed.len == 0) {
+        const reason = arena.print("submit target has empty module inventory: {s}", .{target}) catch "submit target has empty module inventory";
+        const line = arena.print("eessi-arch-guard: check-submit: {s}", .{reason}) catch reason;
+        return finishCheckSubmit(arena, args, partition, constraint, 2, target, @intCast(loaded.len), &.{}, reason, &.{line});
+    }
     const work = submitWorkDir(arena, env) orelse {
         const reason = "could not create temporary input directory";
         const line = "eessi-arch-guard: check-submit: " ++ reason;

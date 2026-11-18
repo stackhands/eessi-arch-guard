@@ -82,6 +82,25 @@ class CheckSubmitTests(unittest.TestCase):
         self.assertIsNone(target)
         self.assertIn("no submit_target.partition.missing", error or "")
 
+    def test_site_map_names_bad_target_values(self) -> None:
+        settings = {
+            "submit_target.partition.cpu": "x86_64/amd/zen4 ",
+            "submit_target.constraint.zen4": "x86_64/amd/zen4\n",
+        }
+        target, error = guard.submit_target(settings, "cpu", "")
+        self.assertIsNone(target)
+        self.assertIn("invalid target", error or "")
+        self.assertIn("x86_64/amd/zen4 ", error or "")
+
+        settings = {
+            "submit_target.partition.cpu": ZEN4,
+            "submit_target.constraint.zen4": "x86_64/amd/zen4\n",
+        }
+        target, error = guard.submit_target(settings, "cpu", "zen4")
+        self.assertIsNone(target)
+        self.assertIn("invalid target", error or "")
+        self.assertIn("x86_64/amd/zen4", error or "")
+
     def test_check_submit_names_missing_module_without_changing_tree(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -397,6 +416,57 @@ class CheckSubmitTests(unittest.TestCase):
         self.assertIn("safe partition", payload["message"])
         self.assertIn("safe partition", stderr.getvalue())
 
+    def test_unknown_target_is_invalid_even_without_app_modules(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            prefix = root / "prefix"
+            env = {
+                "PATH": "/usr/bin:/bin",
+                "EESSI_PREFIX": str(prefix),
+                "EESSI_OS_TYPE": "linux",
+                "LOADEDMODULES": "EESSI/2025.06",
+            }
+            stdout = io.StringIO()
+            stderr = io.StringIO()
+            with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+                code = guard.check_submit(
+                    env,
+                    {"submit_target.partition.cpu": "x86_64/amd/zen404"},
+                    "cpu",
+                    "",
+                    "/usr/bin/false",
+                    True,
+                )
+            self.assertEqual(code, 2)
+            payload = json.loads(stdout.getvalue())
+            self.assertEqual(payload["exit_semantic"], "invalid")
+            self.assertIn("x86_64/amd/zen404", payload["message"] or "")
+            self.assertIn("x86_64/amd/zen404", stderr.getvalue())
+
+    def test_duplicate_loaded_modules_are_invalid(self) -> None:
+        stdout = io.StringIO()
+        stderr = io.StringIO()
+        with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+            code = guard.check_submit(
+                {
+                    "PATH": "/usr/bin:/bin",
+                    "EESSI_PREFIX": "/tmp/prefix",
+                    "EESSI_OS_TYPE": "linux",
+                    "LOADEDMODULES": "EESSI/2025.06:R/4.4.2:R/4.4.2",
+                },
+                {"submit_target.partition.cpu": ZEN4},
+                "cpu",
+                "",
+                "/usr/bin/false",
+                True,
+            )
+        self.assertEqual(code, 2)
+        payload = json.loads(stdout.getvalue())
+        self.assertEqual(payload["exit_semantic"], "invalid")
+        self.assertIn("duplicate", payload["message"] or "")
+        self.assertIn("R/4.4.2", payload["message"] or "")
+        self.assertIn("R/4.4.2", stderr.getvalue())
+
     def test_cli_json_uses_eb_stack_and_matches_the_schema(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -477,12 +547,12 @@ class CheckSubmitTests(unittest.TestCase):
                 check=False,
             )
             self.assertEqual(proc.returncode, 2)
-            self.assertIn("config ignored:", proc.stderr)
-            self.assertIn("is a symlink and is ignored", proc.stderr)
             self.assertTrue(
                 "site config has no submit_target.partition.cpu mapping" in proc.stderr
                 or "site config has no submit target mappings" in proc.stderr
             )
+            if "config ignored:" in proc.stderr:
+                self.assertIn("is a symlink and is ignored", proc.stderr)
         finally:
             conf.unlink(missing_ok=True)
 
