@@ -109,6 +109,24 @@ class SitePathTests(unittest.TestCase):
         self.assertEqual(code, 1)
         self.assertIn("FAIL", text)
 
+    def test_both_missing_reports_distinct_message_from_same_path(self):
+        sp = load()
+        plain = "36 35 0:36 / / rw - ext4 /dev/sda1 rw\n"
+        code, text = sp.report(
+            plain,
+            "/other/modules/all",
+            "/cvmfs/software.eessi.io",
+            "/opt/site/modules/all",
+            "/cvmfs/software.eessi.io/versions/2026.06/modules/all",
+        )
+        self.assertEqual(code, 1)
+        self.assertIn(
+            "neither /opt/site/modules/all nor "
+            "/cvmfs/software.eessi.io/versions/2026.06/modules/all is on MODULEPATH",
+            text,
+        )
+        self.assertNotIn("same path", text)
+
 
 if __name__ == "__main__":
     unittest.main()

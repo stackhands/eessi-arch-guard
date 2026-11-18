@@ -34,6 +34,7 @@ decision JSON is written.
 | Situation | JSON on stdout | Exit | =exit_semantic= in JSON when printed |
 |-----------+----------------+------+--------------------------------------|
 | Decision finished (any kind) | Yes, one line | =0=, or =78= with =--strict= on =failed= | =ok= or =strict-failure= |
+| =--check-submit --json= | Yes, one line | =0=, =1= (missing modules), or =2= (invalid input or tool error) | =ok=, =missing=, or =invalid= |
 | Chained prolog failed | No | Chained status =N= | — |
 | =--restore= could not answer | Helper JSON (not a decision document) | =1= | — |
 | =-h=, =--version= | Usage or version text | =0= | — |

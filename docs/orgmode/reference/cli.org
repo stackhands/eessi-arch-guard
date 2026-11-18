@@ -12,6 +12,7 @@ This page describes the Python guard, =src/eessi_arch_guard.py=; the Zig build b
 #+begin_example
 eessi-arch-guard [--shell] [--strict] [--dry-run] [--json] [--chain PATH] [--timeout SEC] [--syslog TARGET] [--restore] [-h|--help] [--version]
 eessi-arch-guard --check-submit --partition NAME [--constraint NAME] [--eb-stack PATH] [--json]
+eessi-arch-guard --check-submit --target TARGET [--eb-stack PATH] [--json]
 #+end_example
 
 =eessi-arch-guard --help= prints:
@@ -22,12 +23,15 @@ usage: eessi-arch-guard [--shell] [--strict] [--dry-run] [--json]
                         [--restore] [-h|--help] [--version]
        eessi-arch-guard --check-submit --partition NAME [--constraint NAME]
                         [--eb-stack PATH] [--json]
+       eessi-arch-guard --check-submit --target TARGET [--eb-stack PATH] [--json]
 
 Slurm TaskProlog: when the loaded EESSI CPU or accelerator target is not this
 node's, print export/unset lines for the reloaded module environment.
 --check-submit checks LOADEDMODULES against a mapped target without changing it.
 --partition NAME selects submit_target.partition.NAME from the site config.
 --constraint NAME also requires submit_target.constraint.NAME to select that target.
+--target TARGET checks against that EESSI CPU target, such as x86_64/amd/zen4,
+with no site config.
 --eb-stack PATH selects the eb-stack executable used for the read-only check.
 --shell prints bash for: eval "$(eessi-arch-guard --shell)"
 --strict returns 78 on a failed decision or an unexpected exception.
@@ -53,8 +57,9 @@ Slurm starts a =TaskProlog= with no arguments at all.
 | Option                           | Meaning                                                                                                                                                                                                                                                                                                                                                                                                                        |
 |----------------------------------+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | =--check-submit=                 | Run the opt-in read-only pre-submit check described in [[file:check-submit.org][Check-submit inputs and statuses]]. It does not run the prolog decision. |
-| =--partition NAME=               | Required with =--check-submit=. Select =submit_target.partition.NAME= from the site configuration. |
+| =--partition NAME=               | Required with =--check-submit= unless =--target= is passed. Select =submit_target.partition.NAME= from the site configuration. |
 | =--constraint NAME=              | Also select =submit_target.constraint.NAME=; that mapping must equal the partition mapping. |
+| =--target TARGET=                | Check against the relative EESSI CPU target =TARGET= (such as =x86_64/amd/zen4=) with no site configuration; used without =--partition= and =--constraint=. |
 | =--eb-stack PATH=                | Replace the =eb_stack= configuration value and the =eb-stack= command name for =--check-submit=. |
 | =--shell=                        | Print bash instead of prolog lines: =export NAME=VALUE= with the value quoted for bash, and =unset NAME=, for =eval "$(eessi-arch-guard --shell)"=. Messages go to stderr. No chained prolog runs.                                                                                                                                                                                                                             |
 | =--strict=                       | Exit 78 when the decision fails or an unexpected exception interrupts it. The restore and the cache use a private workspace, which must exist (see [[file:environment.org][Environment variables]]), and the restore helper gets =--strict= too.                                                                                                                                                                                                         |

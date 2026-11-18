@@ -1087,8 +1087,7 @@ fn checkSubmit(arena: Allocator, args: Args, env: envmap.Map, settings: ?Setting
     const partition = args.partition orelse "";
     const constraint = args.constraint orelse "";
     var why: []const u8 = "";
-    const direct = args.target orelse "";
-    const target = (if (direct.len > 0) directTarget(direct, partition, constraint, &why) else submitTarget(arena, settings, partition, constraint, &why)) orelse {
+    const target = (if (args.target) |direct| directTarget(direct, partition, constraint, &why) else submitTarget(arena, settings, partition, constraint, &why)) orelse {
         const line = arena.print("eessi-arch-guard: check-submit: {s}", .{why}) catch why;
         return finishCheckSubmit(arena, args, partition, constraint, 2, null, null, &.{}, why, &.{line});
     };

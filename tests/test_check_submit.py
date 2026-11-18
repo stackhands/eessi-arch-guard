@@ -681,5 +681,27 @@ with open({str(env_log)!r}, "w", encoding="utf-8") as handle:
                 subprocess.check_call(["sudo", "rm", "-f", str(conf)])
 
 
+class CheckSubmitEmptyTargetTests(unittest.TestCase):
+    def test_bare_or_empty_target_is_refused_as_target_mode(self) -> None:
+        cases = (
+            (["--check-submit", "--target"], "--target needs one safe relative EESSI target"),
+            (["--check-submit", "--target", ""], "--target needs one safe relative EESSI target"),
+            (
+                ["--check-submit", "--target", "--partition", "cpu"],
+                "--target is used without --partition and --constraint",
+            ),
+        )
+        for argv, expected in cases:
+            with self.subTest(argv=argv):
+                proc = subprocess.run(
+                    [*harness.GUARD_ARGV, *argv],
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                )
+                self.assertEqual(proc.returncode, 2, proc.stdout + proc.stderr)
+                self.assertIn(expected, proc.stderr)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -26,7 +26,7 @@ The two responsibilities stay separate for three reasons:
    The wrapper passes the same selectors to the check and to =sbatch=, but only Slurm accepts or places the job.
 
 The site map is deliberately root-owned configuration.
-Users choose among selectors the site publishes; they do not provide an arbitrary target path.
+When checking by scheduler selector, users choose among the selectors the site publishes rather than guessing a partition's mapping; when a site has no map or a caller knows the target path explicitly, =--target TARGET= checks that target directly without reading the site configuration.
 Requiring partition and constraint mappings to agree makes ambiguous intent an input error instead of silently choosing one.
 
 See [[file:../howto/check-before-submit.org][Check loaded modules before submitting]] for the workflow and [[file:../reference/check-submit.org][Check-submit inputs and statuses]] for the exact contract.
