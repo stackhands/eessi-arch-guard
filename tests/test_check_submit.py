@@ -287,6 +287,39 @@ class CheckSubmitTests(unittest.TestCase):
             finally:
                 subprocess.check_call(["sudo", "rm", "-f", str(conf)])
 
+    def test_check_submit_warns_on_dangling_config_symlink(self) -> None:
+        conf = harness.PROGRAM.with_name("eessi-arch-guard.conf")
+        conf.unlink(missing_ok=True)
+        conf.symlink_to("missing-site-config.conf")
+        try:
+            env = {
+                "PATH": "/usr/bin:/bin",
+                "HOME": "/tmp",
+                "LANG": "C",
+                "LC_ALL": "C",
+            }
+            proc = subprocess.run(
+                [
+                    *harness.GUARD_ARGV,
+                    "--check-submit",
+                    "--partition",
+                    "cpu",
+                ],
+                capture_output=True,
+                text=True,
+                env=env,
+                check=False,
+            )
+            self.assertEqual(proc.returncode, 2)
+            self.assertIn("config ignored:", proc.stderr)
+            self.assertIn("is a symlink and is ignored", proc.stderr)
+            self.assertTrue(
+                "site config has no submit_target.partition.cpu mapping" in proc.stderr
+                or "site config has no submit target mappings" in proc.stderr
+            )
+        finally:
+            conf.unlink(missing_ok=True)
+
 
 if __name__ == "__main__":
     unittest.main()

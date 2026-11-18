@@ -2278,7 +2278,7 @@ def _chain_path_ok(path: str) -> bool:
 def _config_candidate_path(script_path: str) -> Optional[str]:
     beside = os.path.join(os.path.dirname(os.path.abspath(script_path)), "eessi-arch-guard.conf")
     for path in ("/etc/eessi-arch-guard.conf", beside):
-        if os.path.exists(path):
+        if os.path.lexists(path):
             return path
     return None
 
