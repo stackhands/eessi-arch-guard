@@ -9,6 +9,31 @@
 
 eessi-arch-guard is a Slurm TaskProlog that reloads an EESSI module stack when the task runs on a CPU or GPU other than the target recorded at `module load`. The EESSI module chooses that target once. Lmod keeps the recorded `MODULEPATH` and the `EBROOT*` paths until the stack is purged and loaded again. The prolog does that purge and load on the compute node, before `execve`, and prints the environment delta for `slurmstepd` to apply.
 
+## When you need it, and when you do not
+
+You do not need it if your jobs load EESSI themselves: `sbatch --export=NONE`, or a batch script that loads the module, runs archdetect on the compute node.
+You need it where a task inherits a stack loaded on another node type: `srun` from a login shell that loaded EESSI, and `sbatch --export=ALL`.
+In a batch script, `module reload` at the top is enough for the batch step and the `srun` steps it starts: on a zen4 node, a job from a zen2 login node with `EESSI/2026.06` and `GSL/2.8-GCC-15.2.0` loaded went from `x86_64/amd/zen2` to `x86_64/amd/zen4` on `module reload`, because the EESSI module runs archdetect again.
+The guard is for what no script covers: `srun ./a.out` from a login shell or an `salloc` shell that loaded EESSI, and batch scripts whose authors do not know to reload.
+
+Measured on a Slurm 26.05.5 cluster with EESSI 2026.06 and `GSL/2.8-GCC-15.2.0` loaded on a zen2 login node, run on a zen4 node ([the how-to](docs/orgmode/howto/use-as-a-user-task-prolog.org) has all four cases):
+
+| How the task started | `EESSI_SOFTWARE_SUBDIR` in the task |
+|---|---|
+| `srun` on a zen4 partition, no guard | `x86_64/amd/zen2` |
+| `srun` on a zen4 partition, guard as task prolog | `x86_64/amd/zen4` |
+
+The guard runs once per task, so its own cost is per rank.
+`tests/measure_noop.py`, 50 runs on one x86_64 workstation with the test stub for `eessi_archdetect.sh`, the case where nothing needs reloading; wall time per process, not a production-node measurement:
+
+| | cold, archdetect each run | warm, cached for the job step |
+|---|---|---|
+| Python prolog (`src/eessi_arch_guard.py`) | 46.3 ms | 37.8 ms |
+| Zig binary, ReleaseSafe | 3.5 ms | 0.17 ms |
+
+Python's own start-up is 5.6 ms of that (`python3 -I -c pass`).
+At those times, 192 ranks on a node start the Python prolog 192 times, about 7 s of process time per step, against about 0.03 s for the binary.
+
 Documentation: <https://stackhands.github.io/eessi-arch-guard/>, built from the Org pages in `docs/orgmode/`: a tutorial, how-to guides, explanation, and a reference, including the API generated from the Python and Zig code.
 
 ```console
@@ -21,7 +46,17 @@ Release archives include bash and zsh completion files plus a man page generated
 
 ## Install the prolog
 
-The prolog target is `src/eessi_arch_guard.py` (shebang `#!/usr/bin/python3 -I`). Python 3.9 or newer, standard library only.
+Install the static binary from a [release](https://github.com/stackhands/eessi-arch-guard/releases). It runs once per task, and starts in about 3.5 ms where the Python file takes about 46 ms ([When you need it](#when-you-need-it-and-when-you-do-not)).
+
+```bash
+v=0.2.0 arch=x86_64   # or aarch64
+curl -LO "https://github.com/stackhands/eessi-arch-guard/releases/download/v${v}/eessi-arch-guard-${v}-${arch}-linux-musl"
+curl -LO "https://github.com/stackhands/eessi-arch-guard/releases/download/v${v}/SHA256SUMS"
+sha256sum --check --ignore-missing SHA256SUMS
+sudo install -m 755 "eessi-arch-guard-${v}-${arch}-linux-musl" /usr/local/sbin/eessi-arch-guard
+```
+
+Without a binary for your architecture, install `src/eessi_arch_guard.py` instead (shebang `#!/usr/bin/python3 -I`, Python 3.9 or newer, standard library only); it has the same interface ([COMPAT.md](COMPAT.md)).
 
 ```bash
 sudo install -m 755 src/eessi_arch_guard.py /usr/local/sbin/eessi-arch-guard
@@ -80,12 +115,12 @@ eessi-arch-guard is one of the [stackhands](https://github.com/stackhands) tools
 
 | Tool | Job | Docs |
 |---|---|---|
-| [eb-pipeline](https://github.com/stackhands/eb-pipeline) | Run a site's EasyBuild build lists from one TOML file through eb-stack, eb-keep-logs and eb-staged-rebuild | [README](https://github.com/stackhands/eb-pipeline#readme) |
-| [eb-stack](https://github.com/stackhands/eb-stack) | Solve, shard and plan an EasyBuild build list; admit builds under a scratch inode budget | [docs](https://eb-stack.rgoswami.me/) |
-| [eb-staged-rebuild](https://github.com/stackhands/eb-staged-rebuild) | Rebuild an installation in a staged tree and swap it in, so running jobs keep their paths | [docs](https://stackhands.github.io/eb-staged-rebuild/) |
-| **eessi-arch-guard** | Reload EESSI in a Slurm task that inherited it for another CPU or GPU | [docs](https://stackhands.github.io/eessi-arch-guard/) |
-| [eb-local](https://github.com/stackhands/eb-local) | Install software with EasyBuild on top of EESSI into a directory a user or project owns | [docs](https://stackhands.github.io/eb-local/) |
-| [eb-keep-logs](https://github.com/stackhands/eb-keep-logs) | Keep a failed build's EasyBuild log and command output; rotate a pipeline's log tree | [docs](https://stackhands.github.io/eb-keep-logs/) |
+| [eb-stack](https://github.com/stackhands/eb-stack) | Turn conda-forge, Spack, PyPI, CRAN and Cargo recipes into easyconfigs; solve, shard and plan an EasyBuild build list | [docs](https://eb-stack.rgoswami.me/) |
+| [eb-staged-rebuild](https://github.com/stackhands/eb-staged-rebuild) | Rebuild an installation beside the live one and swap it in, for a stack outside CernVM-FS that jobs read during the rebuild | [docs](https://stackhands.github.io/eb-staged-rebuild/) |
+| **eessi-arch-guard** | Reload EESSI in a Slurm task that inherited a stack loaded for another CPU or GPU, as srun from a login shell does | [docs](https://stackhands.github.io/eessi-arch-guard/) |
+| [eb-local](https://github.com/stackhands/eb-local) | Build on EESSI-extend inside a Slurm job's node-local disk, compile your own code with RPATH, list and uninstall per CPU target | [docs](https://stackhands.github.io/eb-local/) |
+| [eb-keep-logs](https://github.com/stackhands/eb-keep-logs) | Keep a failed EasyBuild command's own output, which --tmp-logdir does not; rotate a pipeline's log tree | [docs](https://stackhands.github.io/eb-keep-logs/) |
+| [eb-pipeline](https://github.com/stackhands/eb-pipeline) | Drive a site's EasyBuild builds from one site file, through eb-stack, eb-staged-rebuild and eb-keep-logs | [docs](https://stackhands.github.io/eb-pipeline/) |
 | [rfc9162](https://github.com/stackhands/rfc9162) | Append-only Merkle logs hashed as RFC 9162, with tiled storage and signed checkpoints | [docs](https://stackhands.github.io/rfc9162/) |
 | [zig-common](https://github.com/stackhands/zig-common) | The shared Zig library under the Zig tools: system calls, checked files, child processes | [docs](https://stackhands.github.io/zig-common/) |
 <!-- stackhands:end -->

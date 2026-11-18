@@ -375,6 +375,118 @@ class CheckSubmitTests(unittest.TestCase):
             finally:
                 subprocess.check_call(["sudo", "rm", "-f", str(conf)])
 
+    def test_check_submit_warns_on_dangling_config_symlink(self) -> None:
+        conf = harness.PROGRAM.with_name("eessi-arch-guard.conf")
+        conf.unlink(missing_ok=True)
+        conf.symlink_to("missing-site-config.conf")
+        try:
+            env = {
+                "PATH": "/usr/bin:/bin",
+                "HOME": "/tmp",
+                "LANG": "C",
+                "LC_ALL": "C",
+            }
+            proc = subprocess.run(
+                [
+                    *harness.GUARD_ARGV,
+                    "--check-submit",
+                    "--partition",
+                    "cpu",
+                ],
+                capture_output=True,
+                text=True,
+                env=env,
+                check=False,
+            )
+            self.assertEqual(proc.returncode, 2)
+            self.assertIn("config ignored:", proc.stderr)
+            self.assertIn("is a symlink and is ignored", proc.stderr)
+            self.assertTrue(
+                "site config has no submit_target.partition.cpu mapping" in proc.stderr
+                or "site config has no submit target mappings" in proc.stderr
+            )
+        finally:
+            conf.unlink(missing_ok=True)
+
+    def test_cli_respects_tmpdir_strips_startup_vars_and_deduplicates_inventory(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            prefix = root / "prefix"
+            modules = prefix / "software" / "linux" / ZEN4 / "modules" / "all"
+            (modules / "R").mkdir(parents=True)
+            (modules / "R" / "4.4.2").write_text("#%Module\n", encoding="utf-8")
+            (modules / "R" / "4.4.2.lua").write_text("-- module\n", encoding="utf-8")
+            custom_tmp = root / "custom-tmp"
+            custom_tmp.mkdir()
+            env_log = root / "eb-stack-env.json"
+            fake = root / "eb-stack"
+            fake.write_text(
+                f"""#!/usr/bin/python3
+import json, os, sys
+args = sys.argv[1:]
+ea = args[args.index("--easystack") + 1]
+inst = args[args.index("--installed") + 1]
+with open({str(env_log)!r}, "w", encoding="utf-8") as handle:
+    json.dump({{
+        "easystack_dir": os.path.dirname(ea),
+        "startup": {{
+            k: os.environ[k]
+            for k in ("BASH_ENV", "ENV", "SHELLOPTS", "BASHOPTS", "BASH_XTRACEFD", "PS4")
+            if k in os.environ
+        }},
+        "installed": open(inst, encoding="utf-8").read().splitlines(),
+    }}, handle)
+""",
+                encoding="utf-8",
+            )
+            fake.chmod(fake.stat().st_mode | stat.S_IXUSR)
+            conf = harness.PROGRAM.with_name("eessi-arch-guard.conf")
+            conf.write_text(
+                "submit_target.partition.cpu = %s\n" % ZEN4,
+                encoding="utf-8",
+            )
+            subprocess.check_call(["sudo", "chown", "root:root", str(conf)])
+            subprocess.check_call(["sudo", "chmod", "644", str(conf)])
+            try:
+                env = {
+                    "PATH": "/usr/bin:/bin",
+                    "HOME": "/tmp",
+                    "TMPDIR": str(custom_tmp),
+                    "BASH_ENV": "/nonexistent/bash_env",
+                    "ENV": "/nonexistent/env",
+                    "SHELLOPTS": "errexit",
+                    "BASHOPTS": "cmdhist",
+                    "BASH_XTRACEFD": "9",
+                    "PS4": "+ ",
+                    "LANG": "C",
+                    "LC_ALL": "C",
+                    "EESSI_PREFIX": str(prefix),
+                    "EESSI_OS_TYPE": "linux",
+                    "LOADEDMODULES": "EESSI/2025.06:R/4.4.2",
+                }
+                proc = subprocess.run(
+                    [
+                        *harness.GUARD_ARGV,
+                        "--check-submit",
+                        "--partition",
+                        "cpu",
+                        "--eb-stack",
+                        str(fake),
+                    ],
+                    capture_output=True,
+                    text=True,
+                    env=env,
+                    check=False,
+                )
+                self.assertEqual(proc.returncode, 0, proc.stderr)
+                recorded = json.loads(env_log.read_text(encoding="utf-8"))
+                self.assertEqual(Path(recorded["easystack_dir"]).parent, custom_tmp)
+                self.assertEqual(recorded["startup"], {})
+                self.assertEqual(len(recorded["installed"]), 1)
+                self.assertFalse(Path(recorded["easystack_dir"]).exists())
+            finally:
+                subprocess.check_call(["sudo", "rm", "-f", str(conf)])
+
 
     def test_cli_counts_a_module_from_the_users_eessi_extend_tree(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

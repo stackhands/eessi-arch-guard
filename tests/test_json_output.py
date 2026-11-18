@@ -13,6 +13,7 @@ import harness
 ROOT = Path(__file__).resolve().parents[1]
 SCHEMA_DIR = ROOT / "docs" / "orgmode" / "reference" / "json"
 DECISION_SCHEMA = SCHEMA_DIR / "decision.schema.json"
+DRY_RUN_SCHEMA = SCHEMA_DIR / "dry-run.schema.json"
 RESTORE_SCHEMA = SCHEMA_DIR / "restore-reply.schema.json"
 ZEN2 = "x86_64/amd/zen2"
 ZEN4 = "x86_64/amd/zen4"
@@ -35,6 +36,7 @@ class JsonOutputTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.decision_validator = _validator(DECISION_SCHEMA)
+        cls.dry_run_validator = _validator(DRY_RUN_SCHEMA)
         cls.restore_validator = _validator(RESTORE_SCHEMA)
 
     def run_guard(self, env, *flags):
@@ -91,6 +93,30 @@ class JsonOutputTests(unittest.TestCase):
             self.assertTrue(doc["reload_needed"])
             self.assertEqual(doc["exit"], 78)
             self.assertEqual(doc["exit_semantic"], "strict-failure")
+        finally:
+            site.close()
+
+    def test_dry_run_json_validates(self):
+        site = harness.Site()
+        try:
+            site.add_cpu(ZEN2)
+            site.add_cpu(ZEN4)
+            site.write_cpuinfo("zen2")
+            site.add_module(ZEN4, "R/4.4.2")
+            site.add_module(ZEN2, "R/4.4.2")
+            env = harness.base_env(site, ZEN4, ["R/4.4.2"], gpu="none")
+            proc = self.run_guard(env, "--dry-run", "--json")
+            self.assertEqual(proc.returncode, 0, proc.stderr.decode())
+            doc = json.loads(proc.stdout)
+            self.dry_run_validator.validate(doc)
+            self.assertEqual(doc["kind"], "decision")
+            self.assertEqual(doc["mode"], "prolog")
+            self.assertFalse(doc["shell"])
+            self.assertIn("config", doc)
+            self.assertIn("chain", doc)
+            self.assertIn("cache", doc)
+            self.assertIn("syslog", doc)
+            self.assertEqual(doc["schema_version"], 1)
         finally:
             site.close()
 

@@ -42,7 +42,7 @@ On this page an absolute path starts with =/=, has no =..= part, and holds no ne
 | =EESSI_ARCH_GUARD=0=                | The guard does nothing. It has to be set in the environment the job is submitted from: on Slurm 23.11.4, =srun --export=ALL,EESSI_ARCH_GUARD=0= left a value of =1= that was already set. Any other value leaves the guard on. |
 | =EESSI_ARCH_GUARD_MISSING=ignore=   | When no CPU candidate has a software directory, the guard does nothing instead of failing.                                                                                                                                     |
 | =EESSI_ARCH_GUARD_VERBOSE=1=        | The guard writes to stderr why it did nothing, or the error of a failed reload. Slurm discards a =TaskProlog='s stderr; run the guard by hand in the task to read it.                                                          |
-| =EESSI_SOFTWARE_SUBDIR_OVERRIDE=    | Set when the guard starts, the guard does nothing: the CPU target is pinned. A reload that pins the target sets it, as described in [[file:../explanation/how-it-decides.org][How the guard decides]].                                                                     |
+| =EESSI_SOFTWARE_SUBDIR_OVERRIDE=    | Set to a safe relative target when the guard starts, the guard does nothing: the CPU target is pinned. A reload that pins the target sets it, as described in [[file:../explanation/how-it-decides.org][How the guard decides]]. Unsafe values are ignored.   |
 | =EESSI_ARCHDETECT_OPTIONS_OVERRIDE= | Set, the guard does nothing: the detection is pinned.                                                                                                                                                                          |
 | =EESSI_ACCELERATOR_TARGET_OVERRIDE= | Set, the guard does not compare the accelerator and does not run =eessi_archdetect.sh accelpath=; it still compares the CPU.                                                                                                   |
 | =EESSI_ARCH_GUARD_WORKDIR=          | The restore workspace: an existing directory of the job's user with no group or other permission bits. Set to anything else, every reload fails with =restore-failed=.                                                         |
@@ -50,7 +50,7 @@ On this page an absolute path starts with =/=, has no =..= part, and holds no ne
 | =EESSI_ARCH_GUARD_SYSLOG_ALL= | Set to =1= to also emit =EESSI_ARCH_SKIP= and =EESSI_ARCH_NOOP= events in addition to reloads and failures. |
 | =EESSI_ARCH_GUARD_SYSLOG_PEN= | Positive decimal IANA Private Enterprise Number for the RFC 5424 =SD-ID= (=archGuard@<PEN>=), replacing =syslog_pen=. Unset or empty, defaults to =32473=, the IANA documentation PEN (RFC 5398 and RFC 5424 section 6.3.2) used as a placeholder until a site or project PEN is assigned. An invalid value writes a warning to stderr and keeps the earlier value. |
 
-An override that is set but empty counts as unset.
+An override that is set but empty counts as unset. =EESSI_SOFTWARE_SUBDIR_OVERRIDE= also counts as unset when its value is not a safe relative target.
 
 The restore workspace is the first of these that applies; the guard creates none of them and changes the mode of none:
 

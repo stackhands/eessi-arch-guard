@@ -1452,7 +1452,8 @@ def decide(
     was = env.get("EESSI_SOFTWARE_SUBDIR", "")
     if not was:
         return Outcome({}, None, "skip", "EESSI is not loaded")
-    if env.get("EESSI_SOFTWARE_SUBDIR_OVERRIDE"):
+    software_override = env.get("EESSI_SOFTWARE_SUBDIR_OVERRIDE", "")
+    if software_override and safe_rel_subdir(software_override):
         return Outcome({}, None, "skip", "EESSI_SOFTWARE_SUBDIR_OVERRIDE is set")
     if env.get("EESSI_ARCHDETECT_OPTIONS_OVERRIDE"):
         return Outcome({}, None, "skip", "EESSI_ARCHDETECT_OPTIONS_OVERRIDE is set")
@@ -1522,8 +1523,12 @@ def decide(
             % (now_label, was_label),
         )
 
+    restore_env = env
+    if software_override and not safe_rel_subdir(software_override):
+        restore_env = dict(env)
+        restore_env.pop("EESSI_SOFTWARE_SUBDIR_OVERRIDE", None)
     try:
-        result = restore(env, loaded.eessi, loaded.others, cpu.override)
+        result = restore(restore_env, loaded.eessi, loaded.others, cpu.override)
     except Exception as exc:
         result = _not_run(str(exc))
     if not result.ran:
@@ -2313,7 +2318,7 @@ def _chain_path_ok(path: str) -> bool:
 def _config_candidate_path(script_path: str) -> Optional[str]:
     beside = os.path.join(os.path.dirname(os.path.abspath(script_path)), "eessi-arch-guard.conf")
     for path in ("/etc/eessi-arch-guard.conf", beside):
-        if os.path.exists(path):
+        if os.path.lexists(path):
             return path
     return None
 
@@ -2991,7 +2996,8 @@ def dry_run_decide(
     was = env.get("EESSI_SOFTWARE_SUBDIR", "")
     if not was:
         return DryRunDecision("skip", detail="EESSI is not loaded")
-    if env.get("EESSI_SOFTWARE_SUBDIR_OVERRIDE"):
+    software_override = env.get("EESSI_SOFTWARE_SUBDIR_OVERRIDE", "")
+    if software_override and safe_rel_subdir(software_override):
         return DryRunDecision("skip", was_cpu=was, detail="EESSI_SOFTWARE_SUBDIR_OVERRIDE is set")
     if env.get("EESSI_ARCHDETECT_OPTIONS_OVERRIDE"):
         return DryRunDecision(

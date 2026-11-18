@@ -1,0 +1,123 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://stackhands.github.io/eessi-arch-guard/reference/json/dry-run.schema.json",
+  "title": "eessi-arch-guard --dry-run --json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "announce",
+    "cache",
+    "cached",
+    "cause",
+    "chain",
+    "compare_accel",
+    "config",
+    "decision",
+    "detail",
+    "eessi",
+    "exit",
+    "exit_semantic",
+    "job",
+    "kind",
+    "marker",
+    "message",
+    "mode",
+    "modules",
+    "now",
+    "now_accel",
+    "pin",
+    "reload_needed",
+    "schema_version",
+    "shell",
+    "strict",
+    "syslog",
+    "timeout",
+    "was",
+    "was_accel"
+  ],
+  "properties": {
+    "announce": { "type": "boolean" },
+    "cache": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "hit", "cached_kind"],
+      "properties": {
+        "path": { "type": ["string", "null"] },
+        "hit": { "type": "boolean" },
+        "cached_kind": {
+          "type": ["string", "null"],
+          "enum": ["skip", "noop", "reloaded", "failed", null]
+        }
+      }
+    },
+    "cached": { "type": "boolean" },
+    "cause": { "type": ["string", "null"] },
+    "chain": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "source", "status"],
+      "properties": {
+        "path": { "type": ["string", "null"] },
+        "source": { "type": "string", "enum": ["none", "config", "cli"] },
+        "status": { "type": "string", "enum": ["none", "skipped", "valid", "invalid"] }
+      }
+    },
+    "compare_accel": { "type": "boolean" },
+    "config": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "status", "warning"],
+      "properties": {
+        "path": { "type": ["string", "null"] },
+        "status": { "type": "string", "enum": ["none", "loaded", "ignored"] },
+        "warning": { "type": ["string", "null"] }
+      }
+    },
+    "decision": { "type": "string", "enum": ["skip", "noop", "reloaded", "failed"] },
+    "detail": { "type": ["string", "null"] },
+    "eessi": { "type": ["string", "null"] },
+    "exit": { "type": "integer", "minimum": 0, "maximum": 255 },
+    "exit_semantic": {
+      "type": "string",
+      "enum": ["ok", "strict-failure", "restore-failed"]
+    },
+    "job": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "step", "localid"],
+      "properties": {
+        "id": { "type": ["string", "null"] },
+        "step": { "type": ["string", "null"] },
+        "localid": { "type": ["string", "null"] }
+      }
+    },
+    "kind": { "type": "string", "const": "decision" },
+    "marker": { "type": ["string", "null"] },
+    "message": { "type": ["string", "null"] },
+    "mode": { "type": "string", "enum": ["prolog", "shell"] },
+    "modules": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "now": { "type": ["string", "null"] },
+    "now_accel": { "type": ["string", "null"] },
+    "pin": { "type": ["string", "null"] },
+    "reload_needed": { "type": "boolean" },
+    "schema_version": { "type": "integer", "const": 1 },
+    "shell": { "type": "boolean" },
+    "strict": { "type": "boolean" },
+    "syslog": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["target", "all", "pen"],
+      "properties": {
+        "target": { "type": ["string", "null"] },
+        "all": { "type": "boolean" },
+        "pen": { "type": "string" }
+      }
+    },
+    "timeout": { "type": "number", "exclusiveMinimum": 0 },
+    "was": { "type": ["string", "null"] },
+    "was_accel": { "type": ["string", "null"] }
+  }
+}

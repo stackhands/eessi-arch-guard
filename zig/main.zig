@@ -392,7 +392,7 @@ fn configUntrusted(arena: Allocator, path: []const u8) ?[]const u8 {
 }
 
 fn exists(path: []const u8) bool {
-    _ = fsx.statAt(fsx.cwd, path, true) catch return false;
+    _ = fsx.statAt(fsx.cwd, path, false) catch return false;
     return true;
 }
 
@@ -796,10 +796,7 @@ fn submitTarget(arena: Allocator, settings: ?Settings, partition: []const u8, co
         why.* = "--constraint needs one safe constraint name";
         return null;
     }
-    const s = settings orelse {
-        why.* = "site config has no submit target mappings";
-        return null;
-    };
+    const s: Settings = settings orelse .empty;
     const part_key = arena.print("submit_target.partition.{s}", .{partition}) catch oom();
     const target = s.get(part_key) orelse {
         why.* = arena.print("site config has no {s} mapping", .{part_key}) catch part_key;
@@ -839,13 +836,38 @@ fn findExecutable(arena: Allocator, env: envmap.Map, selected: []const u8) ?[]co
     return null;
 }
 
-fn submitWorkDir(arena: Allocator) ?[]const u8 {
+fn submitWritableDir(p: []const u8) bool {
+    const st = fsx.statAt(fsx.cwd, p, true) catch return false;
+    if (!st.isDir()) return false;
+    var zb: [sys.path_max:0]u8 = undefined;
+    const z = sys.z(&zb, p) catch return false;
+    return linux.errno(linux.faccessat(linux.AT.FDCWD, z.ptr, linux.W_OK | linux.X_OK, 0)) == .SUCCESS;
+}
+
+fn submitAbsolutize(arena: Allocator, p: []const u8) []const u8 {
+    if (p.len > 0 and p[0] == '/') return p;
+    var rb: [sys.path_max]u8 = undefined;
+    const cwd = fsx.realpath(fsx.cwd, ".", &rb) catch return p;
+    return std.fs.path.join(arena, &.{ cwd, p }) catch p;
+}
+
+fn submitTempDir(arena: Allocator, env: envmap.Map) []const u8 {
+    for ([_][]const u8{ "TMPDIR", "TEMP", "TMP" }) |k| {
+        const v = env.get(k) orelse continue;
+        if (v.len > 0 and submitWritableDir(v)) return submitAbsolutize(arena, v);
+    }
+    for ([_][]const u8{ "/tmp", "/var/tmp", "/usr/tmp" }) |d| if (submitWritableDir(d)) return d;
+    return submitAbsolutize(arena, ".");
+}
+
+fn submitWorkDir(arena: Allocator, env: envmap.Map) ?[]const u8 {
+    const base = submitTempDir(arena, env);
     var tries: usize = 0;
     while (tries < 100) : (tries += 1) {
         var random: [8]u8 = undefined;
         _ = sys.call(linux.getrandom, .{ &random, random.len, 0 }) catch return null;
         const name = std.fmt.bytesToHex(random, .lower);
-        const path = arena.print("/tmp/eessi-arch-guard-submit-{s}", .{name}) catch return null;
+        const path = std.fs.path.join(arena, &.{ base, arena.print("eessi-arch-guard-submit-{s}", .{name}) catch return null }) catch return null;
         var buf: [sys.path_max:0]u8 = undefined;
         const z = sys.z(&buf, path) catch return null;
         switch (linux.errno(linux.mkdirat(linux.AT.FDCWD, z.ptr, 0o700))) {
@@ -942,6 +964,13 @@ fn inventoryModules(arena: Allocator, root: []const u8) []const []const u8 {
             return std.mem.order(u8, a, b) == .lt;
         }
     }.less);
+    var write_idx: usize = 0;
+    for (found.items) |item| {
+        if (write_idx > 0 and std.mem.eql(u8, found.items[write_idx - 1], item)) continue;
+        found.items[write_idx] = item;
+        write_idx += 1;
+    }
+    found.shrinkRetainingCapacity(write_idx);
     return found.items;
 }
 
@@ -1090,7 +1119,7 @@ fn checkSubmit(arena: Allocator, args: Args, env: envmap.Map, settings: ?Setting
         }
     }.less);
     const installed = all_found.items;
-    const work = submitWorkDir(arena) orelse {
+    const work = submitWorkDir(arena, env) orelse {
         const reason = "could not create temporary input directory";
         const line = "eessi-arch-guard: check-submit: " ++ reason;
         return finishCheckSubmit(arena, args, partition, constraint, 2, target, @intCast(loaded.len), &.{}, reason, &.{line});
@@ -1109,7 +1138,12 @@ fn checkSubmit(arena: Allocator, args: Args, env: envmap.Map, settings: ?Setting
         const line = "eessi-arch-guard: check-submit: " ++ reason;
         return finishCheckSubmit(arena, args, partition, constraint, 2, target, @intCast(loaded.len), &.{}, reason, &.{line});
     }
-    const child_env = envmap.toEnvp(arena, env) catch {
+    const clean_env = envmap.stripStartup(arena, env) catch {
+        const reason = "could not prepare eb-stack environment";
+        const line = "eessi-arch-guard: check-submit: " ++ reason;
+        return finishCheckSubmit(arena, args, partition, constraint, 2, target, @intCast(loaded.len), &.{}, reason, &.{line});
+    };
+    const child_env = envmap.toEnvp(arena, clean_env) catch {
         const reason = "could not prepare eb-stack environment";
         const line = "eessi-arch-guard: check-submit: " ++ reason;
         return finishCheckSubmit(arena, args, partition, constraint, 2, target, @intCast(loaded.len), &.{}, reason, &.{line});
@@ -1423,6 +1457,25 @@ test "renderCheckSubmitJson is schema_version 1" {
         "{\"constraint\": null, \"exit\": 2, \"exit_semantic\": \"invalid\", \"kind\": \"check-submit\", \"loaded\": null, \"message\": \"--partition needs one safe partition name\", \"missing\": [], \"partition\": null, \"schema_version\": 1, \"target\": null}\n",
         invalid,
     );
+}
+
+test "inventoryModules deduplicates .lua and non-.lua module entries" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const a = arena_state.allocator();
+    const env: envmap.Map = .empty;
+    const work = submitWorkDir(a, env).?;
+    defer fsx.deleteTree(a, fsx.cwd, work) catch {};
+    const mod_dir = try std.fs.path.join(a, &.{ work, "R" });
+    var zb: [sys.path_max:0]u8 = undefined;
+    _ = linux.mkdirat(linux.AT.FDCWD, (try sys.z(&zb, mod_dir)).ptr, 0o755);
+    for ([_][]const u8{ "4.4.2", "4.4.2.lua" }) |name| {
+        const p = try std.fs.path.join(a, &.{ mod_dir, name });
+        try std.testing.expect(writeSubmitFile(p, "-- mod\n"));
+    }
+    const items = inventoryModules(a, work);
+    try std.testing.expectEqual(@as(usize, 1), items.len);
+    try std.testing.expectEqualStrings("R/4.4.2", items[0]);
 }
 
 test "renderDryRunText and renderDryRunJson format a decision summary" {
