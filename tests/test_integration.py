@@ -1666,3 +1666,36 @@ class IntegrationTests(unittest.TestCase):
             self.assertEqual(zig_proc.returncode, py_proc.returncode, args)
             self.assertEqual(zig_proc.stderr, py_proc.stderr, args)
             self.assertEqual(zig_proc.stdout, py_proc.stdout, args)
+
+    def test_dangling_config_symlink_is_ignored_in_prolog_and_dry_run(self):
+        prog_dir = os.path.join(self.site.root, "dangling-cfg")
+        os.makedirs(prog_dir)
+        program = os.path.join(prog_dir, "eessi-arch-guard")
+        if harness.TOOL_BIN:
+            shutil.copy(harness.PROGRAM, program)
+        else:
+            body = harness.GUARD.read_text(encoding="utf-8").split("\n", 1)[1]
+            with open(program, "w", encoding="utf-8") as handle:
+                handle.write("#!%s -I\n%s" % (sys.executable, body))
+        os.chmod(program, 0o755)
+        conf = os.path.join(prog_dir, "eessi-arch-guard.conf")
+        os.symlink("missing-target.conf", conf)
+
+        env = {"PATH": "/usr/bin:/bin", "LC_ALL": "C"}
+        prolog = subprocess.run([program], capture_output=True, text=True, env=env, check=False)
+        self.assertEqual(prolog.returncode, 0)
+        self.assertEqual(prolog.stdout, "")
+        self.assertIn("is a symlink and is ignored", prolog.stderr)
+
+        dry = subprocess.run(
+            [program, "--dry-run", "--json"],
+            capture_output=True,
+            text=True,
+            env=env,
+            check=False,
+        )
+        self.assertEqual(dry.returncode, 0)
+        doc = json.loads(dry.stdout)
+        self.assertEqual(doc["config"]["status"], "ignored")
+        self.assertEqual(doc["config"]["path"], conf)
+        self.assertIn("is a symlink and is ignored", doc["config"]["warning"])

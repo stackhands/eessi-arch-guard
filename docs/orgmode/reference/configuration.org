@@ -15,7 +15,7 @@
 
 - The directory of the program is that of the path Python ran the file by, or the Zig build was started by, without following a symbolic link: started by name through =PATH=, the directory in which =PATH= found it.
   A guard installed with =pip= reads the one beside the module in =site-packages=.
-- A symbolic link at =/etc/eessi-arch-guard.conf= that points nowhere counts as no file.
+- A symbolic link at =/etc/eessi-arch-guard.conf= (even one whose target is missing) counts as an existing candidate, is ignored with =is a symlink and is ignored=, and does not fall through to the beside-program file.
 - The first file that exists is the only one read, even when it is ignored.
 
 A file is used only when it is:
