@@ -48,4 +48,4 @@ This reads text. It does not remount, and it does not change a repository.
 ** Related
 
 - [[file:use-in-a-batch-script.org][Run the guard in a batch script]], for a job that should see the revision this node has
-- [[https://cvmfs.readthedocs.io/en/stable/cpt-configure.html][CVMFS client configuration]], for =cvmfs_config stat=
+- [[https://cvmfs.readthedocs.io/en/stable/cpt-configure/][CVMFS client configuration]], for =cvmfs_config stat=
