@@ -467,6 +467,59 @@ class CheckSubmitTests(unittest.TestCase):
         self.assertIn("R/4.4.2", payload["message"] or "")
         self.assertIn("R/4.4.2", stderr.getvalue())
 
+    def test_duplicate_or_malformed_eessi_loaded_modules_are_invalid(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            prefix = root / "prefix"
+            (prefix / "software" / "linux" / ZEN4 / "modules" / "all" / "R").mkdir(parents=True)
+            module_file = (
+                prefix
+                / "software"
+                / "linux"
+                / ZEN4
+                / "modules"
+                / "all"
+                / "R"
+                / "4.4.2.lua"
+            )
+            module_file.write_text("--\n", encoding="utf-8")
+            fake = _fake_eb_stack(root)
+            for loaded_mods, expected in (
+                ("EESSI/2025.06:EESSI/2025.06:R/4.4.2", "duplicate module entry: EESSI/2025.06"),
+                ("EESSI/2025.06:EESSI/2026.06:R/4.4.2", "invalid EESSI module entry"),
+                ("EESSI/2025.06/extra:R/4.4.2", "invalid EESSI module entry"),
+            ):
+                with self.subTest(loaded_mods=loaded_mods):
+                    proc = subprocess.run(
+                        [
+                            *harness.GUARD_ARGV,
+                            "--check-submit",
+                            "--json",
+                            "--target",
+                            ZEN4,
+                            "--eb-stack",
+                            str(fake),
+                        ],
+                        capture_output=True,
+                        text=True,
+                        env={
+                            "PATH": "/usr/bin:/bin",
+                            "HOME": str(root / "home"),
+                            "LANG": "C",
+                            "LC_ALL": "C",
+                            "EESSI_PREFIX": str(prefix),
+                            "EESSI_OS_TYPE": "linux",
+                            "LOADEDMODULES": loaded_mods,
+                            "EESSI_TEST_EB_STACK_LOG": str(root / "eb-stack.log"),
+                        },
+                        check=False,
+                    )
+                    self.assertEqual(proc.returncode, 2, proc.stdout + proc.stderr)
+                    payload = json.loads(proc.stdout)
+                    self.assertEqual(payload["exit_semantic"], "invalid")
+                    self.assertIn(expected, payload["message"] or "")
+                    self.assertIn(expected, proc.stderr)
+
     def test_cli_json_uses_eb_stack_and_matches_the_schema(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
