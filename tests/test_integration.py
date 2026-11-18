@@ -1281,6 +1281,43 @@ class IntegrationTests(unittest.TestCase):
         self.assertEqual(proc.returncode, 0, proc.stderr)
         self.assertEqual(proc.stdout, "", proc.stdout)
 
+    def test_scoped_cpuinfo_uses_tmpdir(self):
+        spr = "x86_64/intel/sapphirerapids"
+        self.site.add_cpu(spr)
+        self.site.add_module(spr, "R/4.4.2")
+        cpuinfo = "\n".join(
+            (
+                "processor : 0",
+                "vendor_id : GenuineIntel",
+                "flags : avx2 fma",
+                "",
+                "processor : 1",
+                "vendor_id : GenuineIntel",
+                "flags : avx2 fma avx512f waitpkg",
+                "",
+            )
+        )
+        with open(self.site.cpuinfo, "w", encoding="ascii") as handle:
+            handle.write(cpuinfo)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            seen_file = Path(tmpdir) / "seen.txt"
+            script = Path(self.site.init) / "eessi_archdetect.sh"
+            original = script.read_text(encoding="utf-8")
+            script.write_text(
+                f"#!/bin/bash\nprintf '%s\\n' \"$EESSI_PROC_CPUINFO\" > {seen_file}\n"
+                + original.split("\n", 1)[1],
+                encoding="utf-8",
+            )
+            env = harness.base_env(self.site, spr, ["R/4.4.2"], gpu="none")
+            env["TMPDIR"] = tmpdir
+            env["SLURM_CPU_BIND_LIST"] = "cpu[1]"
+            proc = harness.run_guard(env)
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            seen = seen_file.read_text(encoding="utf-8").strip()
+            self.assertEqual(Path(seen).parent, Path(tmpdir), seen)
+            self.assertTrue(Path(seen).name.startswith("eessi-arch-guard-cpu-"), seen)
+            self.assertFalse(Path(seen).exists())
+
     def test_cache_does_not_reuse_a_decision_for_another_cpu_bind(self):
         # The noop for cpu[1] must not be replayed for a task in the same
         # job whose bind list is cpu[0].
