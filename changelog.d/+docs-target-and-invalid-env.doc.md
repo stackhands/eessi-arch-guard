@@ -1,0 +1,1 @@
+Document `--check-submit --target` in `cli.org` and `explanation/pre-submit-checks.org`, add `invalid-environment` to `failures.org`, and add `--check-submit --json` exit statuses to `json-output.org`.
