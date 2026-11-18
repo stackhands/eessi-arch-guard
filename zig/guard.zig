@@ -1396,6 +1396,36 @@ fn nonEmpty(env: Map, k: []const u8) bool {
     return (env.get(k) orelse empty).len > 0;
 }
 
+fn softwareRoot(c: *Ctx, env: Map) ?[]const u8 {
+    const prefix = env.get("EESSI_PREFIX") orelse empty;
+    const os_type = env.get("EESSI_OS_TYPE") orelse empty;
+    if (!text.safeAbsolute(prefix) or !text.safeRelSubdir(os_type)) return null;
+    const root = std.fs.path.join(c.arena, &.{ prefix, "software", os_type }) catch return null;
+    if (!isDir(root)) return null;
+    return root;
+}
+
+fn invalidGuardEnvironment(c: *Ctx, env: Map) ?[]const u8 {
+    const override = env.get("EESSI_SOFTWARE_SUBDIR_OVERRIDE") orelse empty;
+    if (override.len > 0) {
+        if (!std.mem.eql(u8, text.pyStrip(override), override) or std.mem.endsWith(u8, override, "/"))
+            return fmt(c, "EESSI_SOFTWARE_SUBDIR_OVERRIDE is not a safe subdirectory: {s}", .{override});
+        if (text.safeRelSubdir(override)) {
+            if (softwareRoot(c, env)) |root| {
+                const target = std.fs.path.join(c.arena, &.{ root, override, "software" }) catch return "out of memory";
+                if (!isDir(target))
+                    return fmt(c, "EESSI_SOFTWARE_SUBDIR_OVERRIDE is not an installed target: {s}", .{override});
+            }
+        }
+    }
+    const accel = env.get("EESSI_ACCEL_SUBDIR") orelse empty;
+    if (accel.len > 0) {
+        if (!std.mem.eql(u8, text.pyStrip(accel), accel) or !text.accelSubdir(accel))
+            return fmt(c, "EESSI_ACCEL_SUBDIR is not a valid accelerator subdirectory: {s}", .{accel});
+    }
+    return null;
+}
+
 /// decide: compare the loaded targets with this node's and, when they
 /// differ, reload the modules through the restore helper and return the
 /// delta. `shell` selects the --shell output, whose values may span lines.
@@ -1407,6 +1437,8 @@ pub fn decide(c: *Ctx, env: Map, shell: bool) Stop!Outcome {
     const was = env.get("EESSI_SOFTWARE_SUBDIR") orelse empty;
     if (was.len == 0) return .{ .kind = .skip, .detail = "EESSI is not loaded" };
     const software_override = env.get("EESSI_SOFTWARE_SUBDIR_OVERRIDE") orelse empty;
+    if (invalidGuardEnvironment(c, env)) |invalid|
+        return failed(c, was, "invalid-environment", fmt(c, "eessi-arch-guard: {s}; environment left as it was", .{invalid}), null);
     if (software_override.len > 0 and text.safeRelSubdir(software_override))
         return .{ .kind = .skip, .detail = "EESSI_SOFTWARE_SUBDIR_OVERRIDE is set" };
     if (nonEmpty(env, "EESSI_ARCHDETECT_OPTIONS_OVERRIDE")) return .{ .kind = .skip, .detail = "EESSI_ARCHDETECT_OPTIONS_OVERRIDE is set" };
@@ -1845,6 +1877,8 @@ pub fn dryRunDecide(c: *Ctx, env: Map) Stop!DryRunDecision {
     const was = env.get("EESSI_SOFTWARE_SUBDIR") orelse empty;
     if (was.len == 0) return .{ .kind = .skip, .detail = "EESSI is not loaded" };
     const software_override = env.get("EESSI_SOFTWARE_SUBDIR_OVERRIDE") orelse empty;
+    if (invalidGuardEnvironment(c, env)) |invalid|
+        return dryRunFailed(c, was, "", "", "", true, "", "", &.{}, was, "invalid-environment", fmt(c, "eessi-arch-guard: {s}; environment left as it was", .{invalid}));
     if (software_override.len > 0 and text.safeRelSubdir(software_override))
         return .{ .kind = .skip, .was_cpu = was, .detail = "EESSI_SOFTWARE_SUBDIR_OVERRIDE is set" };
     if (nonEmpty(env, "EESSI_ARCHDETECT_OPTIONS_OVERRIDE"))
