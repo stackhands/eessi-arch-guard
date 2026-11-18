@@ -27,7 +27,7 @@ This check changes nothing. It reads the mount table and =MODULEPATH= and prints
    #+end_src
 
    =--repo= defaults to =EESSI_CVMFS_REPO=, or =/cvmfs/software.eessi.io=.
-   The mount table is =/proc/self/mountinfo=. =MODULEPATH= is the environment's.
+   The mount table is =/proc/self/mountinfo= (overridden by =--mountinfo=). =MODULEPATH= comes from the environment (overridden by =--modulepath=).
    With no =--site= or =--eessi=, the script reads =EESSI_SITE_SOFTWARE_PATH= and =EESSI_SOFTWARE_PATH= and appends =/modules/all= when a value does not already end with that suffix.
    In the shell, an unset =EESSI_SITE_SOFTWARE_PATH= in ="$EESSI_SITE_SOFTWARE_PATH/modules/all"= still expands to =/modules/all=, and the check runs against that placeholder unless the variables are set.
    Optional =--require-input= exits 2 instead of treating =/modules/all= alone as a real path.
