@@ -16,7 +16,7 @@ You need it where a task inherits a stack loaded on another node type: `srun` fr
 In a batch script, `module reload` at the top is enough for the batch step and the `srun` steps it starts: on a zen4 node, a job from a zen2 login node with `EESSI/2026.06` and `GSL/2.8-GCC-15.2.0` loaded went from `x86_64/amd/zen2` to `x86_64/amd/zen4` on `module reload`, because the EESSI module runs archdetect again.
 The guard is for what no script covers: `srun ./a.out` from a login shell or an `salloc` shell that loaded EESSI, and batch scripts whose authors do not know to reload.
 
-Measured on a Slurm 26.05.5 cluster with EESSI 2026.06 and `GSL/2.8-GCC-15.2.0` loaded on a zen2 login node, run on a zen4 node ([the how-to](docs/howto/user_task_prolog.md) has all four cases):
+Measured on a Slurm 26.05.5 cluster with EESSI 2026.06 and `GSL/2.8-GCC-15.2.0` loaded on a zen2 login node, run on a zen4 node ([the how-to](docs/orgmode/howto/use-as-a-user-task-prolog.org) has all four cases):
 
 | How the task started | `EESSI_SOFTWARE_SUBDIR` in the task |
 |---|---|
@@ -24,7 +24,7 @@ Measured on a Slurm 26.05.5 cluster with EESSI 2026.06 and `GSL/2.8-GCC-15.2.0` 
 | `srun` on a zen4 partition, guard as task prolog | `x86_64/amd/zen4` |
 
 The guard runs once per task, so its own cost is per rank.
-`tests/measure_noop.py`, 50 runs on one x86_64 host, the case where nothing needs reloading:
+`tests/measure_noop.py`, 50 runs on one x86_64 workstation with the test stub for `eessi_archdetect.sh`, the case where nothing needs reloading; wall time per process, not a production-node measurement:
 
 | | cold, archdetect each run | warm, cached for the job step |
 |---|---|---|
@@ -32,7 +32,7 @@ The guard runs once per task, so its own cost is per rank.
 | Zig binary, ReleaseSafe | 3.5 ms | 0.17 ms |
 
 Python's own start-up is 5.6 ms of that (`python3 -I -c pass`).
-On a 192-rank node the Python prolog spends about 7 s of CPU per step and the binary about 0.03 s.
+At those times, 192 ranks on a node start the Python prolog 192 times, about 7 s of process time per step, against about 0.03 s for the binary.
 
 Documentation: <https://stackhands.github.io/eessi-arch-guard/>, built from the Org pages in `docs/orgmode/`: a tutorial, how-to guides, explanation, and a reference, including the API generated from the Python and Zig code.
 
