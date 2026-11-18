@@ -57,6 +57,14 @@ class JsonOutputTests(unittest.TestCase):
         self.assertEqual(doc["decision"], "skip")
         self.assertEqual(doc["exit_semantic"], "ok")
 
+    def test_empty_software_subdir_emits_null_was(self):
+        proc = self.run_guard({"EESSI_SOFTWARE_SUBDIR": ""}, "--json")
+        self.assertEqual(proc.returncode, 0)
+        doc = json.loads(proc.stdout)
+        self.decision_validator.validate(doc)
+        self.assertEqual(doc["decision"], "skip")
+        self.assertIsNone(doc["was"])
+
     def test_json_on_mismatch_reports_reload(self):
         site = harness.Site()
         try:

@@ -57,7 +57,7 @@ pub fn decisionView(
     shell: bool,
     exit_code: u8,
 ) Allocator.Error!Py {
-    var was = env.get("EESSI_SOFTWARE_SUBDIR");
+    var was: ?[]const u8 = if (env.get("EESSI_SOFTWARE_SUBDIR")) |v| (if (v.len > 0) v else null) else null;
     var now: ?[]const u8 = null;
     var cause: ?[]const u8 = null;
     switch (outcome.kind) {
@@ -116,4 +116,15 @@ pub fn emit(
     const line = jsonline.pythonJsonCommas(a, compact) catch oom();
     cli.put(1, line);
     cli.put(1, "\n");
+}
+
+test "decisionView treats empty EESSI_SOFTWARE_SUBDIR as null" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const a = arena_state.allocator();
+    var env: Map = .empty;
+    try env.put(a, "EESSI_SOFTWARE_SUBDIR", "");
+    const doc = try decisionView(a, .{ .kind = .skip, .detail = "EESSI is not loaded" }, env, false, false, false, 0);
+    const rendered = try json.dumps(a, doc, 0, true);
+    try std.testing.expect(std.mem.find(u8, rendered, "\"was\": null") != null or std.mem.find(u8, rendered, "\"was\":null") != null);
 }
