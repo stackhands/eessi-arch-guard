@@ -4,6 +4,7 @@ const common = @import("zig_common");
 const cli = common.cli;
 const guard = @import("guard.zig");
 const envmap = @import("envmap.zig");
+const jsonline = @import("jsonline.zig");
 
 const json = common.json;
 const Allocator = std.mem.Allocator;
@@ -110,8 +111,9 @@ pub fn emit(
     exit_code: u8,
 ) void {
     const doc = decisionView(a, outcome, env, cached, strict, shell, exit_code) catch oom();
-    const line = json.dumps(a, doc, 0, true) catch oom();
-    defer a.free(line);
+    const pretty = json.dumps(a, doc, 0, true) catch oom();
+    const compact = jsonline.compactJsonLine(a, pretty) catch oom();
+    const line = jsonline.pythonJsonCommas(a, compact) catch oom();
     cli.put(1, line);
     cli.put(1, "\n");
 }
