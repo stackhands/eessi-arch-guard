@@ -30,7 +30,9 @@ class DocsTests(unittest.TestCase):
         self.assertEqual(note_ids(), [])
 
     def test_configuration_doc_matches_dangling_symlink_behaviour(self):
-        cfg = (ROOT / "docs" / "orgmode" / "reference" / "configuration.org").read_text(encoding="utf-8")
+        cfg = (ROOT / "docs" / "orgmode" / "reference" / "configuration.org").read_text(
+            encoding="utf-8"
+        )
         compat = (ROOT / "COMPAT.md").read_text(encoding="utf-8")
         self.assertNotIn("points nowhere counts as no file", cfg)
         self.assertNotIn("dangling symlink counts as absent", compat)
