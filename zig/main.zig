@@ -395,6 +395,14 @@ fn exists(path: []const u8) bool {
     return true;
 }
 
+fn configReadWarning(arena: Allocator, path: []const u8, err: anyerror) ?[]const u8 {
+    if (sys.asError(err)) |se| {
+        const shown = text.pyRepr(arena, path) catch path;
+        return arena.print("eessi-arch-guard: config ignored: {s}: {s}", .{ sys.describe(se), shown }) catch null;
+    }
+    return arena.print("eessi-arch-guard: config ignored: {s}: {t}", .{ path, err }) catch null;
+}
+
 /// site_config: /etc/eessi-arch-guard.conf, else the file beside the
 /// program as it was invoked; the first that exists decides.
 fn siteConfig(arena: Allocator, invoked: []const u8) Config {
@@ -405,12 +413,12 @@ fn siteConfig(arena: Allocator, invoked: []const u8) Config {
             return .{ .path = path, .warning = arena.print("eessi-arch-guard: config ignored: {s}", .{reason}) catch null };
         // Checked again on the open file, without following a link.
         const f = fsx.openRegular(fsx.cwd, path, false) catch |err|
-            return .{ .path = path, .warning = arena.print("eessi-arch-guard: config ignored: {s}: {t}", .{ path, err }) catch null };
+            return .{ .path = path, .warning = configReadWarning(arena, path, err) };
         defer sys.close(f.fd);
         if (f.stat.uid != 0 or f.stat.mode & 0o022 != 0)
             return .{ .path = path, .warning = arena.print("eessi-arch-guard: config ignored: {s} changed while it was read", .{path}) catch null };
         const blob = fsx.readAll(arena, f.fd, 1 << 20) catch |err|
-            return .{ .path = path, .warning = arena.print("eessi-arch-guard: config ignored: {s}: {t}", .{ path, err }) catch null };
+            return .{ .path = path, .warning = configReadWarning(arena, path, err) };
         var bad: std.ArrayList([]const u8) = .empty;
         const settings = parseConfigBytes(arena, blob, &bad) catch return .{ .path = path };
         if (bad.items.len > 0) {
