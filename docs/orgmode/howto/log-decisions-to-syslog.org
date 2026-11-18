@@ -51,6 +51,27 @@ Enabling =syslog= in =/etc/eessi-arch-guard.conf= sends structured RFC 5424 mess
    #+end_src
 
    The script loads modules for one CPU while the stand-in reports another, then runs the guard the way a =TaskProlog= does, with =EESSI_ARCH_GUARD_SYSLOG= set to =journald= (or another target from the table above).
+
+#+begin_example
+case: syslog-reload
+syslog: journald
+loaded: x86_64/amd/zen4
+node cpuinfo: zen2
+command: python3 -I src/eessi_arch_guard.py
+exit: 0
+--- stdout ---
+export EBROOTR=$PREFIX/prefix/software/linux/x86_64/amd/zen2/software/R/4.4.2
+export EESSI_ACCEL_SUBDIR=
+export EESSI_ARCH_GUARD_RELOADED=x86_64/amd/zen4->x86_64/amd/zen2
+export EESSI_SOFTWARE_SUBDIR=x86_64/amd/zen2
+export MODULEPATH=$PREFIX/prefix/software/linux/x86_64/amd/zen2/modules/all
+export PATH=$PREFIX/prefix/software/linux/x86_64/amd/zen2/software/R/4.4.2/bin:$PREFIX/prefix/software/linux/x86_64/amd/zen2/bin:$PREFIX/bin:/usr/bin:/bin
+export _LMFILES_=
+export _ModuleTable001_=table-for-x86_64-amd-zen2
+print eessi-arch-guard: reloaded modules for x86_64/amd/zen2 (loaded for x86_64/amd/zen4)
+--- stderr ---
+(empty)
+#+end_example
 2. Read the emitted record from =journalctl= or your syslog log file:
 
    #+begin_src bash
