@@ -948,8 +948,8 @@ fn inventoryModules(arena: Allocator, root: []const u8) []const []const u8 {
 /// `modules/all` of the user and project trees EESSI-extend installs into,
 /// for `target`: `PREFIX/versions/EESSI_VERSION/software/OS/TARGET/modules/all`
 /// for `EESSI_USER_INSTALL` and `EESSI_PROJECT_INSTALL`, and for `HOME/eessi`,
-/// EESSI-extend's default user prefix, when `EESSI_USER_INSTALL` is not in the
-/// environment. Unsafe values are skipped.
+/// EESSI-extend's default user prefix, when neither `EESSI_USER_INSTALL` nor
+/// `EESSI_PROJECT_INSTALL` is in the environment. Unsafe values are skipped.
 fn extendModuleRoots(arena: Allocator, env: envmap.Map, os_type: []const u8, target: []const u8) []const []const u8 {
     const eessi_version = env.get("EESSI_VERSION") orelse "";
     if (!text.safeRelSubdir(eessi_version)) return &.{};
@@ -959,7 +959,8 @@ fn extendModuleRoots(arena: Allocator, env: envmap.Map, os_type: []const u8, tar
         if (value.len > 0 and text.safeAbsolute(value)) bases.append(arena, value) catch oom();
     }
     const home = env.get("HOME") orelse "";
-    if (env.get("EESSI_USER_INSTALL") == null and home.len > 0 and text.safeAbsolute(home))
+    const neither = env.get("EESSI_USER_INSTALL") == null and env.get("EESSI_PROJECT_INSTALL") == null;
+    if (neither and home.len > 0 and text.safeAbsolute(home))
         bases.append(arena, std.fs.path.join(arena, &.{ home, "eessi" }) catch oom()) catch oom();
     var roots: std.ArrayList([]const u8) = .empty;
     outer: for (bases.items) |base| {
@@ -1571,8 +1572,13 @@ test "extendModuleRoots follows EESSI-extend's user and project prefixes" {
     try std.testing.expectEqual(@as(usize, 1), roots.len);
     try std.testing.expectEqualStrings("/home/alice/eessi" ++ tail, roots[0]);
 
-    try env.put(arena, "EESSI_USER_INSTALL", "/u");
+    // A project prefix alone is not a user prefix, but EESSI-extend then uses no default.
     try env.put(arena, "EESSI_PROJECT_INSTALL", "/p");
+    roots = extendModuleRoots(arena, env, "linux", "x86_64/amd/zen4");
+    try std.testing.expectEqual(@as(usize, 1), roots.len);
+    try std.testing.expectEqualStrings("/p" ++ tail, roots[0]);
+
+    try env.put(arena, "EESSI_USER_INSTALL", "/u");
     roots = extendModuleRoots(arena, env, "linux", "x86_64/amd/zen4");
     try std.testing.expectEqual(@as(usize, 2), roots.len);
     try std.testing.expectEqualStrings("/u" ++ tail, roots[0]);

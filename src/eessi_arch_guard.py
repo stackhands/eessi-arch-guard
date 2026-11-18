@@ -2084,8 +2084,9 @@ def extend_module_roots(env: Mapping[str, str], os_type: str, target: str) -> Tu
     EESSI-extend lays an install prefix out as
     ``PREFIX/versions/EESSI_VERSION/software/OS/TARGET/modules/all``. The prefixes
     are ``EESSI_USER_INSTALL`` and ``EESSI_PROJECT_INSTALL`` when set, and
-    ``HOME/eessi``, EESSI-extend's default user prefix, when
-    ``EESSI_USER_INSTALL`` is not in the environment. Unsafe values are skipped.
+    ``HOME/eessi``, EESSI-extend's default user prefix, when neither
+    ``EESSI_USER_INSTALL`` nor ``EESSI_PROJECT_INSTALL`` is in the environment.
+    Unsafe values are skipped.
     """
     version = env.get("EESSI_VERSION", "")
     if not safe_rel_subdir(version):
@@ -2096,7 +2097,8 @@ def extend_module_roots(env: Mapping[str, str], os_type: str, target: str) -> Tu
         if value and safe_absolute(value):
             bases.append(value)
     home = env.get("HOME", "")
-    if "EESSI_USER_INSTALL" not in env and home and safe_absolute(home):
+    neither = "EESSI_USER_INSTALL" not in env and "EESSI_PROJECT_INSTALL" not in env
+    if neither and home and safe_absolute(home):
         bases.append(os.path.join(home, "eessi"))
     roots = []
     for base in bases:

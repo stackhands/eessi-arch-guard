@@ -217,6 +217,18 @@ class CheckSubmitTests(unittest.TestCase):
             self.assertEqual(code, 1)
             self.assertIn("Mine/1.0", err)
 
+    def test_home_eessi_is_not_read_when_a_project_prefix_is_set(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            home = root / "home"
+            self._install(home / "eessi", ZEN4, "Mine/1.0")
+            project = root / "project"
+            project.mkdir()
+            extra = {"HOME": str(home), "EESSI_PROJECT_INSTALL": str(project)}
+            code, err = self._user_tree_case(root, extra)
+            self.assertEqual(code, 1)
+            self.assertIn("Mine/1.0", err)
+
     def test_without_eessi_version_only_the_eessi_tree_is_read(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
