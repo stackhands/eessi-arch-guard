@@ -11,6 +11,7 @@ decisions and unexpected exceptions. A non-zero status cancels the task.
 
 from __future__ import annotations
 
+import argparse
 import datetime
 import fcntl
 import hashlib
@@ -2338,6 +2339,26 @@ class Args(NamedTuple):
     partition: Optional[str] = None
     constraint: Optional[str] = None
     eb_stack: Optional[str] = None
+
+
+def build_arg_parser() -> argparse.ArgumentParser:
+    """Parser for generating completion and manpage assets."""
+    parser = argparse.ArgumentParser(add_help=False, prog="eessi-arch-guard")
+    parser.add_argument("--shell", action="store_true")
+    parser.add_argument("--strict", action="store_true")
+    parser.add_argument("--chain", nargs="?", const="", default=None, metavar="PATH")
+    parser.add_argument("--timeout", nargs="?", const="", default=None, metavar="SEC")
+    parser.add_argument("--syslog", nargs="?", const="", default=None, metavar="TARGET")
+    parser.add_argument("--restore", action="store_true")
+    parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--json", action="store_true")
+    parser.add_argument("--check-submit", action="store_true")
+    parser.add_argument("--partition", nargs="?", const="", default=None, metavar="NAME")
+    parser.add_argument("--constraint", nargs="?", const="", default=None, metavar="NAME")
+    parser.add_argument("--eb-stack", nargs="?", const="", default=None, metavar="PATH")
+    parser.add_argument("-h", "--help", dest="help", action="store_true")
+    parser.add_argument("--version", action="store_true")
+    return parser
 
 
 def _option_value(argv: Sequence[str], index: int) -> Tuple[str, int]:

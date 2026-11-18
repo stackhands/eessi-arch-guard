@@ -19,6 +19,12 @@ classifiers = [
 ]
 dependencies = []
 
+[project.optional-dependencies]
+docs = [
+    "shtab==1.7.2",
+    "argparse-manpage==4.6",
+]
+
 [project.scripts]
 eessi-arch-guard = "eessi_arch_guard:main"
 

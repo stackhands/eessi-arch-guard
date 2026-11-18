@@ -17,6 +17,8 @@ pixi run -e docs docbld
 
 The HTML is written to `docs/build/html`. `docs/orgmode/contributing.org` says how to write a page.
 
+Release archives include bash and zsh completion files plus a man page generated from `build_arg_parser` with pinned `shtab` and `argparse-manpage`. Fish output stays out because that toolchain does not emit fish completion scripts.
+
 ## Install the prolog
 
 The prolog target is `src/eessi_arch_guard.py` (shebang `#!/usr/bin/python3 -I`). Python 3.9 or newer, standard library only.
