@@ -120,7 +120,11 @@ class SitePathTests(unittest.TestCase):
             "/cvmfs/software.eessi.io/versions/2026.06/modules/all",
         )
         self.assertEqual(code, 1)
-        self.assertIn("neither /opt/site/modules/all nor /cvmfs/software.eessi.io/versions/2026.06/modules/all is on MODULEPATH", text)
+        self.assertIn(
+            "neither /opt/site/modules/all nor "
+            "/cvmfs/software.eessi.io/versions/2026.06/modules/all is on MODULEPATH",
+            text,
+        )
         self.assertNotIn("same path", text)
 
 
