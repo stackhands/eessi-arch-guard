@@ -3321,9 +3321,11 @@ def format_syslog_target(target: Optional[SyslogTarget]) -> Optional[str]:
     if target.scheme == "journal-unix":
         return "journal+unix://" + target.host_or_path
     if target.scheme == "rfc5424-udp":
-        return "udp://%s:%d" % (target.host_or_path, target.port)
+        host = "[%s]" % target.host_or_path if ":" in target.host_or_path else target.host_or_path
+        return "udp://%s:%d" % (host, target.port)
     if target.scheme == "rfc5424-tcp":
-        return "tcp://%s:%d" % (target.host_or_path, target.port)
+        host = "[%s]" % target.host_or_path if ":" in target.host_or_path else target.host_or_path
+        return "tcp://%s:%d" % (host, target.port)
     return None
 
 
