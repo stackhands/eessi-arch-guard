@@ -14,6 +14,8 @@ import sys
 
 def _norm(path: str) -> str:
     path = (path or "").strip()
+    while "//" in path:
+        path = path.replace("//", "/")
     while len(path) > 1 and path.endswith("/"):
         path = path[:-1]
     return path
@@ -121,7 +123,9 @@ def report(mountinfo: str, modulepath: str, repo: str, site: str, eessi: str):
 
 
 def _modules(value: str) -> str:
-    value = value.strip().rstrip("/")
+    value = _norm(value)
+    if value == "/":
+        return "/modules/all"
     if value.endswith("/modules/all"):
         return value
     return value + "/modules/all"
