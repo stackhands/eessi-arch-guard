@@ -392,7 +392,7 @@ fn configUntrusted(arena: Allocator, path: []const u8) ?[]const u8 {
 }
 
 fn exists(path: []const u8) bool {
-    _ = fsx.statAt(fsx.cwd, path, true) catch return false;
+    _ = fsx.statAt(fsx.cwd, path, false) catch return false;
     return true;
 }
 
