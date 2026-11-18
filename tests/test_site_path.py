@@ -159,6 +159,15 @@ class SitePathTests(unittest.TestCase):
         self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
         self.assertIn(f"ok   site modules {site_mods} precede {eessi_mods}", proc.stdout)
 
+    def test_unescape_ignores_non_octal_escape_sequences(self):
+        sp = load()
+        mountinfo = (
+            "36 35 0:36 / / rw,relatime - ext4 /dev/sda1 rw\n"
+            "48 36 0:48 / /mnt/bad\\800path\\040name rw - ext4 /dev/sdb1 rw\n"
+        )
+        got = sp.holding_mount(mountinfo, "/mnt/bad\\800path name/sub")
+        self.assertEqual(got, ("/mnt/bad\\800path name", "ext4"))
+
 
 if __name__ == "__main__":
     unittest.main()
