@@ -151,6 +151,76 @@ class CheckSubmitTests(unittest.TestCase):
             self.assertEqual(code, 0)
             self.assertIn("3 loaded module(s) available", stdout.getvalue())
 
+    def _user_tree_case(self, root: Path, env_extra: dict) -> tuple[int, str]:
+        prefix = root / "prefix"
+        (prefix / "software" / "linux" / ZEN4 / "modules" / "all" / "R").mkdir(parents=True)
+        (prefix / "software" / "linux" / ZEN4 / "modules" / "all" / "R" / "4.4.2.lua").write_text(
+            "-- module\n", encoding="utf-8"
+        )
+        fake = _fake_eb_stack(root)
+        env = {
+            "PATH": "/usr/bin:/bin",
+            "EESSI_PREFIX": str(prefix),
+            "EESSI_OS_TYPE": "linux",
+            "EESSI_VERSION": "2026.06",
+            "LOADEDMODULES": "EESSI/2026.06:R/4.4.2:Mine/1.0",
+            "EESSI_TEST_EB_STACK_LOG": str(root / "eb-stack.log"),
+        }
+        env.update(env_extra)
+        stderr = io.StringIO()
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(stderr):
+            code = guard.check_submit(env, {"submit_target.partition.cpu": ZEN4}, "cpu", "", str(fake))
+        return code, stderr.getvalue()
+
+    @staticmethod
+    def _install(base: Path, target: str, module: str) -> None:
+        name, version = module.split("/")
+        lua = base / "versions" / "2026.06" / "software" / "linux" / target / "modules" / "all" / name
+        lua.mkdir(parents=True, exist_ok=True)
+        (lua / (version + ".lua")).write_text("-- module\n", encoding="utf-8")
+
+    def test_a_module_in_the_users_eessi_extend_tree_for_the_target_is_available(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            user = root / "user-prefix"
+            self._install(user, ZEN4, "Mine/1.0")
+            code, err = self._user_tree_case(root, {"EESSI_USER_INSTALL": str(user)})
+            self.assertEqual(code, 0, err)
+
+    def test_a_module_built_only_for_another_target_is_absent(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            project = root / "project"
+            self._install(project, ZEN2, "Mine/1.0")
+            code, err = self._user_tree_case(root, {"EESSI_PROJECT_INSTALL": str(project), "HOME": str(root / "home")})
+            self.assertEqual(code, 1)
+            self.assertIn("Mine/1.0", err)
+
+    def test_home_eessi_is_read_unless_a_user_prefix_is_set(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            home = root / "home"
+            self._install(home / "eessi", ZEN4, "Mine/1.0")
+            code, err = self._user_tree_case(root, {"HOME": str(home)})
+            self.assertEqual(code, 0, err)
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            home = root / "home"
+            self._install(home / "eessi", ZEN4, "Mine/1.0")
+            # A set but empty EESSI_USER_INSTALL is a user prefix to EESSI-extend, so the default is not read.
+            code, err = self._user_tree_case(root, {"HOME": str(home), "EESSI_USER_INSTALL": ""})
+            self.assertEqual(code, 1)
+            self.assertIn("Mine/1.0", err)
+
+    def test_without_eessi_version_only_the_eessi_tree_is_read(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            user = root / "user-prefix"
+            self._install(user, ZEN4, "Mine/1.0")
+            code, err = self._user_tree_case(root, {"EESSI_USER_INSTALL": str(user), "EESSI_VERSION": ""})
+            self.assertEqual(code, 1)
+            self.assertIn("Mine/1.0", err)
+
     def test_cli_arguments_are_opt_in(self) -> None:
         plain = guard.parse_args([])
         self.assertFalse(plain.check_submit)

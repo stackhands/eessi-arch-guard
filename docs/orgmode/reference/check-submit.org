@@ -19,6 +19,7 @@ eessi-arch-guard --check-submit --partition NAME [--constraint NAME] [--eb-stack
 | partition | =--partition NAME= | Required. =NAME= is 1 to 64 letters, digits, underscores, dots, pluses, or hyphens. |
 | constraint | =--constraint NAME= | Optional, with the same grammar. Its mapping must select the same target as the partition mapping. |
 | target prefix | =EESSI_PREFIX= and =EESSI_OS_TYPE= | The module inventory is =EESSI_PREFIX/software/EESSI_OS_TYPE/TARGET/modules/all=. |
+| user and project trees | =EESSI_VERSION=, =EESSI_USER_INSTALL=, =EESSI_PROJECT_INSTALL=, =HOME= | Modules installed with EESSI-extend count too: =PREFIX/versions/EESSI_VERSION/software/EESSI_OS_TYPE/TARGET/modules/all= for each of the two prefixes that is set, and for =HOME/eessi=, EESSI-extend's default, when =EESSI_USER_INSTALL= is not in the environment. A module you built only on another node type is absent for this target. Without =EESSI_VERSION= only the EESSI tree is read. |
 | planner | =--eb-stack PATH=, then config =eb_stack=, then =eb-stack= on =PATH= | Must be executable. |
 
 Module files below =modules/all= are inventory entries.

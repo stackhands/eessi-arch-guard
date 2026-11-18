@@ -945,6 +945,31 @@ fn inventoryModules(arena: Allocator, root: []const u8) []const []const u8 {
     return found.items;
 }
 
+/// `modules/all` of the user and project trees EESSI-extend installs into,
+/// for `target`: `PREFIX/versions/EESSI_VERSION/software/OS/TARGET/modules/all`
+/// for `EESSI_USER_INSTALL` and `EESSI_PROJECT_INSTALL`, and for `HOME/eessi`,
+/// EESSI-extend's default user prefix, when `EESSI_USER_INSTALL` is not in the
+/// environment. Unsafe values are skipped.
+fn extendModuleRoots(arena: Allocator, env: envmap.Map, os_type: []const u8, target: []const u8) []const []const u8 {
+    const version = env.get("EESSI_VERSION") orelse "";
+    if (!text.safeRelSubdir(version)) return &.{};
+    var bases: std.ArrayList([]const u8) = .empty;
+    for ([_][]const u8{ "EESSI_USER_INSTALL", "EESSI_PROJECT_INSTALL" }) |name| {
+        const value = env.get(name) orelse "";
+        if (value.len > 0 and text.safeAbsolute(value)) bases.append(arena, value) catch oom();
+    }
+    const home = env.get("HOME") orelse "";
+    if (env.get("EESSI_USER_INSTALL") == null and home.len > 0 and text.safeAbsolute(home))
+        bases.append(arena, std.fs.path.join(arena, &.{ home, "eessi" }) catch oom()) catch oom();
+    var roots: std.ArrayList([]const u8) = .empty;
+    outer: for (bases.items) |base| {
+        const root = std.fs.path.join(arena, &.{ base, "versions", version, "software", os_type, target, "modules", "all" }) catch oom();
+        for (roots.items) |seen| if (std.mem.eql(u8, seen, root)) continue :outer;
+        roots.append(arena, root) catch oom();
+    }
+    return roots.items;
+}
+
 fn writeSubmitFile(path: []const u8, data: []const u8) bool {
     const fd = sys.openat(fsx.cwd, path, .{ .ACCMODE = .WRONLY, .CREAT = true, .TRUNC = true, .NOFOLLOW = true }, 0o600) catch return false;
     defer sys.close(fd);
@@ -1048,7 +1073,22 @@ fn checkSubmit(arena: Allocator, args: Args, env: envmap.Map, settings: ?Setting
         return finishCheckSubmit(arena, args, partition, constraint, 2, null, @intCast(loaded.len), &.{}, reason, &.{line});
     };
     const module_root = std.fs.path.join(arena, &.{ prefix, "software", os_type, target, "modules", "all" }) catch oom();
-    const installed = inventoryModules(arena, module_root);
+    var all_found: std.ArrayList([]const u8) = .empty;
+    all_found.appendSlice(arena, inventoryModules(arena, module_root)) catch oom();
+    for (extendModuleRoots(arena, env, os_type, target)) |root| {
+        for (inventoryModules(arena, root)) |name| {
+            const seen = for (all_found.items) |have| {
+                if (std.mem.eql(u8, have, name)) break true;
+            } else false;
+            if (!seen) all_found.append(arena, name) catch oom();
+        }
+    }
+    std.mem.sort([]const u8, all_found.items, {}, struct {
+        fn less(_: void, a: []const u8, b: []const u8) bool {
+            return std.mem.order(u8, a, b) == .lt;
+        }
+    }.less);
+    const installed = all_found.items;
     const work = submitWorkDir(arena) orelse {
         const reason = "could not create temporary input directory";
         const line = "eessi-arch-guard: check-submit: " ++ reason;
@@ -1516,4 +1556,34 @@ test "configBeside is the config in the directory of the normalized path" {
     defer t.free(want);
     try expectConfigBeside(t, "./link/eessi-arch-guard", want);
     try std.testing.checkAllAllocationFailures(t, expectConfigBeside, .{ "link/../link/eessi-arch-guard", want });
+}
+
+test "extendModuleRoots follows EESSI-extend's user and project prefixes" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    const tail = "/versions/2026.06/software/linux/x86_64/amd/zen4/modules/all";
+
+    var env: envmap.Map = .empty;
+    try env.put(arena, "EESSI_VERSION", "2026.06");
+    try env.put(arena, "HOME", "/home/alice");
+    var roots = extendModuleRoots(arena, env, "linux", "x86_64/amd/zen4");
+    try std.testing.expectEqual(@as(usize, 1), roots.len);
+    try std.testing.expectEqualStrings("/home/alice/eessi" ++ tail, roots[0]);
+
+    try env.put(arena, "EESSI_USER_INSTALL", "/u");
+    try env.put(arena, "EESSI_PROJECT_INSTALL", "/p");
+    roots = extendModuleRoots(arena, env, "linux", "x86_64/amd/zen4");
+    try std.testing.expectEqual(@as(usize, 2), roots.len);
+    try std.testing.expectEqualStrings("/u" ++ tail, roots[0]);
+    try std.testing.expectEqualStrings("/p" ++ tail, roots[1]);
+
+    // Set but empty is a user prefix to EESSI-extend: no default, nothing read for it.
+    try env.put(arena, "EESSI_USER_INSTALL", "");
+    roots = extendModuleRoots(arena, env, "linux", "x86_64/amd/zen4");
+    try std.testing.expectEqual(@as(usize, 1), roots.len);
+    try std.testing.expectEqualStrings("/p" ++ tail, roots[0]);
+
+    try env.put(arena, "EESSI_VERSION", "../x");
+    try std.testing.expectEqual(@as(usize, 0), extendModuleRoots(arena, env, "linux", "x86_64/amd/zen4").len);
 }

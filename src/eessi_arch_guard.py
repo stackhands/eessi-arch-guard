@@ -2078,6 +2078,34 @@ def target_modules(root: str) -> Tuple[str, ...]:
     return tuple(sorted(found))
 
 
+def extend_module_roots(env: Mapping[str, str], os_type: str, target: str) -> Tuple[str, ...]:
+    """``modules/all`` of the user and project trees EESSI-extend installs into, for ``target``.
+
+    EESSI-extend lays an install prefix out as
+    ``PREFIX/versions/EESSI_VERSION/software/OS/TARGET/modules/all``. The prefixes
+    are ``EESSI_USER_INSTALL`` and ``EESSI_PROJECT_INSTALL`` when set, and
+    ``HOME/eessi``, EESSI-extend's default user prefix, when
+    ``EESSI_USER_INSTALL`` is not in the environment. Unsafe values are skipped.
+    """
+    version = env.get("EESSI_VERSION", "")
+    if not safe_rel_subdir(version):
+        return ()
+    bases = []
+    for name in ("EESSI_USER_INSTALL", "EESSI_PROJECT_INSTALL"):
+        value = env.get(name, "")
+        if value and safe_absolute(value):
+            bases.append(value)
+    home = env.get("HOME", "")
+    if "EESSI_USER_INSTALL" not in env and home and safe_absolute(home):
+        bases.append(os.path.join(home, "eessi"))
+    roots = []
+    for base in bases:
+        root = os.path.join(base, "versions", version, "software", os_type, target, "modules", "all")
+        if root not in roots:
+            roots.append(root)
+    return tuple(roots)
+
+
 def _planner_module(module: str) -> str:
     """Lossless EasyBuild-shaped identity for any safe Lmod module name."""
     return "EAGCheck" + os.fsencode(module).hex() + "/1.0"
@@ -2199,7 +2227,10 @@ def check_submit(
         )
 
     module_root = os.path.join(prefix, "software", os_type, target, "modules", "all")
-    installed = target_modules(module_root)
+    found = set(target_modules(module_root))
+    for root in extend_module_roots(env, os_type, target):
+        found.update(target_modules(root))
+    installed = tuple(sorted(found))
     files = {_easyconfig_filename(name): name for name in loaded}
     try:
         with tempfile.TemporaryDirectory(prefix="eessi-arch-guard-submit-") as work:
