@@ -864,21 +864,29 @@ fn submitTempDir(arena: Allocator, env: envmap.Map) []const u8 {
 
 fn submitWorkDir(arena: Allocator, env: envmap.Map) ?[]const u8 {
     const base = submitTempDir(arena, env);
-    var tries: usize = 0;
-    while (tries < 100) : (tries += 1) {
-        var random: [8]u8 = undefined;
-        _ = sys.call(linux.getrandom, .{ &random, random.len, 0 }) catch return null;
-        const name = std.fmt.bytesToHex(random, .lower);
-        const path = std.fs.path.join(arena, &.{ base, arena.print("eessi-arch-guard-submit-{s}", .{name}) catch return null }) catch return null;
-        var buf: [sys.path_max:0]u8 = undefined;
-        const z = sys.z(&buf, path) catch return null;
-        switch (linux.errno(linux.mkdirat(linux.AT.FDCWD, z.ptr, 0o700))) {
-            .SUCCESS => return path,
-            .EXIST => continue,
-            else => return null,
-        }
-    }
-    return null;
+    return fsx.mkdtemp(arena, base, "eessi-arch-guard-submit-") catch null;
+}
+
+test "submitWorkDir uses fsx.mkdtemp with the submit prefix" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    var cwd_buf: [sys.path_max]u8 = undefined;
+    const here = try fsx.realpath(fsx.cwd, ".", &cwd_buf);
+    const base = try std.fmt.allocPrint(arena, "{s}/.zig-cache/eag-submit-mkdtemp-{d}", .{ here, linux.getpid() });
+    var zb: [sys.path_max:0]u8 = undefined;
+    _ = linux.mkdirat(fsx.cwd, (try sys.z(&zb, base)).ptr, 0o700);
+    defer fsx.deleteTree(arena, fsx.cwd, base) catch {};
+
+    var env: envmap.Map = .empty;
+    try env.put(arena, "TMPDIR", base);
+    const work = submitWorkDir(arena, env).?;
+    const expected_prefix = try std.fmt.allocPrint(arena, "{s}/eessi-arch-guard-submit-", .{base});
+    try std.testing.expect(std.mem.startsWith(u8, work, expected_prefix));
+    try std.testing.expectEqual(expected_prefix.len + 8, work.len);
+    const st = try fsx.statAt(fsx.cwd, work, false);
+    try std.testing.expect(st.isDir());
+    try std.testing.expectEqual(@as(u32, 0), st.perm() & 0o077);
 }
 
 const SubmitModule = struct {
