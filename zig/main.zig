@@ -74,6 +74,9 @@ const help_text =
 var emergency_shell = false;
 var emergency_announce = true;
 var emergency_strict = false;
+var emergency_json = false;
+var emergency_json_shell = false;
+var emergency_was: []const u8 = "unrecognized";
 
 fn emergencyWrite(kind: []const u8, detail: []const u8) void {
     var buf: [1024]u8 = undefined;
@@ -85,6 +88,7 @@ fn emergencyWrite(kind: []const u8, detail: []const u8) void {
         clean[n] = if (ch < 32 or ch == 127) ' ' else ch;
         n += 1;
     }
+    while (n > 0 and clean[n - 1] == ' ') n -= 1;
     if (emergency_shell) {
         cli.put(2, clean[0..n]);
         cli.put(2, "\n");
@@ -93,6 +97,68 @@ fn emergencyWrite(kind: []const u8, detail: []const u8) void {
         cli.put(1, clean[0..n]);
         cli.put(1, "\n");
     }
+}
+
+fn appendJsonBytes(buf: []u8, pos: *usize, s: []const u8) bool {
+    for (s) |c| {
+        if (c == '"' or c == '\\') {
+            if (pos.* + 2 > buf.len) return false;
+            buf[pos.*] = '\\';
+            buf[pos.* + 1] = c;
+            pos.* += 2;
+        } else if (c < 0x20 or c >= 0x7f) {
+            if (pos.* + 6 > buf.len) return false;
+            const hex = "0123456789abcdef";
+            buf[pos.*] = '\\';
+            buf[pos.* + 1] = 'u';
+            buf[pos.* + 2] = '0';
+            buf[pos.* + 3] = '0';
+            buf[pos.* + 4] = hex[c >> 4];
+            buf[pos.* + 5] = hex[c & 15];
+            pos.* += 6;
+        } else {
+            if (pos.* + 1 > buf.len) return false;
+            buf[pos.*] = c;
+            pos.* += 1;
+        }
+    }
+    return true;
+}
+
+fn emergencyWriteJson(kind: []const u8) void {
+    var buf: [2048]u8 = undefined;
+    var pos: usize = 0;
+    const code: u8 = if (emergency_strict) strict_failure_exit else 0;
+    const semantic: []const u8 = if (emergency_strict) "strict-failure" else "ok";
+    const shell_s: []const u8 = if (emergency_json_shell) "true" else "false";
+    const strict_s: []const u8 = if (emergency_strict) "true" else "false";
+    const p1 = std.mem.print(buf[pos..], "{{\"cached\": false, \"cause\": \"", .{}) catch return;
+    pos += p1.len;
+    if (!appendJsonBytes(&buf, &pos, kind)) return;
+    const p2 = std.mem.print(
+        buf[pos..],
+        "\", \"decision\": \"failed\", \"detail\": null, \"exit\": {d}, \"exit_semantic\": \"{s}\", \"kind\": \"decision\", \"message\": \"\", \"now\": null, \"reload_needed\": true, \"schema_version\": 1, \"shell\": {s}, \"strict\": {s}, \"was\": \"",
+        .{ code, semantic, shell_s, strict_s },
+    ) catch return;
+    pos += p2.len;
+    if (!appendJsonBytes(&buf, &pos, emergency_was)) return;
+    const p3 = std.mem.print(buf[pos..], "\"}}\n", .{}) catch return;
+    pos += p3.len;
+    cli.put(1, buf[0..pos]);
+}
+
+fn rawEnvWas(envp: proc.Envp) []const u8 {
+    const prefix = "EESSI_SOFTWARE_SUBDIR=";
+    var i: usize = 0;
+    while (envp[i]) |p| : (i += 1) {
+        const entry = std.mem.span(p);
+        if (std.mem.startsWith(u8, entry, prefix)) {
+            const v = entry[prefix.len..];
+            if (v.len == 0 or v.len > 512 or text.hasLineBreakOrNul(v)) return "unrecognized";
+            return v;
+        }
+    }
+    return "unrecognized";
 }
 
 /// _announce for a prolog: SLURM_LOCALID unset or exactly "0". Read from the
@@ -117,8 +183,12 @@ var emergency_chain: []const u8 = "";
 /// the strict status).
 fn emergencyExit(kind: []const u8, detail: []const u8) noreturn {
     guard.stopChild();
-    if (emergency_chain.len > 0) writeStdout(emergency_chain, "");
-    emergencyWrite(kind, detail);
+    if (emergency_json) {
+        emergencyWriteJson(kind);
+    } else {
+        if (emergency_chain.len > 0) writeStdout(emergency_chain, "");
+        emergencyWrite(kind, detail);
+    }
     linux.exit_group(if (emergency_strict) strict_failure_exit else 0);
 }
 
@@ -146,6 +216,10 @@ fn onCrash(sig: linux.SIG) callconv(.c) void {
     });
 }
 
+fn onInterrupt(_: linux.SIG) callconv(.c) void {
+    emergencyExit("KeyboardInterrupt", "");
+}
+
 /// The stack the crash handlers run on: a SIGSEGV from a stack overflow
 /// has no stack left to run a handler on the thread's own.
 var crash_stack: [64 * 1024]u8 align(16) = undefined;
@@ -155,6 +229,8 @@ fn installCrashHandlers() void {
     const on_stack = linux.errno(linux.sigaltstack(&alt, null)) == .SUCCESS;
     var act: linux.Sigaction = .{ .handler = .{ .handler = onCrash }, .mask = linux.sigemptyset(), .flags = if (on_stack) linux.SA.ONSTACK else 0 };
     for ([_]linux.SIG{ .SEGV, .BUS, .ILL, .FPE }) |s| _ = linux.sigaction(s, &act, null);
+    var int_act: linux.Sigaction = .{ .handler = .{ .handler = onInterrupt }, .mask = linux.sigemptyset(), .flags = if (on_stack) linux.SA.ONSTACK else 0 };
+    _ = linux.sigaction(.INT, &int_act, null);
     // A closed stdout must not kill the prolog: writes fail instead.
     var ign: linux.Sigaction = .{ .handler = .{ .handler = linux.SIG.IGN }, .mask = linux.sigemptyset(), .flags = 0 };
     _ = linux.sigaction(.PIPE, &ign, null);
@@ -1385,6 +1461,7 @@ fn realMain(arena: Allocator, argv0: []const u8, argv: []const []const u8, envp:
 /// prints the skip line where that run would print it.
 pub fn main(init: std.process.Init.Minimal) u8 {
     emergency_announce = localTaskZero(init.environ.block.slice.ptr);
+    emergency_was = rawEnvWas(init.environ.block.slice.ptr);
     var arena_state = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     const arena = arena_state.allocator();
     const all = init.args.toSlice(arena) catch emergencyExit("MemoryError", "out of memory");
@@ -1393,6 +1470,8 @@ pub fn main(init: std.process.Init.Minimal) u8 {
     for (argv, 0..) |*a, i| a.* = all[i + 1];
     emergency_shell = contains(argv, "--shell") or contains(argv, "--dry-run");
     emergency_strict = contains(argv, "--strict");
+    emergency_json_shell = contains(argv, "--shell");
+    emergency_json = contains(argv, "--json") and !contains(argv, "--dry-run");
     installCrashHandlers();
     return realMain(arena, argv0, argv, init.environ.block.slice.ptr);
 }
