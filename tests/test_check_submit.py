@@ -472,9 +472,17 @@ class CheckSubmitTests(unittest.TestCase):
             root = Path(tmp)
             prefix = root / "prefix"
             (prefix / "software" / "linux" / ZEN4 / "modules" / "all" / "R").mkdir(parents=True)
-            (prefix / "software" / "linux" / ZEN4 / "modules" / "all" / "R" / "4.4.2.lua").write_text(
-                "--\n", encoding="utf-8"
+            module_file = (
+                prefix
+                / "software"
+                / "linux"
+                / ZEN4
+                / "modules"
+                / "all"
+                / "R"
+                / "4.4.2.lua"
             )
+            module_file.write_text("--\n", encoding="utf-8")
             fake = _fake_eb_stack(root)
             for loaded_mods, expected in (
                 ("EESSI/2025.06:EESSI/2025.06:R/4.4.2", "duplicate module entry: EESSI/2025.06"),
