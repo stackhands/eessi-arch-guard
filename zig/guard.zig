@@ -1288,6 +1288,138 @@ fn doRestore(c: *Ctx, payload: json.Value, raised: *[]const u8) HelperError!Repl
     return .{ .ok = true, .env = current };
 }
 
+fn jsonPosAt(input: []const u8, offset: usize) struct { line: usize, col: usize, char_idx: usize } {
+    var line: usize = 1;
+    var col: usize = 1;
+    var char_idx: usize = 0;
+    var i: usize = 0;
+    const end = @min(offset, input.len);
+    while (i < end) {
+        const ch = text.nextChar(input[i..]);
+        if (ch.cp == '\n') {
+            line += 1;
+            col = 1;
+        } else {
+            col += 1;
+        }
+        char_idx += 1;
+        i += ch.len;
+    }
+    return .{ .line = line, .col = col, .char_idx = char_idx };
+}
+
+fn isJsonDelim(b: u8) bool {
+    return b == ' ' or b == '\t' or b == '\r' or b == '\n' or b == ',' or b == '}' or b == ']';
+}
+
+fn restoreUtf8Error(a: Allocator, input: []const u8) []const u8 {
+    var i: usize = 0;
+    while (i < input.len) {
+        const ch = text.nextChar(input[i..]);
+        if (ch.cp == null) {
+            return a.print(
+                "eessi-arch-guard: restore failed: 'utf-8' codec can't decode byte 0x{x:0>2} in position {d}: invalid start byte\n",
+                .{ input[i], i },
+            ) catch "eessi-arch-guard: restore failed: the request is not UTF-8\n";
+        }
+        i += ch.len;
+    }
+    return "eessi-arch-guard: restore failed: the request is not UTF-8\n";
+}
+
+fn restoreJsonError(a: Allocator, input: []const u8) []const u8 {
+    var stack: [64]u8 = undefined;
+    var depth: usize = 0;
+    var expect_key = false;
+    var i: usize = 0;
+    while (i < input.len) {
+        const b = input[i];
+        if (b == ' ' or b == '\t' or b == '\r' or b == '\n') {
+            i += 1;
+            continue;
+        }
+        if (expect_key and b != '"' and b != '}') {
+            const pos = jsonPosAt(input, i);
+            return a.print(
+                "eessi-arch-guard: restore failed: Expecting property name enclosed in double quotes: line {d} column {d} (char {d})\n",
+                .{ pos.line, pos.col, pos.char_idx },
+            ) catch "eessi-arch-guard: restore failed: the request is not JSON\n";
+        }
+        if (b == '"') {
+            i += 1;
+            while (i < input.len) {
+                if (input[i] == '\\') {
+                    i += @min(2, input.len - i);
+                } else if (input[i] == '"') {
+                    i += 1;
+                    break;
+                } else {
+                    i += 1;
+                }
+            }
+            expect_key = false;
+            continue;
+        }
+        if (b == '{' or b == '[') {
+            if (depth < stack.len) {
+                stack[depth] = b;
+                depth += 1;
+            }
+            expect_key = b == '{';
+            i += 1;
+            continue;
+        }
+        if (b == '}' or b == ']') {
+            if (depth > 0) depth -= 1;
+            expect_key = false;
+            i += 1;
+            continue;
+        }
+        if (b == ',') {
+            expect_key = depth > 0 and stack[depth - 1] == '{';
+            i += 1;
+            continue;
+        }
+        if (b == ':') {
+            expect_key = false;
+            i += 1;
+            continue;
+        }
+        for ([_][]const u8{ "-Infinity", "Infinity", "NaN" }) |kw| {
+            if (std.mem.startsWith(u8, input[i..], kw) and (i + kw.len == input.len or isJsonDelim(input[i + kw.len]))) {
+                return a.print("eessi-arch-guard: restore failed: {s} is not JSON\n", .{kw}) catch "eessi-arch-guard: restore failed: the request is not JSON\n";
+            }
+        }
+        if (std.mem.startsWith(u8, input[i..], "true") and (i + 4 == input.len or isJsonDelim(input[i + 4]))) {
+            i += 4;
+            continue;
+        }
+        if (std.mem.startsWith(u8, input[i..], "false") and (i + 5 == input.len or isJsonDelim(input[i + 5]))) {
+            i += 5;
+            continue;
+        }
+        if (std.mem.startsWith(u8, input[i..], "null") and (i + 4 == input.len or isJsonDelim(input[i + 4]))) {
+            i += 4;
+            continue;
+        }
+        if (b == '-' or (b >= '0' and b <= '9')) {
+            i += 1;
+            while (i < input.len and !isJsonDelim(input[i])) i += 1;
+            continue;
+        }
+        const pos = jsonPosAt(input, i);
+        return a.print(
+            "eessi-arch-guard: restore failed: Expecting value: line {d} column {d} (char {d})\n",
+            .{ pos.line, pos.col, pos.char_idx },
+        ) catch "eessi-arch-guard: restore failed: the request is not JSON\n";
+    }
+    const pos = jsonPosAt(input, input.len);
+    return a.print(
+        "eessi-arch-guard: restore failed: Expecting value: line {d} column {d} (char {d})\n",
+        .{ pos.line, pos.col, pos.char_idx },
+    ) catch "eessi-arch-guard: restore failed: the request is not JSON\n";
+}
+
 /// restore_main: one JSON request on stdin, one JSON reply on stdout; 1 with
 /// a message on stderr when the request cannot be handled at all.
 pub fn restoreMain(c: *Ctx) u8 {
@@ -1298,15 +1430,25 @@ pub fn restoreMain(c: *Ctx) u8 {
     };
     // json.loads(bytes.decode("utf-8")): the request must be UTF-8 text.
     if (!std.unicode.utf8ValidateSlice(input)) {
-        writeErr("eessi-arch-guard: restore failed: the request is not UTF-8\n");
+        writeErr(restoreUtf8Error(a, input));
         return 1;
     }
     const payload = json.parse(a, input) catch {
-        writeErr("eessi-arch-guard: restore failed: the request is not JSON\n");
+        writeErr(restoreJsonError(a, input));
         return 1;
     };
     if (payload != .object) {
-        writeErr("eessi-arch-guard: restore failed: the request is not a JSON object\n");
+        const py_type = switch (payload) {
+            .null => "NoneType",
+            .bool => "bool",
+            .number => |raw| if (std.mem.findAny(u8, raw, ".eE") != null) "float" else "int",
+            .string => "str",
+            .array => "list",
+            .object => unreachable,
+        };
+        const msg = a.print("eessi-arch-guard: restore failed: '{s}' object has no attribute 'get'\n", .{py_type}) catch
+            "eessi-arch-guard: restore failed: the request is not a JSON object\n";
+        writeErr(msg);
         return 1;
     }
     var raised: []const u8 = "";
