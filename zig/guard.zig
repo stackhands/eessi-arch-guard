@@ -1406,7 +1406,9 @@ pub fn decide(c: *Ctx, env: Map, shell: bool) Stop!Outcome {
         return .{ .kind = .skip, .detail = "EESSI_ARCH_GUARD=0" };
     const was = env.get("EESSI_SOFTWARE_SUBDIR") orelse empty;
     if (was.len == 0) return .{ .kind = .skip, .detail = "EESSI is not loaded" };
-    if (nonEmpty(env, "EESSI_SOFTWARE_SUBDIR_OVERRIDE")) return .{ .kind = .skip, .detail = "EESSI_SOFTWARE_SUBDIR_OVERRIDE is set" };
+    const software_override = env.get("EESSI_SOFTWARE_SUBDIR_OVERRIDE") orelse empty;
+    if (software_override.len > 0 and text.safeRelSubdir(software_override))
+        return .{ .kind = .skip, .detail = "EESSI_SOFTWARE_SUBDIR_OVERRIDE is set" };
     if (nonEmpty(env, "EESSI_ARCHDETECT_OPTIONS_OVERRIDE")) return .{ .kind = .skip, .detail = "EESSI_ARCHDETECT_OPTIONS_OVERRIDE is set" };
 
     const cpu = try probeCpu(c, env);
@@ -1448,7 +1450,12 @@ pub fn decide(c: *Ctx, env: Map, shell: bool) Stop!Outcome {
     if (!lmodInvocable(env.get("LMOD_CMD") orelse empty))
         return failed(c, was_label, "lmod-unavailable", fmt(c, "eessi-arch-guard: LMOD_CMD is missing or not executable; this node is {s}, the modules were loaded for {s}; environment left as it was", .{ now_label, was_label }), null);
 
-    const result = try callRestore(c, env, loaded.eessi, loaded.others, cpu.override);
+    var restore_env = env;
+    if (software_override.len > 0 and !text.safeRelSubdir(software_override)) {
+        restore_env = envmap.clone(c.arena, env) catch main_mod.oom();
+        _ = restore_env.orderedRemove("EESSI_SOFTWARE_SUBDIR_OVERRIDE");
+    }
+    const result = try callRestore(c, restore_env, loaded.eessi, loaded.others, cpu.override);
     if (!result.ran)
         return failed(c, was_label, "restore-failed", fmt(c, "eessi-arch-guard: restore failed ({s}); environment left as it was", .{line1(c, result.err, 200)}), null);
     if (!result.ok or result.env == null) {
@@ -1837,7 +1844,8 @@ pub fn dryRunDecide(c: *Ctx, env: Map) Stop!DryRunDecision {
         return .{ .kind = .skip, .detail = "EESSI_ARCH_GUARD=0" };
     const was = env.get("EESSI_SOFTWARE_SUBDIR") orelse empty;
     if (was.len == 0) return .{ .kind = .skip, .detail = "EESSI is not loaded" };
-    if (nonEmpty(env, "EESSI_SOFTWARE_SUBDIR_OVERRIDE"))
+    const software_override = env.get("EESSI_SOFTWARE_SUBDIR_OVERRIDE") orelse empty;
+    if (software_override.len > 0 and text.safeRelSubdir(software_override))
         return .{ .kind = .skip, .was_cpu = was, .detail = "EESSI_SOFTWARE_SUBDIR_OVERRIDE is set" };
     if (nonEmpty(env, "EESSI_ARCHDETECT_OPTIONS_OVERRIDE"))
         return .{ .kind = .skip, .was_cpu = was, .detail = "EESSI_ARCHDETECT_OPTIONS_OVERRIDE is set" };

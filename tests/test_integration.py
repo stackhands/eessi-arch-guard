@@ -179,6 +179,15 @@ class IntegrationTests(unittest.TestCase):
         self.assertEqual(harness.log_lines(self.site.log), [])
         self.assertEqual(harness.log_lines(self.site.arch_log), ["cpupath", "accelpath"])
 
+    def test_unsafe_software_override_is_ignored(self):
+        env = self._cpu_env(ZEN4, "zen2")
+        env["EESSI_SOFTWARE_SUBDIR_OVERRIDE"] = "../../oops"
+        proc = harness.run_guard(env)
+        changes, printed = _assert_prolog(proc)
+        self.assertEqual(changes["EESSI_SOFTWARE_SUBDIR"], ZEN2)
+        self.assertIn("EESSI_ARCH_GUARD_RELOADED", changes)
+        self.assertTrue(printed)
+
     def test_missing_software_dir_is_loud_and_configurable(self):
         bare = harness.Site()
         try:

@@ -208,6 +208,17 @@ class UnitTests:
             assert outcome.kind == "skip", extra
             assert outcome.changes == {}
 
+    def test_unsafe_software_override_does_not_disable_guard(self):
+        outcome = guard.decide(
+            _env(EESSI_SOFTWARE_SUBDIR_OVERRIDE="../../oops"),
+            shell=False,
+            cpu_probe=_cpu(),
+            accel_probe=_accel(),
+            restore=_restore(),
+        )
+        assert outcome.kind == "reloaded"
+        assert outcome.changes["EESSI_SOFTWARE_SUBDIR"] == ZEN2
+
     def test_same_target_does_not_restore(self):
         calls = []
 
