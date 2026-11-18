@@ -146,5 +146,6 @@ jobs:
           python docs/examples/strict_workspace.py
           python docs/examples/accelerator.py mismatch
           python docs/examples/accelerator.py missing-module
+          python docs/examples/syslog_journal.py
           bash docs/examples/check_install.sh
           bash docs/examples/check_config.sh
