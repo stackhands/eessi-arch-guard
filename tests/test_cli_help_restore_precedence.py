@@ -28,14 +28,12 @@ class HelpVersionRestorePrecedenceTests(unittest.TestCase):
         self.assertEqual(proc.returncode, 1)
         self.assertIn("restore failed:", proc.stderr)
 
-    @unittest.expectedFailure
     def test_help_should_override_restore(self) -> None:
         proc = run_guard("--help", "--restore")
         self.assertEqual(proc.returncode, 0)
         self.assertIn("usage: eessi-arch-guard", proc.stdout)
         self.assertEqual(proc.stderr, "")
 
-    @unittest.expectedFailure
     def test_version_should_override_restore(self) -> None:
         proc = run_guard("--version", "--restore")
         self.assertEqual(proc.returncode, 0)

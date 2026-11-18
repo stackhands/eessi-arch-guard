@@ -3496,14 +3496,14 @@ def render_dry_run_text(report: DryRunReport) -> bytes:
 
 def _main(argv: Sequence[str]) -> int:
     args = parse_args(argv)
-    if args.restore:
-        return restore_main()
     if args.help:
         write_fd(1, HELP.encode("ascii"))
         return 0
     if args.version:
         write_fd(1, (__version__ + "\n").encode("ascii"))
         return 0
+    if args.restore:
+        return restore_main()
 
     env = dict(os.environ)
     chain_out = b""
