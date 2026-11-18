@@ -40,10 +40,6 @@ const Param = struct {
     value: []const u8,
 };
 
-fn trimWs(s: []const u8) []const u8 {
-    return std.mem.trim(u8, s, " \t\n\r\x0b\x0c");
-}
-
 fn splitHostPort(addr: []const u8) ?struct { host: []const u8, port: u16 } {
     if (addr.len == 0) return null;
     var host: []const u8 = "";
@@ -66,7 +62,7 @@ fn splitHostPort(addr: []const u8) ?struct { host: []const u8, port: u16 } {
 }
 
 pub fn parseTarget(raw: []const u8) ?Target {
-    const s = trimWs(raw);
+    const s = text.pyStrip(raw);
     if (s.len == 0 or text.hasLineBreakOrNul(s)) return null;
     if (std.mem.eql(u8, s, "syslog")) return .{ .scheme = .rfc5424_unix, .host_or_path = "/dev/log" };
     if (std.mem.eql(u8, s, "journald") or std.mem.eql(u8, s, "journal"))
@@ -94,7 +90,7 @@ pub fn parseTarget(raw: []const u8) ?Target {
 }
 
 pub fn parsePen(arena: Allocator, raw: []const u8) ?[]const u8 {
-    const s = trimWs(raw);
+    const s = text.pyStrip(raw);
     if (s.len == 0 or s.len > 20) return null;
     for (s) |c| if (c < '0' or c > '9') return null;
     const val = std.fmt.parseInt(u64, s, 10) catch return null;
