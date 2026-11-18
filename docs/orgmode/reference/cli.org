@@ -67,7 +67,7 @@ Slurm starts a =TaskProlog= with no arguments at all.
 | =-h=, =--help=                   | Print the usage text above on stdout and exit 0.                                                                                                                                                                                                                                                                                                                                                                               |
 | =--version=                      | Print the version on stdout and exit 0.                                                                                                                                                                                                                                                                                                                                                                                        |
 
-- =--restore= comes first, then =--help=, then =--version=; any of them replaces the decision.
+- =--help= and =--version= come first, then =--restore=; any of them replaces the decision.
 - =--check-submit= comes after those three and replaces the prolog decision, chaining, reload, cache and syslog paths.
 - The value of =--chain= and =--timeout= is the next argument, and empty when there is none.
   An argument that starts with =-= is not taken as the value but read as an option of its own, so =--chain --strict= is a strict run with an empty =--chain=, which is refused.

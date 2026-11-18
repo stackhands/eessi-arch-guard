@@ -1162,14 +1162,6 @@ fn checkSubmit(arena: Allocator, args: Args, env: envmap.Map, settings: ?Setting
 
 fn realMain(arena: Allocator, argv0: []const u8, argv: []const []const u8, envp: proc.Envp) u8 {
     const args = parseArgs(argv);
-    const env = envmap.fromEnvp(arena, envp) catch emergencyExit("MemoryError", "out of memory");
-    var ctx: guard.Ctx = .{
-        .arena = arena,
-        .env = env,
-        .strict = emergency_strict,
-        .self_exe = selfExe(arena),
-    };
-    if (args.restore) return guard.restoreMain(&ctx);
     if (args.help) {
         cli.put(1, help_text);
         return 0;
@@ -1178,6 +1170,14 @@ fn realMain(arena: Allocator, argv0: []const u8, argv: []const []const u8, envp:
         cli.put(1, version_text);
         return 0;
     }
+    const env = envmap.fromEnvp(arena, envp) catch emergencyExit("MemoryError", "out of memory");
+    var ctx: guard.Ctx = .{
+        .arena = arena,
+        .env = env,
+        .strict = emergency_strict,
+        .self_exe = selfExe(arena),
+    };
+    if (args.restore) return guard.restoreMain(&ctx);
 
     var chain_out: []const u8 = "";
     const cfg = siteConfig(arena, invokedPath(arena, argv0));
