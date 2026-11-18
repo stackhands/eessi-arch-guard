@@ -338,6 +338,21 @@ fn buildEvent(
     };
 }
 
+fn utf8ReplaceBytes(arena: Allocator, s: []const u8) Allocator.Error![]u8 {
+    var out: std.ArrayList(u8) = .empty;
+    var i: usize = 0;
+    while (i < s.len) {
+        const ch = text.nextChar(s[i..]);
+        if (ch.cp == null) {
+            try out.append(arena, '?');
+        } else {
+            try out.appendSlice(arena, s[i .. i + ch.len]);
+        }
+        i += ch.len;
+    }
+    return out.items;
+}
+
 fn formatRfc5424(arena: Allocator, ev: BuiltEvent, pen: []const u8) Allocator.Error![]u8 {
     var out: std.ArrayList(u8) = .empty;
     const pri: u8 = 8 + ev.severity;
@@ -352,20 +367,21 @@ fn formatRfc5424(arena: Allocator, ev: BuiltEvent, pen: []const u8) Allocator.Er
         try out.print(arena, " {s}=\"{s}\"", .{ p.key, esc });
     }
     try out.print(arena, "] {s}", .{ev.msg});
-    return out.items;
+    return utf8ReplaceBytes(arena, out.items);
 }
 
 fn journalKv(arena: Allocator, out: *std.ArrayList(u8), key: []const u8, value: []const u8) Allocator.Error!void {
-    if (std.mem.findAny(u8, value, "\n\x00") != null) {
+    const clean_val = try utf8ReplaceBytes(arena, value);
+    if (std.mem.findAny(u8, clean_val, "\n\x00") != null) {
         try out.appendSlice(arena, key);
         try out.append(arena, '\n');
         var len_buf: [8]u8 = undefined;
-        std.mem.writeInt(u64, &len_buf, value.len, .little);
+        std.mem.writeInt(u64, &len_buf, clean_val.len, .little);
         try out.appendSlice(arena, &len_buf);
-        try out.appendSlice(arena, value);
+        try out.appendSlice(arena, clean_val);
         try out.append(arena, '\n');
     } else {
-        try out.print(arena, "{s}={s}\n", .{ key, value });
+        try out.print(arena, "{s}={s}\n", .{ key, clean_val });
     }
 }
 
@@ -674,4 +690,25 @@ test "formatTarget preserves brackets around IPv6 hosts" {
     try std.testing.expectEqualStrings("tcp://[::1]:514", formatTarget(a, parseTarget("tcp://[::1]:514")).?);
     try std.testing.expectEqualStrings("udp://[2001:db8::1]:1514", formatTarget(a, parseTarget("udp://[2001:db8::1]:1514")).?);
     try std.testing.expectEqualStrings("udp://127.0.0.1:514", formatTarget(a, parseTarget("udp://127.0.0.1:514")).?);
+}
+
+test "formatRfc5424 and formatJournald replace invalid UTF-8 bytes" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const a = arena_state.allocator();
+    const ev: BuiltEvent = .{
+        .severity = 6,
+        .msgid = "EESSI_ARCH_NOOP",
+        .params = &.{.{ .key = "job", .value = "77\xff" }},
+        .msg = "bad\xffmsg",
+    };
+    const rfc = try formatRfc5424(a, ev, default_pen);
+    try std.testing.expect(std.unicode.utf8ValidateSlice(rfc));
+    try std.testing.expect(std.mem.find(u8, rfc, "job=\"77?\"") != null);
+    try std.testing.expect(std.mem.find(u8, rfc, "bad?msg") != null);
+
+    const jrn = try formatJournald(a, ev);
+    try std.testing.expect(std.unicode.utf8ValidateSlice(jrn));
+    try std.testing.expect(std.mem.find(u8, jrn, "SLURM_JOB_ID=77?\n") != null);
+    try std.testing.expect(std.mem.find(u8, jrn, "MESSAGE=bad?msg\n") != null);
 }
