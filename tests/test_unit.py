@@ -399,6 +399,30 @@ class UnitTests:
         finally:
             os.unlink(handle.name)
 
+    def test_main_uses_invoked_command_path_for_config_lookup(self):
+        with tempfile.TemporaryDirectory(prefix="eag-bin-") as bindir:
+            guard_path = Path(bindir) / "eessi-arch-guard"
+            guard_path.write_text("#!/bin/sh\n", encoding="utf-8")
+            guard_path.chmod(0o755)
+            original = os.environ.get("PATH")
+            seen = []
+            original_site_config = guard.site_config
+            original_check_submit = guard.check_submit
+            try:
+                os.environ["PATH"] = bindir + ":/usr/bin:/bin"
+                guard.site_config = lambda path: (seen.append(path) or (None, None))
+                guard.check_submit = lambda *args, **kwargs: 0
+                code = guard.main(["eessi-arch-guard", "--check-submit", "--partition", "cpu"])
+                assert code == 0
+                assert seen == [str(guard_path)]
+            finally:
+                guard.site_config = original_site_config
+                guard.check_submit = original_check_submit
+                if original is None:
+                    os.environ.pop("PATH", None)
+                else:
+                    os.environ["PATH"] = original
+
     def test_message_trim_keeps_a_character_boundary(self):
         import locale
 
