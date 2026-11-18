@@ -380,6 +380,35 @@ class SyslogTests(unittest.TestCase):
         self.assertEqual(text_proc.returncode, 0, text_proc.stderr)
         self.assertIn("syslog: tcp://[::1]:514\n", text_proc.stdout)
 
+    def test_non_utf8_env_bytes_are_replaced_not_raw(self):
+        sock_rfc, path_rfc = self._dgram_server("utf8-rfc.sock")
+        sock_jrn, path_jrn = self._dgram_server("utf8-jrn.sock")
+        bad_job = os.fsdecode(b"77\xff")
+        try:
+            env = self._cpu_env(
+                ZEN2,
+                "zen2",
+                {
+                    "SLURM_JOB_ID": bad_job,
+                    "EESSI_ARCH_GUARD_SYSLOG_ALL": "1",
+                },
+            )
+            p_rfc = harness.run_guard(env, [f"--syslog=unix://{path_rfc}"])
+            self.assertEqual(p_rfc.returncode, 0, p_rfc.stderr)
+            raw_rfc = sock_rfc.recv(65536).decode("utf-8")
+            m = RFC5424_RE.fullmatch(raw_rfc)
+            self.assertIsNotNone(m, raw_rfc)
+            assert m is not None
+            self.assertEqual(_parse_sd_params(m.group(7))["job"], "77?")
+
+            p_jrn = harness.run_guard(env, [f"--syslog=journal+unix://{path_jrn}"])
+            self.assertEqual(p_jrn.returncode, 0, p_jrn.stderr)
+            fields = _parse_journal_datagram(sock_jrn.recv(65536))
+            self.assertEqual(fields["SLURM_JOB_ID"], "77?")
+        finally:
+            sock_rfc.close()
+            sock_jrn.close()
+
 
 if __name__ == "__main__":
     unittest.main()
