@@ -41,12 +41,15 @@ const help_text =
     \\                        [--restore] [-h|--help] [--version]
     \\       eessi-arch-guard --check-submit --partition NAME [--constraint NAME]
     \\                        [--eb-stack PATH] [--json]
+    \\       eessi-arch-guard --check-submit --target TARGET [--eb-stack PATH] [--json]
     \\
     \\Slurm TaskProlog: when the loaded EESSI CPU or accelerator target is not this
     \\node's, print export/unset lines for the reloaded module environment.
     \\--check-submit checks LOADEDMODULES against a mapped target without changing it.
     \\--partition NAME selects submit_target.partition.NAME from the site config.
     \\--constraint NAME also requires submit_target.constraint.NAME to select that target.
+    \\--target TARGET checks against that EESSI CPU target, such as x86_64/amd/zen4,
+    \\with no site config.
     \\--eb-stack PATH selects the eb-stack executable used for the read-only check.
     \\--shell prints bash for: eval "$(eessi-arch-guard --shell)"
     \\--strict returns 78 on a failed decision or an unexpected exception.
@@ -173,6 +176,7 @@ const Args = struct {
     partition: ?[]const u8 = null,
     constraint: ?[]const u8 = null,
     eb_stack: ?[]const u8 = null,
+    target: ?[]const u8 = null,
 };
 
 /// _option_value: the word after argv[i.*], with i.* moved onto it, unless
@@ -230,6 +234,10 @@ fn parseArgs(argv: []const []const u8) Args {
             a.eb_stack = optionValue(argv, &i);
         } else if (std.mem.startsWith(u8, arg, "--eb-stack=")) {
             a.eb_stack = arg["--eb-stack=".len..];
+        } else if (std.mem.eql(u8, arg, "--target")) {
+            a.target = optionValue(argv, &i);
+        } else if (std.mem.startsWith(u8, arg, "--target=")) {
+            a.target = arg["--target=".len..];
         }
     }
     return a;
@@ -787,6 +795,19 @@ fn submitSelector(s: []const u8) bool {
     return true;
 }
 
+/// The target `--target` names, refused next to `--partition` or `--constraint`.
+fn directTarget(target: []const u8, partition: []const u8, constraint: []const u8, why: *[]const u8) ?[]const u8 {
+    if (partition.len > 0 or constraint.len > 0) {
+        why.* = "--target is used without --partition and --constraint";
+        return null;
+    }
+    if (!text.safeRelSubdir(target)) {
+        why.* = "--target needs one safe relative EESSI target, such as x86_64/amd/zen4";
+        return null;
+    }
+    return target;
+}
+
 fn submitTarget(arena: Allocator, settings: ?Settings, partition: []const u8, constraint: []const u8, why: *[]const u8) ?[]const u8 {
     if (!submitSelector(partition)) {
         why.* = "--partition needs one safe partition name";
@@ -1079,7 +1100,8 @@ fn checkSubmit(arena: Allocator, args: Args, env: envmap.Map, settings: ?Setting
     const partition = args.partition orelse "";
     const constraint = args.constraint orelse "";
     var why: []const u8 = "";
-    const target = submitTarget(arena, settings, partition, constraint, &why) orelse {
+    const direct = args.target orelse "";
+    const target = (if (direct.len > 0) directTarget(direct, partition, constraint, &why) else submitTarget(arena, settings, partition, constraint, &why)) orelse {
         const line = arena.print("eessi-arch-guard: check-submit: {s}", .{why}) catch why;
         return finishCheckSubmit(arena, args, partition, constraint, 2, null, null, &.{}, why, &.{line});
     };
