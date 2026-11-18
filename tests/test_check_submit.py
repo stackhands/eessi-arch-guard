@@ -633,5 +633,58 @@ class CheckSubmitEmptyTargetTests(unittest.TestCase):
                 self.assertIn(expected, proc.stderr)
 
 
+class CheckSubmitZigParityTests(unittest.TestCase):
+    def test_early_invalid_input_reports_loaded_null(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            env_missing_prefix = {
+                "PATH": "/usr/bin:/bin",
+                "HOME": str(root / "home"),
+                "LANG": "C",
+                "LC_ALL": "C",
+                "EESSI_PREFIX": "",
+                "EESSI_OS_TYPE": "linux",
+                "LOADEDMODULES": "R/4.4.2",
+            }
+            proc = subprocess.run(
+                [*harness.GUARD_ARGV, "--check-submit", "--json", "--target", ZEN4],
+                capture_output=True,
+                text=True,
+                env=env_missing_prefix,
+                check=False,
+            )
+            self.assertEqual(proc.returncode, 2, proc.stdout + proc.stderr)
+            self.assertIsNone(json.loads(proc.stdout)["loaded"])
+
+            prefix = root / "prefix"
+            (prefix / "software" / "linux" / ZEN4 / "modules" / "all").mkdir(parents=True)
+            env_missing_eb = {
+                "PATH": "/usr/bin:/bin",
+                "HOME": str(root / "home"),
+                "LANG": "C",
+                "LC_ALL": "C",
+                "EESSI_PREFIX": str(prefix),
+                "EESSI_OS_TYPE": "linux",
+                "LOADEDMODULES": "R/4.4.2",
+            }
+            proc_eb = subprocess.run(
+                [
+                    *harness.GUARD_ARGV,
+                    "--check-submit",
+                    "--json",
+                    "--target",
+                    ZEN4,
+                    "--eb-stack",
+                    str(root / "no-such-eb-stack"),
+                ],
+                capture_output=True,
+                text=True,
+                env=env_missing_eb,
+                check=False,
+            )
+            self.assertEqual(proc_eb.returncode, 2, proc_eb.stdout + proc_eb.stderr)
+            self.assertIsNone(json.loads(proc_eb.stdout)["loaded"])
+
+
 if __name__ == "__main__":
     unittest.main()

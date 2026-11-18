@@ -1113,7 +1113,7 @@ fn checkSubmit(arena: Allocator, args: Args, env: envmap.Map, settings: ?Setting
     if (!text.safeAbsolute(prefix) or !text.safeRelSubdir(os_type)) {
         const reason = "EESSI_PREFIX or EESSI_OS_TYPE is missing or unsafe";
         const line = "eessi-arch-guard: check-submit: " ++ reason;
-        return finishCheckSubmit(arena, args, partition, constraint, 2, null, @intCast(loaded.len), &.{}, reason, &.{line});
+        return finishCheckSubmit(arena, args, partition, constraint, 2, null, null, &.{}, reason, &.{line});
     }
     const configured = if (settings) |s| s.get("eb_stack") orelse "" else "";
     const selected = args.eb_stack orelse (if (configured.len > 0) configured else "eb-stack");
@@ -1121,7 +1121,7 @@ fn checkSubmit(arena: Allocator, args: Args, env: envmap.Map, settings: ?Setting
         const shown = text.oneLine(arena, selected, 200) catch selected;
         const reason = arena.print("eb-stack is not executable: {s}", .{shown}) catch shown;
         const line = arena.print("eessi-arch-guard: check-submit: {s}", .{reason}) catch reason;
-        return finishCheckSubmit(arena, args, partition, constraint, 2, null, @intCast(loaded.len), &.{}, reason, &.{line});
+        return finishCheckSubmit(arena, args, partition, constraint, 2, null, null, &.{}, reason, &.{line});
     };
     const module_root = std.fs.path.join(arena, &.{ prefix, "software", os_type, target, "modules", "all" }) catch oom();
     var all_found: std.ArrayList([]const u8) = .empty;
