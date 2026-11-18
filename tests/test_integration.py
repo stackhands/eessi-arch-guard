@@ -179,6 +179,15 @@ class IntegrationTests(unittest.TestCase):
         self.assertEqual(harness.log_lines(self.site.log), [])
         self.assertEqual(harness.log_lines(self.site.arch_log), ["cpupath", "accelpath"])
 
+    def test_unsafe_software_override_is_ignored(self):
+        env = self._cpu_env(ZEN4, "zen2")
+        env["EESSI_SOFTWARE_SUBDIR_OVERRIDE"] = "../../oops"
+        proc = harness.run_guard(env)
+        changes, printed = _assert_prolog(proc)
+        self.assertEqual(changes["EESSI_SOFTWARE_SUBDIR"], ZEN2)
+        self.assertIn("EESSI_ARCH_GUARD_RELOADED", changes)
+        self.assertTrue(printed)
+
     def test_missing_software_dir_is_loud_and_configurable(self):
         bare = harness.Site()
         try:
@@ -1594,3 +1603,65 @@ class IntegrationTests(unittest.TestCase):
             self.assertEqual(os.listdir(scratch), [])
         finally:
             shutil.rmtree(scratch, ignore_errors=True)
+
+    def test_invalid_environment_values_python_and_zig_parity(self):
+        if not harness.TOOL_BIN:
+            return
+        cases = [
+            ("EESSI_SOFTWARE_SUBDIR_OVERRIDE", "   "),
+            ("EESSI_SOFTWARE_SUBDIR_OVERRIDE", "x86_64/amd/zen4/"),
+            ("EESSI_SOFTWARE_SUBDIR_OVERRIDE", "x86_64/amd/unknownarch"),
+            ("EESSI_ACCEL_SUBDIR", "accel/nvidia/cc90/"),
+            ("EESSI_ACCEL_SUBDIR", " accel/nvidia/cc90"),
+        ]
+        for key, value in cases:
+            env = self._cpu_env(ZEN4, "zen4", modules=("R/4.4.2",))
+            env[key] = value
+            zig_proc = subprocess.run(
+                [str(harness.PROGRAM)],
+                capture_output=True,
+                check=False,
+                env=env,
+            )
+            py_proc = subprocess.run(
+                [sys.executable, "-I", str(harness.GUARD)],
+                capture_output=True,
+                check=False,
+                env=env,
+            )
+            self.assertEqual(zig_proc.returncode, py_proc.returncode, (key, value))
+            self.assertEqual(zig_proc.stderr, py_proc.stderr, (key, value))
+            self.assertEqual(zig_proc.stdout, py_proc.stdout, (key, value))
+            self.assertIn(b"EESSI_ARCH_GUARD_FAILED", zig_proc.stdout, (key, value))
+            self.assertIn(b"invalid-environment", zig_proc.stdout, (key, value))
+
+    def test_usage_error_python_and_zig_parity(self):
+        if not harness.TOOL_BIN:
+            return
+        cases = [
+            ["--unknown-option"],
+            ["--"],
+            ["--", "--help"],
+            ["--timeout"],
+            ["--chain"],
+            ["--check-submit", "--partition"],
+            ["--check-submit", "--partition", "bad name"],
+            ["--check-submit", "--partition", "cpu", "--constraint"],
+        ]
+        env = {"PATH": "/usr/bin:/bin", "LC_ALL": "C"}
+        for args in cases:
+            zig_proc = subprocess.run(
+                [str(harness.PROGRAM), *args],
+                capture_output=True,
+                check=False,
+                env=env,
+            )
+            py_proc = subprocess.run(
+                [sys.executable, "-I", str(harness.GUARD), *args],
+                capture_output=True,
+                check=False,
+                env=env,
+            )
+            self.assertEqual(zig_proc.returncode, py_proc.returncode, args)
+            self.assertEqual(zig_proc.stderr, py_proc.stderr, args)
+            self.assertEqual(zig_proc.stdout, py_proc.stdout, args)

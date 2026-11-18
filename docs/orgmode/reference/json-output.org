@@ -18,6 +18,7 @@ Draft 2020-12 schemas live beside this page:
 | Mode | Schema file | Notes |
 |------+-------------+-------|
 | =--json= on a decision run | =json/decision.schema.json= | One object; =reload_needed= and =exit_semantic= summarise the outcome |
+| =--dry-run --json= | =json/dry-run.schema.json= | One object; includes diagnostic fields alongside the decision summary |
 | =--check-submit --json= | =json/check-submit.schema.json= | One object; =kind= is =check-submit= and =exit_semantic= is =ok=, =missing=, or =invalid= |
 | =--restore= reply on stdout | =json/restore-reply.schema.json= | The helper's response object |
 
@@ -59,6 +60,12 @@ stops before that count exists.
 =missing= carries the result.
 Absence lines and invalid-input lines stay on stderr.
 =--help=, =--version=, and =--restore= still ignore =--json=.
+
+** Dry-run
+
+=--dry-run --json= prints one line described by =json/dry-run.schema.json=.
+It keeps the decision keys of =json/decision.schema.json= and adds diagnostic
+groups for config, chain, syslog, job, and cache state.
 
 ** See also
 

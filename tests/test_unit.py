@@ -208,6 +208,34 @@ class UnitTests:
             assert outcome.kind == "skip", extra
             assert outcome.changes == {}
 
+    def test_unsafe_software_override_does_not_disable_guard(self):
+        outcome = guard.decide(
+            _env(EESSI_SOFTWARE_SUBDIR_OVERRIDE="../../oops"),
+            shell=False,
+            cpu_probe=_cpu(),
+            accel_probe=_accel(),
+            restore=_restore(),
+        )
+        assert outcome.kind == "reloaded"
+        assert outcome.changes["EESSI_SOFTWARE_SUBDIR"] == ZEN2
+
+    def test_invalid_environment_values_are_loud(self):
+        for extra in (
+            {"EESSI_SOFTWARE_SUBDIR_OVERRIDE": "  "},
+            {"EESSI_SOFTWARE_SUBDIR_OVERRIDE": "x86_64/amd/zen4/"},
+            {"EESSI_ACCEL_SUBDIR": "accel/nvidia/cc90/"},
+            {"EESSI_ACCEL_SUBDIR": " accel/nvidia/cc90"},
+        ):
+            outcome = guard.decide(
+                _env(**extra), shell=False, cpu_probe=_cpu(), accel_probe=_accel()
+            )
+            assert outcome.kind == "failed", extra
+            assert outcome.changes["EESSI_ARCH_GUARD_FAILED"].endswith(
+                "->invalid-environment"
+            )
+            assert outcome.message is not None
+            assert "environment left as it was" in outcome.message
+
     def test_same_target_does_not_restore(self):
         calls = []
 

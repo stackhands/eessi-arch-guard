@@ -1,6 +1,6 @@
 # eessi-arch-guard 0.2.0: the interface a port keeps
 
-Source: `src/eessi_arch_guard.py`, 1823 lines, `__version__ = "0.2.0"` (line 32).
+Source: `src/eessi_arch_guard.py` at the `v0.2.0` tag, 1823 lines, `__version__ = "0.2.0"` (line 32); read the "L" numbers with `git show v0.2.0:src/eessi_arch_guard.py`, since `main` has moved on.
 All "L" numbers are lines of that file unless a test or doc file is named. Python semantics that a
 port must reproduce are called out in the Notes column.
 

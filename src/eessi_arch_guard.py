@@ -1220,6 +1220,35 @@ def pinned_env(env: Mapping[str, str], pin: str) -> Dict[str, str]:
     return pinned
 
 
+def _software_root(env: Mapping[str, str]) -> str:
+    """Known software root for this environment, or empty when unavailable."""
+    prefix = env.get("EESSI_PREFIX", "")
+    os_type = env.get("EESSI_OS_TYPE", "")
+    if not safe_absolute(prefix) or not safe_rel_subdir(os_type):
+        return ""
+    root = os.path.join(prefix, "software", os_type)
+    if not os.path.isdir(root):
+        return ""
+    return root
+
+
+def _invalid_guard_environment(env: Mapping[str, str]) -> Optional[str]:
+    """Invalid env inputs that must fail loudly instead of being ignored."""
+    override = env.get("EESSI_SOFTWARE_SUBDIR_OVERRIDE", "")
+    if override:
+        if override.strip() != override or override.endswith("/"):
+            return "EESSI_SOFTWARE_SUBDIR_OVERRIDE is not a safe subdirectory: %s" % override
+        if safe_rel_subdir(override):
+            root = _software_root(env)
+            if root and not os.path.isdir(os.path.join(root, override, "software")):
+                return "EESSI_SOFTWARE_SUBDIR_OVERRIDE is not an installed target: %s" % override
+    accel = env.get("EESSI_ACCEL_SUBDIR", "")
+    if accel:
+        if accel.strip() != accel or ACCEL_RE.fullmatch(accel) is None:
+            return "EESSI_ACCEL_SUBDIR is not a valid accelerator subdirectory: %s" % accel
+    return None
+
+
 def _load_in_order(
     current: Dict[str, str], lmod_cmd: str, modules: Sequence[str]
 ) -> Tuple[Dict[str, str], List[str], str]:
@@ -1453,9 +1482,17 @@ def decide(
     if env.get("EESSI_ARCH_GUARD") == "0":
         return Outcome({}, None, "skip", "EESSI_ARCH_GUARD=0")
     was = env.get("EESSI_SOFTWARE_SUBDIR", "")
+    software_override = env.get("EESSI_SOFTWARE_SUBDIR_OVERRIDE", "")
     if not was:
         return Outcome({}, None, "skip", "EESSI is not loaded")
-    if env.get("EESSI_SOFTWARE_SUBDIR_OVERRIDE"):
+    invalid = _invalid_guard_environment(env)
+    if invalid:
+        return _failed(
+            was,
+            "invalid-environment",
+            "eessi-arch-guard: %s; environment left as it was" % invalid,
+        )
+    if software_override and safe_rel_subdir(software_override):
         return Outcome({}, None, "skip", "EESSI_SOFTWARE_SUBDIR_OVERRIDE is set")
     if env.get("EESSI_ARCHDETECT_OPTIONS_OVERRIDE"):
         return Outcome({}, None, "skip", "EESSI_ARCHDETECT_OPTIONS_OVERRIDE is set")
@@ -1525,8 +1562,12 @@ def decide(
             % (now_label, was_label),
         )
 
+    restore_env = env
+    if software_override and not safe_rel_subdir(software_override):
+        restore_env = dict(env)
+        restore_env.pop("EESSI_SOFTWARE_SUBDIR_OVERRIDE", None)
     try:
-        result = restore(env, loaded.eessi, loaded.others, cpu.override)
+        result = restore(restore_env, loaded.eessi, loaded.others, cpu.override)
     except Exception as exc:
         result = _not_run(str(exc))
     if not result.ran:
@@ -2335,7 +2376,7 @@ def _chain_path_ok(path: str) -> bool:
 def _config_candidate_path(script_path: str) -> Optional[str]:
     beside = os.path.join(os.path.dirname(os.path.abspath(script_path)), "eessi-arch-guard.conf")
     for path in ("/etc/eessi-arch-guard.conf", beside):
-        if os.path.exists(path):
+        if os.path.lexists(path):
             return path
     return None
 
@@ -3021,7 +3062,16 @@ def dry_run_decide(
     was = env.get("EESSI_SOFTWARE_SUBDIR", "")
     if not was:
         return DryRunDecision("skip", detail="EESSI is not loaded")
-    if env.get("EESSI_SOFTWARE_SUBDIR_OVERRIDE"):
+    invalid = _invalid_guard_environment(env)
+    if invalid:
+        return DryRunDecision(
+            "failed",
+            was_cpu=was,
+            marker="%s->%s" % (_side(was), "invalid-environment"),
+            message=one_line("eessi-arch-guard: %s; environment left as it was" % invalid),
+        )
+    software_override = env.get("EESSI_SOFTWARE_SUBDIR_OVERRIDE", "")
+    if software_override and safe_rel_subdir(software_override):
         return DryRunDecision("skip", was_cpu=was, detail="EESSI_SOFTWARE_SUBDIR_OVERRIDE is set")
     if env.get("EESSI_ARCHDETECT_OPTIONS_OVERRIDE"):
         return DryRunDecision(
