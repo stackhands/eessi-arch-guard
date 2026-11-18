@@ -46,7 +46,7 @@ It never loads, unloads, rebuilds, or provisions software.
 |---|---|---|
 | =loaded module absent from TARGET: NAME= | =eb-stack= did not find =NAME= in that target's module-tree inventory. | Choose a target where it is installed, or change the job's loaded modules. |
 | =site config has no ... mapping= | The site map does not describe that selector. | Ask the administrator for a mapped selector. |
-| =partition ... and constraint ... select different targets= | The two selectors disagree. | Correct one selector before submitting. |
+| =submit_target.partition.NAME and submit_target.constraint.NAME select different targets= | The two selectors disagree. | Correct one selector before submitting. |
 | =eb-stack is not executable= | The configured planner cannot be started. | Set =eb_stack= in the site configuration or pass =--eb-stack PATH=. |
 
 The check does not repair any of these conditions.
