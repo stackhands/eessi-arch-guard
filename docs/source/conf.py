@@ -188,6 +188,11 @@ html_theme_options = {
                     "summary": "Keep a failed EasyBuild command's own output, which --tmp-logdir does not; rotate a pipeline's log tree",
                 },
                 {
+                    "title": "eb-pipeline",
+                    "url": "https://stackhands.github.io/eb-pipeline/",
+                    "summary": "Drive a site's EasyBuild builds from one site file, through eb-stack, eb-staged-rebuild and eb-keep-logs",
+                },
+                {
                     "title": "rfc9162",
                     "url": "https://stackhands.github.io/rfc9162/",
                     "summary": "Append-only Merkle logs hashed as RFC 9162, with tiled storage and signed checkpoints",
