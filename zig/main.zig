@@ -355,19 +355,9 @@ fn parseConfigBytes(arena: Allocator, blob: []const u8, bad: *std.ArrayList([]co
     return settings;
 }
 
-const errno_text = [_]struct { e: linux.E, s: []const u8 }{
-    .{ .e = .NOENT, .s = "No such file or directory" },
-    .{ .e = .ACCES, .s = "Permission denied" },
-    .{ .e = .PERM, .s = "Operation not permitted" },
-    .{ .e = .LOOP, .s = "Too many levels of symbolic links" },
-    .{ .e = .NOTDIR, .s = "Not a directory" },
-    .{ .e = .IO, .s = "Input/output error" },
-    .{ .e = .ISDIR, .s = "Is a directory" },
-};
-
 fn osErrorText(arena: Allocator, e: linux.E, path: []const u8) []const u8 {
-    for (errno_text) |t| if (t.e == e)
-        return arena.print("[Errno {d}] {s}: '{s}'", .{ @backingInt(e), t.s, path }) catch t.s;
+    if (sys.errnoText(e)) |s|
+        return arena.print("[Errno {d}] {s}: '{s}'", .{ @backingInt(e), s, path }) catch s;
     return arena.print("[Errno {d}] Unknown error {d}: '{s}'", .{ @backingInt(e), @backingInt(e), path }) catch "error";
 }
 
@@ -1513,4 +1503,14 @@ test "configBeside is the config in the directory of the normalized path" {
     defer t.free(want);
     try expectConfigBeside(t, "./link/eessi-arch-guard", want);
     try std.testing.checkAllAllocationFailures(t, expectConfigBeside, .{ "link/../link/eessi-arch-guard", want });
+}
+
+test "osErrorText uses standard strerror descriptions for any errno" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const a = arena_state.allocator();
+    try std.testing.expectEqualStrings("[Errno 2] No such file or directory: '/missing'", osErrorText(a, .NOENT, "/missing"));
+    try std.testing.expectEqualStrings("[Errno 36] File name too long: '/long'", osErrorText(a, .NAMETOOLONG, "/long"));
+    try std.testing.expectEqualStrings("[Errno 30] Read-only file system: '/ro'", osErrorText(a, .ROFS, "/ro"));
+    try std.testing.expectEqualStrings("[Errno 28] No space left on device: '/full'", osErrorText(a, .NOSPC, "/full"));
 }
