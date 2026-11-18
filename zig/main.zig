@@ -1021,6 +1021,12 @@ fn extendModuleRoots(arena: Allocator, env: envmap.Map, os_type: []const u8, tar
     return roots.items;
 }
 
+fn moduleTreeAvailable(root: []const u8) bool {
+    const dir = fsx.openDir(fsx.cwd, root, true) catch return false;
+    sys.close(dir);
+    return true;
+}
+
 fn writeSubmitFile(path: []const u8, data: []const u8) bool {
     const fd = sys.openat(fsx.cwd, path, .{ .ACCMODE = .WRONLY, .CREAT = true, .TRUNC = true, .NOFOLLOW = true }, 0o600) catch return false;
     defer sys.close(fd);
@@ -1125,6 +1131,12 @@ fn checkSubmit(arena: Allocator, args: Args, env: envmap.Map, settings: ?Setting
         return finishCheckSubmit(arena, args, partition, constraint, 2, null, @intCast(loaded.len), &.{}, reason, &.{line});
     };
     const module_root = std.fs.path.join(arena, &.{ prefix, "software", os_type, target, "modules", "all" }) catch oom();
+    if (!moduleTreeAvailable(module_root)) {
+        const shown = text.oneLine(arena, module_root, 300) catch module_root;
+        const reason = arena.print("target module tree is unavailable: {s}", .{shown}) catch shown;
+        const line = arena.print("eessi-arch-guard: check-submit: {s}", .{reason}) catch reason;
+        return finishCheckSubmit(arena, args, partition, constraint, 2, target, @intCast(loaded.len), &.{}, reason, &.{line});
+    }
     var all_found: std.ArrayList([]const u8) = .empty;
     all_found.appendSlice(arena, inventoryModules(arena, module_root)) catch oom();
     for (extendModuleRoots(arena, env, os_type, target)) |root| {

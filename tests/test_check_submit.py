@@ -317,6 +317,55 @@ class CheckSubmitTests(unittest.TestCase):
                 schema = json.loads(SCHEMA.read_text(encoding="utf-8"))
                 jsonschema.Draft202012Validator(schema).validate(payload)
 
+    def test_missing_target_module_tree_is_invalid(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            prefix = root / "prefix"
+            fake = _fake_eb_stack(root)
+            env = {
+                "PATH": "/usr/bin:/bin",
+                "HOME": "/tmp",
+                "LANG": "C",
+                "LC_ALL": "C",
+                "EESSI_PREFIX": str(prefix),
+                "EESSI_OS_TYPE": "linux",
+                "LOADEDMODULES": "EESSI/2025.06:R/4.4.2",
+                "EESSI_TEST_EB_STACK_LOG": str(root / "eb-stack.log"),
+            }
+            conf = harness.PROGRAM.with_name("eessi-arch-guard.conf")
+            conf.write_text("submit_target.partition.cpu = %s\n" % ZEN4, encoding="utf-8")
+            subprocess.check_call(["sudo", "chown", "root:root", str(conf)])
+            subprocess.check_call(["sudo", "chmod", "644", str(conf)])
+            try:
+                proc = subprocess.run(
+                    [
+                        *harness.GUARD_ARGV,
+                        "--check-submit",
+                        "--json",
+                        "--partition",
+                        "cpu",
+                        "--eb-stack",
+                        str(fake),
+                    ],
+                    capture_output=True,
+                    text=True,
+                    env=env,
+                    check=False,
+                )
+                self.assertEqual(proc.returncode, 2, proc.stderr)
+                payload = json.loads(proc.stdout)
+                self.assertEqual(payload["schema_version"], 1)
+                self.assertEqual(payload["exit"], 2)
+                self.assertEqual(payload["exit_semantic"], "invalid")
+                self.assertEqual(payload["target"], ZEN4)
+                self.assertEqual(payload["loaded"], 1)
+                self.assertEqual(payload["missing"], [])
+                self.assertIsInstance(payload["message"], str)
+                self.assertIn("module tree", payload["message"])
+                self.assertIn("module tree", proc.stderr)
+            finally:
+                subprocess.check_call(["sudo", "rm", "-f", str(conf)])
+
     def test_cli_arguments_are_opt_in(self) -> None:
         plain = guard.parse_args([])
         self.assertFalse(plain.check_submit)
