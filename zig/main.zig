@@ -1269,7 +1269,22 @@ fn realMain(arena: Allocator, argv0: []const u8, argv: []const []const u8, envp:
                 .stderr_limit = 64 << 20,
                 .timeout_ms = null,
                 .new_session = false,
-            }) catch |err| emergencyExit("OSError", @errorName(err));
+                .exec_error = true,
+            }) catch |err| {
+                if (sys.asError(err)) |se| {
+                    const cls = switch (se) {
+                        error.NotFound => "FileNotFoundError",
+                        error.AccessDenied => "PermissionError",
+                        error.NotDir => "NotADirectoryError",
+                        error.IsDir => "IsADirectoryError",
+                        else => "OSError",
+                    };
+                    const shown = text.pyRepr(arena, path) catch path;
+                    const msg = arena.print("{s}: {s}", .{ sys.describe(se), shown }) catch sys.describe(se);
+                    emergencyExit(cls, msg);
+                }
+                emergencyExit("OSError", @errorName(err));
+            };
             if (r.stderr.len > 0) cli.put(2, r.stderr);
             // A chain killed by a signal is 1, as a negative returncode is.
             const code: u8 = switch (r.term) {
