@@ -976,24 +976,7 @@ fn writableDir(p: []const u8) bool {
 /// tempfile.mkdtemp(prefix="eessi-arch-guard-", dir=base): a new 0700
 /// directory with a random suffix.
 fn mkdtemp(c: *Ctx, base: []const u8) ?[]const u8 {
-    const alphabet = "abcdefghijklmnopqrstuvwxyz0123456789_";
-    var tries: usize = 0;
-    while (tries < 100) : (tries += 1) {
-        var rnd: [8]u8 = undefined;
-        // A name from bytes getrandom did not fill would not be random.
-        _ = sys.call(linux.getrandom, .{ &rnd, rnd.len, 0 }) catch return null;
-        var suffix: [8]u8 = undefined;
-        for (rnd, 0..) |b, i| suffix[i] = alphabet[b % alphabet.len];
-        const p = c.arena.print("{s}/eessi-arch-guard-{s}", .{ base, suffix }) catch return null;
-        var zb: [sys.path_max:0]u8 = undefined;
-        const z = sys.z(&zb, p) catch return null;
-        switch (linux.errno(linux.mkdirat(linux.AT.FDCWD, z.ptr, 0o700))) {
-            .SUCCESS => return p,
-            .EXIST => continue,
-            else => return null,
-        }
-    }
-    return null;
+    return fsx.mkdtemp(c.arena, base, "eessi-arch-guard-") catch null;
 }
 
 fn rmtree(c: *Ctx, p: []const u8) void {
@@ -2011,4 +1994,28 @@ test "dryRunDecide handles skip and missing EESSI without writing" {
     const d2 = try dryRunDecide(&c, env);
     try std.testing.expectEqual(Kind.skip, d2.kind);
     try std.testing.expectEqualStrings("EESSI_ARCH_GUARD=0", d2.detail.?);
+}
+
+test "mkdtemp delegates to fsx.mkdtemp with the guard prefix" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const a = arena_state.allocator();
+    var cwd_buf: [sys.path_max]u8 = undefined;
+    const here = try fsx.realpath(fsx.cwd, ".", &cwd_buf);
+    const base = try std.fmt.allocPrint(a, "{s}/.zig-cache/eag-mkdtemp-{d}", .{ here, linux.getpid() });
+    var zb: [sys.path_max:0]u8 = undefined;
+    _ = linux.mkdirat(fsx.cwd, (try sys.z(&zb, base)).ptr, 0o700);
+    defer fsx.deleteTree(a, fsx.cwd, base) catch {};
+
+    var c: Ctx = .{ .arena = a, .env = .empty, .strict = false, .self_exe = "" };
+    const created = mkdtemp(&c, base).?;
+    const expected_prefix = try std.fmt.allocPrint(a, "{s}/eessi-arch-guard-", .{base});
+    try std.testing.expect(std.mem.startsWith(u8, created, expected_prefix));
+    try std.testing.expectEqual(expected_prefix.len + 8, created.len);
+    const st = try fsx.statAt(fsx.cwd, created, false);
+    try std.testing.expect(st.isDir());
+    try std.testing.expectEqual(@as(u32, 0), st.perm() & 0o077);
+
+    const missing = try std.fmt.allocPrint(a, "{s}/missing", .{base});
+    try std.testing.expect(mkdtemp(&c, missing) == null);
 }
