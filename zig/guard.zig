@@ -509,11 +509,13 @@ fn parseCpuSpec(spec: []const u8) ?CpuSet {
     var set: CpuSet = .{};
     var i: usize = 0;
     var saw = false;
+    var trailing_comma = false;
     while (i < body.len) {
         if (body[i] == ' ') {
             i += 1;
             continue;
         }
+        trailing_comma = false;
         const start_i = i;
         while (i < body.len and body[i] >= '0' and body[i] <= '9') i += 1;
         const start = parseUsize(body[start_i..i]) orelse return null;
@@ -533,10 +535,11 @@ fn parseCpuSpec(spec: []const u8) ?CpuSet {
         }
         if (i < body.len) {
             if (body[i] != ',') return null;
+            trailing_comma = true;
             i += 1;
         }
     }
-    if (!saw) return null;
+    if (!saw or trailing_comma) return null;
     return set;
 }
 
@@ -2058,4 +2061,12 @@ test "prepareCpuinfo writes scoped cpuinfo under TMPDIR" {
     defer if (prepared.cleanup) |p| unlinkPath(p);
     const expected_prefix = try std.fmt.allocPrint(a, "{s}/eessi-arch-guard-cpu-", .{tmp_dir});
     try std.testing.expect(std.mem.startsWith(u8, prepared.path, expected_prefix));
+}
+
+test "parseCpuSpec rejects trailing commas" {
+    try std.testing.expect(parseCpuSpec("0,") == null);
+    try std.testing.expect(parseCpuSpec("0-1,") == null);
+    try std.testing.expect(parseCpuSpec("0, ") == null);
+    try std.testing.expect(parseCpuSpec("cpu[0,]") == null);
+    try std.testing.expect(parseCpuSpec("0,1") != null);
 }
