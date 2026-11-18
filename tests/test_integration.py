@@ -1281,6 +1281,40 @@ class IntegrationTests(unittest.TestCase):
         self.assertEqual(proc.returncode, 0, proc.stderr)
         self.assertEqual(proc.stdout, "", proc.stdout)
 
+    def test_malformed_trailing_comma_cpu_bind_is_ignored(self):
+        spr = "x86_64/intel/sapphirerapids"
+        haswell = "x86_64/intel/haswell"
+        self.site.add_cpu(spr)
+        self.site.add_cpu(haswell)
+        self.site.add_module(spr, "R/4.4.2")
+        self.site.add_module(haswell, "R/4.4.2")
+        cpuinfo = "\n".join(
+            (
+                "processor : 0",
+                "vendor_id : GenuineIntel",
+                "cpu family : 6",
+                "model : 60",
+                "model name : Intel Haswell",
+                "flags : avx2 fma",
+                "",
+                "processor : 1",
+                "vendor_id : GenuineIntel",
+                "cpu family : 6",
+                "model : 143",
+                "model name : Intel Sapphire Rapids",
+                "flags : avx2 fma avx512f avx512bw avx512cd avx512dq avx512vl "
+                "avx512_bf16 amx_tile waitpkg",
+                "",
+            )
+        )
+        with open(self.site.cpuinfo, "w", encoding="ascii") as handle:
+            handle.write(cpuinfo)
+        env = harness.base_env(self.site, haswell, ["R/4.4.2"], gpu="none")
+        env["SLURM_CPU_BIND_LIST"] = "1,"
+        proc = harness.run_guard(env)
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertEqual(proc.stdout, "", proc.stdout)
+
     def test_scoped_cpuinfo_uses_tmpdir(self):
         spr = "x86_64/intel/sapphirerapids"
         self.site.add_cpu(spr)
