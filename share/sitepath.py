@@ -121,10 +121,10 @@ def report(mountinfo: str, modulepath: str, repo: str, site: str, eessi: str):
 
 
 def _modules(value: str) -> str:
-    value = value.strip()
+    value = value.strip().rstrip("/")
     if value.endswith("/modules/all"):
         return value
-    return value.rstrip("/") + "/modules/all"
+    return value + "/modules/all"
 
 
 def _placeholder_modules_path(value: str) -> bool:

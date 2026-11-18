@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import importlib.util
+import os
 import subprocess
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -126,6 +128,36 @@ class SitePathTests(unittest.TestCase):
             text,
         )
         self.assertNotIn("same path", text)
+
+    def test_env_paths_ending_in_modules_all_with_trailing_slash_do_not_double(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            mountinfo = Path(tmp) / "mountinfo"
+            mountinfo.write_text(MOUNT, encoding="utf-8")
+            site_mods = "/opt/site/modules/all"
+            eessi_mods = (
+                "/cvmfs/software.eessi.io/versions/2026.06"
+                "/software/linux/x86_64/amd/zen4/modules/all"
+            )
+            env = {
+                **os.environ,
+                "EESSI_SITE_SOFTWARE_PATH": site_mods + "/",
+                "EESSI_SOFTWARE_PATH": eessi_mods + "/",
+                "MODULEPATH": f"{site_mods}:{eessi_mods}",
+            }
+            proc = subprocess.run(
+                [
+                    sys.executable,
+                    str(ROOT / "share" / "sitepath.py"),
+                    "--mountinfo",
+                    str(mountinfo),
+                ],
+                env=env,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        self.assertIn(f"ok   site modules {site_mods} precede {eessi_mods}", proc.stdout)
 
 
 if __name__ == "__main__":
