@@ -546,28 +546,38 @@ fn readFile(arena: Allocator, path: []const u8, max: usize) ?[]u8 {
     return fsx.readAll(arena, fd, max) catch null;
 }
 
-fn cgroupCpus(arena: Allocator) ?CpuSet {
-    const cgroup_text = readFile(arena, "/proc/self/cgroup", 1 << 20) orelse return null;
+fn hasCgroupController(controllers: []const u8, wanted: []const u8) bool {
+    var it = std.mem.splitScalar(u8, controllers, ',');
+    while (it.next()) |name| if (std.mem.eql(u8, name, wanted)) return true;
+    return false;
+}
+
+fn cgroupDirectories(arena: Allocator, cgroup_text: []const u8) []const []const u8 {
     var dirs: std.ArrayList([]const u8) = .empty;
     var it = std.mem.splitScalar(u8, cgroup_text, '\n');
-    while (it.next()) |line| {
+    while (it.next()) |raw_line| {
+        const line = std.mem.trimEnd(u8, raw_line, "\r");
         var parts = std.mem.splitScalar(u8, line, ':');
         const hier = parts.next() orelse continue;
         const controllers = parts.next() orelse continue;
-        const rest = parts.next() orelse continue;
-        if (parts.next() != null) continue;
-        var path = rest;
+        _ = parts.peek() orelse continue;
+        var path = parts.rest();
         if (path.len == 0 or path[0] != '/') {
-            path = std.fmt.allocPrint(arena, "/{s}", .{path}) catch return null;
+            path = std.fmt.allocPrint(arena, "/{s}", .{path}) catch return &.{};
         }
         if (std.mem.eql(u8, hier, "0") and controllers.len == 0) {
-            dirs.append(arena, std.fmt.allocPrint(arena, "/sys/fs/cgroup{s}", .{path}) catch return null) catch return null;
-        } else if (std.mem.indexOf(u8, controllers, "cpuset") != null) {
-            dirs.append(arena, std.fmt.allocPrint(arena, "/sys/fs/cgroup/cpuset{s}", .{path}) catch return null) catch return null;
-            dirs.append(arena, std.fmt.allocPrint(arena, "/sys/fs/cgroup{s}", .{path}) catch return null) catch return null;
+            dirs.append(arena, std.fmt.allocPrint(arena, "/sys/fs/cgroup{s}", .{path}) catch return &.{}) catch return &.{};
+        } else if (hasCgroupController(controllers, "cpuset")) {
+            dirs.append(arena, std.fmt.allocPrint(arena, "/sys/fs/cgroup/cpuset{s}", .{path}) catch return &.{}) catch return &.{};
+            dirs.append(arena, std.fmt.allocPrint(arena, "/sys/fs/cgroup{s}", .{path}) catch return &.{}) catch return &.{};
         }
     }
-    for (dirs.items) |start| {
+    return dirs.items;
+}
+
+fn cgroupCpus(arena: Allocator) ?CpuSet {
+    const cgroup_text = readFile(arena, "/proc/self/cgroup", 1 << 20) orelse return null;
+    for (cgroupDirectories(arena, cgroup_text)) |start| {
         var directory = start;
         var hop: usize = 0;
         while (hop < 64 and std.mem.startsWith(u8, directory, "/sys/fs/cgroup")) : (hop += 1) {
@@ -584,6 +594,15 @@ fn cgroupCpus(arena: Allocator) ?CpuSet {
         }
     }
     return null;
+}
+
+test "cgroupDirectories preserves colons in paths and requires exact cpuset controller" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const a = arena_state.allocator();
+    const dirs = cgroupDirectories(a, "2:mycpuset:/ignored\n0::/system.slice/job:42\n");
+    try std.testing.expectEqual(@as(usize, 1), dirs.len);
+    try std.testing.expectEqualStrings("/sys/fs/cgroup/system.slice/job:42", dirs[0]);
 }
 
 fn schedCpus() ?CpuSet {
