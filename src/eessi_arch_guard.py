@@ -2207,11 +2207,19 @@ def _check_submit_loaded(env: Mapping[str, str]) -> Tuple[Optional[Tuple[str, ..
     if any(not module_name_ok(name) for name in names):
         return None, "LOADEDMODULES contains an unsafe module name"
     seen = set()
+    eessi_count = 0
+    apps = []
     for name in names:
         if name in seen:
             return None, "LOADEDMODULES has duplicate module entry: %s" % name
         seen.add(name)
-    return tuple(name for name in names if not EESSI_MODULE_RE.fullmatch(name)), ""
+        if name.startswith("EESSI/"):
+            if EESSI_MODULE_RE.fullmatch(name) is None or eessi_count > 0:
+                return None, "LOADEDMODULES has an invalid EESSI module entry"
+            eessi_count += 1
+        else:
+            apps.append(name)
+    return tuple(apps), ""
 
 
 def _check_submit_semantic(code: int) -> str:

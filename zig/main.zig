@@ -907,6 +907,7 @@ fn loadedSubmitModules(arena: Allocator, env: envmap.Map, why: *[]const u8) ?[]S
     const raw = env.get("LOADEDMODULES") orelse "";
     var found: std.ArrayList(SubmitModule) = .empty;
     var seen: std.ArrayList([]const u8) = .empty;
+    var eessi_count: usize = 0;
     var any = false;
     var parts = std.mem.splitScalar(u8, raw, ':');
     while (parts.next()) |name| {
@@ -916,12 +917,20 @@ fn loadedSubmitModules(arena: Allocator, env: envmap.Map, why: *[]const u8) ?[]S
             why.* = "LOADEDMODULES contains an unsafe module name";
             return null;
         }
-        if (std.mem.startsWith(u8, name, "EESSI/") and std.mem.findScalar(u8, name["EESSI/".len..], '/') == null) continue;
         if (listed(seen.items, name)) {
             why.* = arena.print("LOADEDMODULES has duplicate module entry: {s}", .{name}) catch "LOADEDMODULES has duplicate module entry";
             return null;
         }
         seen.append(arena, name) catch oom();
+        if (std.mem.startsWith(u8, name, "EESSI/")) {
+            const ver = name["EESSI/".len..];
+            if (ver.len == 0 or std.mem.findScalar(u8, ver, '/') != null or eessi_count > 0) {
+                why.* = "LOADEDMODULES has an invalid EESSI module entry";
+                return null;
+            }
+            eessi_count += 1;
+            continue;
+        }
         found.append(arena, .{ .name = name, .file = easyconfigFilename(arena, name) }) catch oom();
     }
     if (!any) {
