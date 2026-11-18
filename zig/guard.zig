@@ -787,7 +787,8 @@ fn unlinkPath(path: []const u8) void {
     _ = linux.unlinkat(linux.AT.FDCWD, z.ptr, 0);
 }
 
-fn tempCpuFile(c: *Ctx, data: []const u8) ?[]const u8 {
+fn tempCpuFile(c: *Ctx, env: Map, data: []const u8) ?[]const u8 {
+    const base = pyTempDir(c, env);
     const alphabet = "abcdefghijklmnopqrstuvwxyz0123456789_";
     var tries: usize = 0;
     while (tries < 100) : (tries += 1) {
@@ -795,7 +796,8 @@ fn tempCpuFile(c: *Ctx, data: []const u8) ?[]const u8 {
         _ = sys.call(linux.getrandom, .{ &rnd, rnd.len, 0 }) catch return null;
         var suffix: [8]u8 = undefined;
         for (rnd, 0..) |b, i| suffix[i] = alphabet[b % alphabet.len];
-        const p = c.arena.print("/tmp/eessi-arch-guard-cpu-{s}", .{suffix}) catch return null;
+        const name = c.arena.print("eessi-arch-guard-cpu-{s}", .{suffix}) catch return null;
+        const p = std.fs.path.join(c.arena, &.{ base, name }) catch return null;
         if (writePrivateNew(p, data, 0o600)) return p;
     }
     return null;
@@ -809,7 +811,7 @@ fn prepareCpuinfo(c: *Ctx, env: Map) PreparedCpu {
     const allowed = taskCpuIds(c.arena, env) orelse return .{ .path = path, .child = env };
     const blob = readFile(c.arena, path, cpuinfo_read_max) orelse return .{ .path = path, .child = env };
     const scoped = scopeCpuinfo(c.arena, blob, allowed) orelse return .{ .path = path, .child = env };
-    const tmp = tempCpuFile(c, scoped) orelse return .{ .path = path, .child = env };
+    const tmp = tempCpuFile(c, env, scoped) orelse return .{ .path = path, .child = env };
     var child = envmap.clone(c.arena, env) catch {
         unlinkPath(tmp);
         return .{ .path = path, .child = env };
@@ -2018,4 +2020,42 @@ test "mkdtemp delegates to fsx.mkdtemp with the guard prefix" {
 
     const missing = try std.fmt.allocPrint(a, "{s}/missing", .{base});
     try std.testing.expect(mkdtemp(&c, missing) == null);
+}
+
+test "prepareCpuinfo writes scoped cpuinfo under TMPDIR" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const a = arena_state.allocator();
+    var cwd_buf: [sys.path_max]u8 = undefined;
+    const here = try fsx.realpath(fsx.cwd, ".", &cwd_buf);
+    const base = try std.fmt.allocPrint(a, "{s}/.zig-cache/eag-cpuinfo-{d}", .{ here, linux.getpid() });
+    var zb: [sys.path_max:0]u8 = undefined;
+    _ = linux.mkdirat(fsx.cwd, (try sys.z(&zb, base)).ptr, 0o700);
+    defer fsx.deleteTree(a, fsx.cwd, base) catch {};
+
+    const tmp_dir = try std.fmt.allocPrint(a, "{s}/tmp", .{base});
+    _ = linux.mkdirat(fsx.cwd, (try sys.z(&zb, tmp_dir)).ptr, 0o700);
+    const cpuinfo_path = try std.fmt.allocPrint(a, "{s}/cpuinfo", .{base});
+    const cpuinfo =
+        \\processor : 0
+        \\vendor_id : GenuineIntel
+        \\flags : avx2
+        \\
+        \\processor : 1
+        \\vendor_id : GenuineIntel
+        \\flags : avx2 waitpkg
+        \\
+    ;
+    try std.testing.expect(writePrivateNew(cpuinfo_path, cpuinfo, 0o600));
+
+    var env: Map = .empty;
+    try env.put(a, "TMPDIR", tmp_dir);
+    try env.put(a, "EESSI_PROC_CPUINFO", cpuinfo_path);
+    try env.put(a, "SLURM_CPU_BIND_LIST", "1");
+
+    var c: Ctx = .{ .arena = a, .env = env, .strict = false, .self_exe = "" };
+    const prepared = prepareCpuinfo(&c, env);
+    defer if (prepared.cleanup) |p| unlinkPath(p);
+    const expected_prefix = try std.fmt.allocPrint(a, "{s}/eessi-arch-guard-cpu-", .{tmp_dir});
+    try std.testing.expect(std.mem.startsWith(u8, prepared.path, expected_prefix));
 }
