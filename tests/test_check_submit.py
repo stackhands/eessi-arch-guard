@@ -703,5 +703,123 @@ class CheckSubmitEmptyTargetTests(unittest.TestCase):
                 self.assertIn(expected, proc.stderr)
 
 
+class CheckSubmitZigParityTests(unittest.TestCase):
+    def test_early_invalid_input_reports_loaded_null(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            env_missing_prefix = {
+                "PATH": "/usr/bin:/bin",
+                "HOME": str(root / "home"),
+                "LANG": "C",
+                "LC_ALL": "C",
+                "EESSI_PREFIX": "",
+                "EESSI_OS_TYPE": "linux",
+                "LOADEDMODULES": "R/4.4.2",
+            }
+            proc = subprocess.run(
+                [*harness.GUARD_ARGV, "--check-submit", "--json", "--target", ZEN4],
+                capture_output=True,
+                text=True,
+                env=env_missing_prefix,
+                check=False,
+            )
+            self.assertEqual(proc.returncode, 2, proc.stdout + proc.stderr)
+            self.assertIsNone(json.loads(proc.stdout)["loaded"])
+
+            prefix = root / "prefix"
+            (prefix / "software" / "linux" / ZEN4 / "modules" / "all").mkdir(parents=True)
+            env_missing_eb = {
+                "PATH": "/usr/bin:/bin",
+                "HOME": str(root / "home"),
+                "LANG": "C",
+                "LC_ALL": "C",
+                "EESSI_PREFIX": str(prefix),
+                "EESSI_OS_TYPE": "linux",
+                "LOADEDMODULES": "R/4.4.2",
+            }
+            proc_eb = subprocess.run(
+                [
+                    *harness.GUARD_ARGV,
+                    "--check-submit",
+                    "--json",
+                    "--target",
+                    ZEN4,
+                    "--eb-stack",
+                    str(root / "no-such-eb-stack"),
+                ],
+                capture_output=True,
+                text=True,
+                env=env_missing_eb,
+                check=False,
+            )
+            self.assertEqual(proc_eb.returncode, 2, proc_eb.stdout + proc_eb.stderr)
+            self.assertIsNone(json.loads(proc_eb.stdout)["loaded"])
+
+
+    def test_eb_stack_silent_failure_and_exec_error_match_python(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            prefix = root / "prefix"
+            mod_dir = prefix / "software" / "linux" / ZEN4 / "modules" / "all" / "R"
+            mod_dir.mkdir(parents=True)
+            (mod_dir / "4.4.2.lua").write_text("--\n", encoding="utf-8")
+
+            silent = root / "eb-stack-silent"
+            silent.write_text("#!/bin/sh\nexit 2\n", encoding="utf-8")
+            silent.chmod(0o755)
+
+            bad_exec = root / "eb-stack-bad-exec"
+            bad_exec.write_text("not-a-script\n", encoding="utf-8")
+            bad_exec.chmod(0o755)
+
+            env = {
+                "PATH": "/usr/bin:/bin",
+                "HOME": str(root / "home"),
+                "LANG": "C",
+                "LC_ALL": "C",
+                "EESSI_PREFIX": str(prefix),
+                "EESSI_OS_TYPE": "linux",
+                "LOADEDMODULES": "R/4.4.2",
+            }
+            proc_silent = subprocess.run(
+                [
+                    *harness.GUARD_ARGV,
+                    "--check-submit",
+                    "--json",
+                    "--target",
+                    ZEN4,
+                    "--eb-stack",
+                    str(silent),
+                ],
+                capture_output=True,
+                text=True,
+                env=env,
+                check=False,
+            )
+            self.assertEqual(proc_silent.returncode, 2, proc_silent.stderr)
+            self.assertIn("eb-stack failed: exit 2", proc_silent.stderr)
+            self.assertEqual(json.loads(proc_silent.stdout)["message"], "eb-stack failed: exit 2")
+
+            proc_exec = subprocess.run(
+                [
+                    *harness.GUARD_ARGV,
+                    "--check-submit",
+                    "--json",
+                    "--target",
+                    ZEN4,
+                    "--eb-stack",
+                    str(bad_exec),
+                ],
+                capture_output=True,
+                text=True,
+                env=env,
+                check=False,
+            )
+            self.assertEqual(proc_exec.returncode, 2, proc_exec.stderr)
+            self.assertIn("could not run eb-stack:", proc_exec.stderr)
+            self.assertIn("Exec format error", proc_exec.stderr)
+            self.assertIn("could not run eb-stack:", json.loads(proc_exec.stdout)["message"])
+
+
 if __name__ == "__main__":
     unittest.main()

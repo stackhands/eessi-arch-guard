@@ -1100,7 +1100,7 @@ fn checkSubmit(arena: Allocator, args: Args, env: envmap.Map, settings: ?Setting
     if (!text.safeAbsolute(prefix) or !text.safeRelSubdir(os_type)) {
         const reason = "EESSI_PREFIX or EESSI_OS_TYPE is missing or unsafe";
         const line = "eessi-arch-guard: check-submit: " ++ reason;
-        return finishCheckSubmit(arena, args, partition, constraint, 2, null, @intCast(loaded.len), &.{}, reason, &.{line});
+        return finishCheckSubmit(arena, args, partition, constraint, 2, null, null, &.{}, reason, &.{line});
     }
     const configured = if (settings) |s| s.get("eb_stack") orelse "" else "";
     const selected = args.eb_stack orelse (if (configured.len > 0) configured else "eb-stack");
@@ -1108,7 +1108,7 @@ fn checkSubmit(arena: Allocator, args: Args, env: envmap.Map, settings: ?Setting
         const shown = text.oneLine(arena, selected, 200) catch selected;
         const reason = arena.print("eb-stack is not executable: {s}", .{shown}) catch shown;
         const line = arena.print("eessi-arch-guard: check-submit: {s}", .{reason}) catch reason;
-        return finishCheckSubmit(arena, args, partition, constraint, 2, null, @intCast(loaded.len), &.{}, reason, &.{line});
+        return finishCheckSubmit(arena, args, partition, constraint, 2, null, null, &.{}, reason, &.{line});
     };
     const module_root = std.fs.path.join(arena, &.{ prefix, "software", os_type, target, "modules", "all" }) catch oom();
     var all_found: std.ArrayList([]const u8) = .empty;
@@ -1167,9 +1167,12 @@ fn checkSubmit(arena: Allocator, args: Args, env: envmap.Map, settings: ?Setting
         .stderr_limit = 8 << 20,
         .timeout_ms = null,
         .new_session = false,
-    }) catch {
-        const reason = "could not run eb-stack";
-        const line = "eessi-arch-guard: check-submit: " ++ reason;
+        .exec_error = true,
+    }) catch |err| {
+        const detail = if (sys.asError(err)) |e| sys.describe(e) else @errorName(err);
+        const shown = text.oneLine(arena, detail, 200) catch detail;
+        const reason = arena.print("could not run eb-stack: {s}", .{shown}) catch "could not run eb-stack";
+        const line = arena.print("eessi-arch-guard: check-submit: {s}", .{reason}) catch reason;
         return finishCheckSubmit(arena, args, partition, constraint, 2, target, @intCast(loaded.len), &.{}, reason, &.{line});
     };
     const code: u8 = switch (result.term) {
@@ -1197,7 +1200,16 @@ fn checkSubmit(arena: Allocator, args: Args, env: envmap.Map, settings: ?Setting
     if (code == 1 and missing.items.len > 0) {
         return finishCheckSubmit(arena, args, partition, constraint, 1, target, @intCast(loaded.len), missing.items, null, lines_out.items);
     }
-    const raw = if (result.stderr.len > 0) result.stderr else if (result.stdout.len > 0) result.stdout else "eb-stack returned no detail";
+    const err_trim = std.mem.trim(u8, result.stderr, " \t\r\n");
+    const out_trim = std.mem.trim(u8, result.stdout, " \t\r\n");
+    const raw = if (err_trim.len > 0)
+        err_trim
+    else if (out_trim.len > 0)
+        out_trim
+    else switch (result.term) {
+        .exited => |value| arena.print("exit {d}", .{value}) catch "exit",
+        .signaled => |sig| arena.print("exit -{d}", .{sig}) catch "exit",
+    };
     const shown = text.oneLine(arena, raw, 300) catch raw;
     const reason = arena.print("eb-stack failed: {s}", .{shown}) catch shown;
     const line = arena.print("eessi-arch-guard: check-submit: {s}", .{reason}) catch reason;
