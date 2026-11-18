@@ -358,5 +358,42 @@ class CheckSubmitTests(unittest.TestCase):
                 subprocess.check_call(["sudo", "rm", "-f", str(conf)])
 
 
+    def test_cli_counts_a_module_from_the_users_eessi_extend_tree(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            prefix = root / "prefix"
+            (prefix / "software" / "linux" / ZEN4 / "modules" / "all").mkdir(parents=True)
+            self._install(root / "home" / "eessi", ZEN4, "Mine/1.0")
+            self._install(root / "home" / "eessi", ZEN2, "OnlyZen2/1.0")
+            fake = _fake_eb_stack(root)
+            conf = harness.PROGRAM.with_name("eessi-arch-guard.conf")
+            conf.write_text("submit_target.partition.cpu = %s\n" % ZEN4, encoding="utf-8")
+            subprocess.check_call(["sudo", "chown", "root:root", str(conf)])
+            subprocess.check_call(["sudo", "chmod", "644", str(conf)])
+            try:
+                env = {
+                    "PATH": "/usr/bin:/bin",
+                    "HOME": str(root / "home"),
+                    "LANG": "C",
+                    "LC_ALL": "C",
+                    "EESSI_PREFIX": str(prefix),
+                    "EESSI_OS_TYPE": "linux",
+                    "EESSI_VERSION": "2026.06",
+                    "LOADEDMODULES": "EESSI/2026.06:Mine/1.0:OnlyZen2/1.0",
+                    "EESSI_TEST_EB_STACK_LOG": str(root / "eb-stack.log"),
+                }
+                proc = subprocess.run(
+                    [*harness.GUARD_ARGV, "--check-submit", "--json", "--partition", "cpu", "--eb-stack", str(fake)],
+                    capture_output=True,
+                    text=True,
+                    env=env,
+                    check=False,
+                )
+                self.assertEqual(proc.returncode, 1, proc.stderr)
+                self.assertEqual(json.loads(proc.stdout)["missing"], ["OnlyZen2/1.0"])
+            finally:
+                subprocess.check_call(["sudo", "rm", "-f", str(conf)])
+
+
 if __name__ == "__main__":
     unittest.main()
