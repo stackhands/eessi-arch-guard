@@ -5,15 +5,32 @@ const Allocator = std.mem.Allocator;
 
 pub fn compactJsonLine(arena: Allocator, pretty: []const u8) Allocator.Error![]u8 {
     var out: std.ArrayList(u8) = .empty;
+    var in_string = false;
+    var escaped = false;
     for (pretty) |ch| {
-        if (ch != '\n') try out.append(arena, ch) else if (out.items.len > 0 and out.items[out.items.len - 1] == ' ') {
-            _ = out.pop();
+        if (in_string) {
+            try out.append(arena, ch);
+            if (escaped) {
+                escaped = false;
+            } else if (ch == '\\') {
+                escaped = true;
+            } else if (ch == '"') {
+                in_string = false;
+            }
+            continue;
         }
+        if (ch == '"') {
+            in_string = true;
+            try out.append(arena, ch);
+            continue;
+        }
+        if (ch == '\n' or ch == '\r' or ch == ' ' or ch == '\t') continue;
+        try out.append(arena, ch);
     }
     return out.items;
 }
 
-/// Match Python's ``json.dumps`` comma spacing outside quoted strings.
+/// Match Python's ``json.dumps`` separators outside quoted strings.
 pub fn pythonJsonCommas(arena: Allocator, s: []const u8) Allocator.Error![]u8 {
     var out: std.ArrayList(u8) = .empty;
     var in_str = false;
@@ -31,6 +48,10 @@ pub fn pythonJsonCommas(arena: Allocator, s: []const u8) Allocator.Error![]u8 {
         }
         if (ch == ',') {
             try out.appendSlice(arena, ", ");
+            continue;
+        }
+        if (ch == ':') {
+            try out.appendSlice(arena, ": ");
             continue;
         }
         try out.append(arena, ch);

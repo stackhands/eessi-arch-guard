@@ -1557,6 +1557,7 @@ class IntegrationTests(unittest.TestCase):
             cases = [
                 ({"PATH": "/usr/bin:/bin", "TMPDIR": scratch}, ["--dry-run"]),
                 ({"PATH": "/usr/bin:/bin", "TMPDIR": scratch}, ["--dry-run", "--json"]),
+                ({"PATH": "/usr/bin:/bin", "TMPDIR": scratch}, ["--json"]),
                 (
                     {
                         **self._cpu_env(ZEN4, "zen2", modules=("R/4.4.2",)),
