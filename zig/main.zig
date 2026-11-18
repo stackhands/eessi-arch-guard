@@ -787,6 +787,39 @@ fn submitSelector(s: []const u8) bool {
     return true;
 }
 
+fn selectorHint(
+    arena: Allocator,
+    settings: Settings,
+    prefix: []const u8,
+    value: []const u8,
+    kind: []const u8,
+) ?[]const u8 {
+    var best: ?[]const u8 = null;
+    var best_prefix: usize = 0;
+    var best_delta: usize = std.math.maxInt(usize);
+    var it = settings.iterator();
+    while (it.next()) |entry| {
+        const key = entry.key_ptr.*;
+        if (!std.mem.startsWith(u8, key, prefix)) continue;
+        const candidate = key[prefix.len..];
+        var chars: usize = 0;
+        const lim = @min(candidate.len, value.len);
+        while (chars < lim and candidate[chars] == value[chars]) : (chars += 1) {}
+        if (chars == 0) continue;
+        const delta = if (candidate.len >= value.len) candidate.len - value.len else value.len - candidate.len;
+        const better = chars > best_prefix or
+            (chars == best_prefix and (delta < best_delta or
+                (delta == best_delta and (best == null or std.mem.order(u8, candidate, best.?) == .lt))));
+        if (better) {
+            best = candidate;
+            best_prefix = chars;
+            best_delta = delta;
+        }
+    }
+    if (best) |name| return arena.print("; nearest known {s} is {s}{s}", .{ kind, prefix, name }) catch null;
+    return null;
+}
+
 fn submitTarget(arena: Allocator, settings: ?Settings, partition: []const u8, constraint: []const u8, why: *[]const u8) ?[]const u8 {
     if (!submitSelector(partition)) {
         why.* = "--partition needs one safe partition name";
@@ -802,7 +835,8 @@ fn submitTarget(arena: Allocator, settings: ?Settings, partition: []const u8, co
     };
     const part_key = arena.print("submit_target.partition.{s}", .{partition}) catch oom();
     const target = s.get(part_key) orelse {
-        why.* = arena.print("site config has no {s} mapping", .{part_key}) catch part_key;
+        const hint = selectorHint(arena, s, "submit_target.partition.", partition, "partition") orelse "";
+        why.* = arena.print("site config has no {s} mapping{s}", .{ part_key, hint }) catch part_key;
         return null;
     };
     if (!text.safeRelSubdir(target)) {
@@ -812,7 +846,8 @@ fn submitTarget(arena: Allocator, settings: ?Settings, partition: []const u8, co
     if (constraint.len > 0) {
         const constraint_key = arena.print("submit_target.constraint.{s}", .{constraint}) catch oom();
         const other = s.get(constraint_key) orelse {
-            why.* = arena.print("site config has no {s} mapping", .{constraint_key}) catch constraint_key;
+            const hint = selectorHint(arena, s, "submit_target.constraint.", constraint, "constraint") orelse "";
+            why.* = arena.print("site config has no {s} mapping{s}", .{ constraint_key, hint }) catch constraint_key;
             return null;
         };
         if (!text.safeRelSubdir(other)) {
@@ -1359,12 +1394,18 @@ test "submitTarget requires agreeing site mappings" {
     const a = arena_state.allocator();
     var settings: Settings = .empty;
     try settings.put(a, "submit_target.partition.cpu", "x86_64/amd/zen4");
+    try settings.put(a, "submit_target.partition.gpu", "x86_64/generic");
     try settings.put(a, "submit_target.constraint.zen4", "x86_64/amd/zen4");
     try settings.put(a, "submit_target.constraint.zen2", "x86_64/amd/zen2");
+    try settings.put(a, "submit_target.constraint.ampere", "x86_64/generic");
     var why: []const u8 = "";
     try std.testing.expectEqualStrings("x86_64/amd/zen4", submitTarget(a, settings, "cpu", "zen4", &why).?);
     try std.testing.expect(submitTarget(a, settings, "cpu", "zen2", &why) == null);
     try std.testing.expect(std.mem.indexOf(u8, why, "different targets") != null);
+    try std.testing.expect(submitTarget(a, settings, "cpp", "", &why) == null);
+    try std.testing.expect(std.mem.indexOf(u8, why, "nearest known partition is submit_target.partition.cpu") != null);
+    try std.testing.expect(submitTarget(a, settings, "cpu", "zen44", &why) == null);
+    try std.testing.expect(std.mem.indexOf(u8, why, "nearest known constraint is submit_target.constraint.zen4") != null);
 }
 
 test "renderCheckSubmitJson is schema_version 1" {

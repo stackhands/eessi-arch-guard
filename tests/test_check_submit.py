@@ -71,8 +71,10 @@ class CheckSubmitTests(unittest.TestCase):
     def test_site_map_requires_matching_partition_and_constraint(self) -> None:
         settings = {
             "submit_target.partition.cpu": ZEN4,
+            "submit_target.partition.gpu": "x86_64/generic",
             "submit_target.constraint.zen4": ZEN4,
             "submit_target.constraint.zen2": ZEN2,
+            "submit_target.constraint.ampere": "x86_64/generic",
         }
         self.assertEqual(guard.submit_target(settings, "cpu", "zen4"), (ZEN4, None))
         target, error = guard.submit_target(settings, "cpu", "zen2")
@@ -81,6 +83,14 @@ class CheckSubmitTests(unittest.TestCase):
         target, error = guard.submit_target(settings, "missing", "")
         self.assertIsNone(target)
         self.assertIn("no submit_target.partition.missing", error or "")
+        target, error = guard.submit_target(settings, "cpp", "")
+        self.assertIsNone(target)
+        self.assertIn("nearest known partition is submit_target.partition.cpu", error or "")
+        target, error = guard.submit_target(settings, "cpu", "zen44")
+        self.assertIsNone(target)
+        self.assertIn(
+            "nearest known constraint is submit_target.constraint.zen4", error or ""
+        )
 
     def test_check_submit_names_missing_module_without_changing_tree(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

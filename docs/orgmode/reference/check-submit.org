@@ -39,6 +39,7 @@ eb_stack = /opt/stackhands/bin/eb-stack
 The partition mapping is required.
 When =--constraint= is present, its mapping is also required and both targets must be identical.
 Targets are safe relative EESSI subdirectories: no empty segment, absolute path, backslash, or =..= segment.
+When a partition or constraint name is mistyped, the error message suggests the nearest known selector key when one is close.
 
 ** Planner call
 

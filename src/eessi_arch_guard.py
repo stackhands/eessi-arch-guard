@@ -2028,6 +2028,29 @@ def config_chain(settings: Optional[Mapping[str, str]]) -> Optional[str]:
 _SUBMIT_SELECTOR_RE = re.compile(r"^[A-Za-z0-9_.+-]{1,64}$")
 
 
+def _selector_hint(config: Mapping[str, str], prefix: str, value: str, kind: str) -> str:
+    keys = [key[len(prefix):] for key in config if key.startswith(prefix)]
+    if not keys:
+        return ""
+    best: Optional[str] = None
+    best_score = (-1, -10**9, "")
+    for candidate in keys:
+        char_prefix = 0
+        for left, right in zip(value, candidate):
+            if left != right:
+                break
+            char_prefix += 1
+        if char_prefix == 0:
+            continue
+        score = (char_prefix, -abs(len(candidate) - len(value)), candidate)
+        if score > best_score:
+            best = candidate
+            best_score = score
+    if best is None:
+        return ""
+    return "; nearest known %s is %s%s" % (kind, prefix, best)
+
+
 def submit_target(
     settings: Optional[Mapping[str, str]],
     partition: str,
@@ -2042,14 +2065,18 @@ def submit_target(
     part_key = "submit_target.partition." + partition
     target = config.get(part_key, "")
     if not target:
-        return None, "site config has no %s mapping" % part_key
+        hint = _selector_hint(config, "submit_target.partition.", partition, "partition")
+        return None, "site config has no %s mapping%s" % (part_key, hint)
     if not safe_rel_subdir(target):
         return None, "%s is not a safe relative target" % part_key
     if constraint:
         constraint_key = "submit_target.constraint." + constraint
         other = config.get(constraint_key, "")
         if not other:
-            return None, "site config has no %s mapping" % constraint_key
+            hint = _selector_hint(
+                config, "submit_target.constraint.", constraint, "constraint"
+            )
+            return None, "site config has no %s mapping%s" % (constraint_key, hint)
         if not safe_rel_subdir(other):
             return None, "%s is not a safe relative target" % constraint_key
         if other != target:
