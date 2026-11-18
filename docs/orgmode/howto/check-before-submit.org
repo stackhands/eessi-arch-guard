@@ -12,7 +12,7 @@ It never loads, unloads, rebuilds, or provisions software.
 
 - Load the European Environment for Scientific Software Installations (EESSI) and the application modules for the job.
 - Ask the administrator which partition and optional constraint select the target.
-- The administrator must configure the mappings described in [[file:../reference/check-submit.org][Check-submit inputs and statuses]].
+- For partition and constraint checks, the administrator must configure the mappings described in [[file:../reference/check-submit.org][Check-submit inputs and statuses]].
 
 ** Check and submit
 
@@ -28,7 +28,15 @@ It never loads, unloads, rebuilds, or provisions software.
    eessi-arch-guard --check-submit --partition cpu --constraint zen4
    #+end_src
 
-3. Submit only after the check exits 0.
+3. Check a target directly when you do not need a site selector map:
+
+   #+begin_src bash
+   eessi-arch-guard --check-submit --target x86_64/amd/zen4
+   #+end_src
+
+   This path does not read partition or constraint mappings.
+
+4. Submit only after the check exits 0.
    =docs/examples/check_submit.sh= is a small wrapper:
 
    #+begin_src bash
