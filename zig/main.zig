@@ -467,57 +467,12 @@ fn invokedPath(arena: Allocator, argv0: []const u8) []const u8 {
     return selfExe(arena);
 }
 
-/// posixpath.normpath: "." parts and repeated slashes dropped, and each
-/// ".." taking off the part before it, without following symbolic links.
-/// One or two leading slashes stay; three or more become one.
-fn normPath(gpa: Allocator, path: []const u8) Allocator.Error![]u8 {
-    const slashes: usize = if (!std.mem.startsWith(u8, path, "/"))
-        0
-    else if (std.mem.startsWith(u8, path, "//") and !std.mem.startsWith(u8, path, "///"))
-        2
-    else
-        1;
-    var parts: std.ArrayList([]const u8) = .empty;
-    defer parts.deinit(gpa);
-    var it = std.mem.splitScalar(u8, path, '/');
-    while (it.next()) |part| {
-        if (part.len == 0 or std.mem.eql(u8, part, ".")) continue;
-        const after_up = parts.items.len > 0 and std.mem.eql(u8, parts.items[parts.items.len - 1], "..");
-        if (!std.mem.eql(u8, part, "..") or (slashes == 0 and parts.items.len == 0) or after_up) {
-            try parts.append(gpa, part);
-        } else {
-            _ = parts.pop();
-        }
-    }
-    var out: std.ArrayList(u8) = .empty;
-    errdefer out.deinit(gpa);
-    try out.appendNTimes(gpa, '/', slashes);
-    for (parts.items, 0..) |part, i| {
-        if (i > 0) try out.append(gpa, '/');
-        try out.appendSlice(gpa, part);
-    }
-    if (out.items.len == 0) try out.append(gpa, '.');
-    return out.toOwnedSlice(gpa);
-}
-
-/// os.path.abspath of the Python guard's __file__: Python's start-up puts
-/// a relative script path after the working directory and a "/", even when
-/// that directory is "/" itself, and abspath normalizes the result.
-fn absPath(gpa: Allocator, path: []const u8) Allocator.Error![]u8 {
-    if (std.mem.startsWith(u8, path, "/")) return normPath(gpa, path);
-    var buf: [sys.path_max]u8 = undefined;
-    const cwd = fsx.realpath(fsx.cwd, ".", &buf) catch return normPath(gpa, path);
-    const joined = try std.mem.concat(gpa, u8, &.{ cwd, "/", path });
-    defer gpa.free(joined);
-    return normPath(gpa, joined);
-}
-
 const config_name = "eessi-arch-guard.conf";
 
 /// site_config's second candidate, os.path.join(os.path.dirname(
 /// os.path.abspath(invoked)), "eessi-arch-guard.conf").
 fn configBeside(gpa: Allocator, invoked: []const u8) Allocator.Error![]u8 {
-    const abs = try absPath(gpa, invoked);
+    const abs = try fsx.absPath(gpa, invoked);
     defer gpa.free(abs);
     const cut = std.mem.findScalarLast(u8, abs, '/') orelse return gpa.dupe(u8, config_name);
     var head: []const u8 = abs[0 .. cut + 1];
@@ -1618,7 +1573,7 @@ test "parseConfigBytes keeps other keys after a bad value" {
 }
 
 fn expectNormPath(gpa: Allocator, path: []const u8, want: []const u8) !void {
-    const got = try normPath(gpa, path);
+    const got = try fsx.normPath(gpa, path);
     defer gpa.free(got);
     try std.testing.expectEqualStrings(want, got);
 }
