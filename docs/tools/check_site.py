@@ -103,6 +103,9 @@ def check_site(root, forbid, exempt=()):
             parts = urllib.parse.urlsplit(href)
             if parts.scheme or href.startswith("//") or href.startswith(("mailto:", "data:", "javascript:")):
                 continue
+            if parts.path.startswith("/"):
+                errors.append(f"{where}: root-relative link: {href}")
+                continue
             target_rel = rel if not parts.path else os.path.normpath(
                 os.path.join(os.path.dirname(rel), urllib.parse.unquote(parts.path))
             )
