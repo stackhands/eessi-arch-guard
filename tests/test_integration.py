@@ -1594,3 +1594,34 @@ class IntegrationTests(unittest.TestCase):
             self.assertEqual(os.listdir(scratch), [])
         finally:
             shutil.rmtree(scratch, ignore_errors=True)
+
+    def test_usage_error_python_and_zig_parity(self):
+        if not harness.TOOL_BIN:
+            return
+        cases = [
+            ["--unknown-option"],
+            ["--"],
+            ["--", "--help"],
+            ["--timeout"],
+            ["--chain"],
+            ["--check-submit", "--partition"],
+            ["--check-submit", "--partition", "bad name"],
+            ["--check-submit", "--partition", "cpu", "--constraint"],
+        ]
+        env = {"PATH": "/usr/bin:/bin", "LC_ALL": "C"}
+        for args in cases:
+            zig_proc = subprocess.run(
+                [str(harness.PROGRAM), *args],
+                capture_output=True,
+                check=False,
+                env=env,
+            )
+            py_proc = subprocess.run(
+                [sys.executable, "-I", str(harness.GUARD), *args],
+                capture_output=True,
+                check=False,
+                env=env,
+            )
+            self.assertEqual(zig_proc.returncode, py_proc.returncode, args)
+            self.assertEqual(zig_proc.stderr, py_proc.stderr, args)
+            self.assertEqual(zig_proc.stdout, py_proc.stdout, args)

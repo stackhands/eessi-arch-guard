@@ -796,10 +796,7 @@ fn submitTarget(arena: Allocator, settings: ?Settings, partition: []const u8, co
         why.* = "--constraint needs one safe constraint name";
         return null;
     }
-    const s = settings orelse {
-        why.* = "site config has no submit target mappings";
-        return null;
-    };
+    const s: Settings = settings orelse .empty;
     const part_key = arena.print("submit_target.partition.{s}", .{partition}) catch oom();
     const target = s.get(part_key) orelse {
         why.* = arena.print("site config has no {s} mapping", .{part_key}) catch part_key;
