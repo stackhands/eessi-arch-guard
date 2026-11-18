@@ -2072,6 +2072,30 @@ def config_chain(settings: Optional[Mapping[str, str]]) -> Optional[str]:
 _SUBMIT_SELECTOR_RE = re.compile(r"^[A-Za-z0-9_.+-]{1,64}$")
 
 
+def _selector_hint(config: Mapping[str, str], prefix: str, value: str, kind: str) -> str:
+    keys = [key[len(prefix):] for key in config if key.startswith(prefix)]
+    if not keys:
+        return ""
+    best: Optional[str] = None
+    best_score = (-1, -10**9, "")
+    for candidate in keys:
+        char_prefix = 0
+        for left, right in zip(value, candidate):
+            if left != right:
+                break
+            char_prefix += 1
+        if char_prefix == 0:
+            continue
+        length_delta = -abs(len(candidate) - len(value))
+        score = (char_prefix, length_delta, candidate)
+        if score > best_score:
+            best = candidate
+            best_score = score
+    if best is None:
+        return ""
+    return "; nearest known %s is %s%s" % (kind, prefix, best)
+
+
 def submit_target(
     settings: Optional[Mapping[str, str]],
     partition: str,
@@ -2086,16 +2110,28 @@ def submit_target(
     part_key = "submit_target.partition." + partition
     target = config.get(part_key, "")
     if not target:
-        return None, "site config has no %s mapping" % part_key
+        hint = _selector_hint(config, "submit_target.partition.", partition, "partition")
+        return None, "site config has no %s mapping%s" % (part_key, hint)
+    if target.strip() != target:
+        return None, "%s has invalid target value %r" % (part_key, target)
+    if target != target.lower():
+        return None, "%s has invalid target value %r" % (part_key, target)
     if not safe_rel_subdir(target):
-        return None, "%s is not a safe relative target" % part_key
+        return None, "%s has invalid target value %r" % (part_key, target)
     if constraint:
         constraint_key = "submit_target.constraint." + constraint
         other = config.get(constraint_key, "")
         if not other:
-            return None, "site config has no %s mapping" % constraint_key
+            hint = _selector_hint(
+                config, "submit_target.constraint.", constraint, "constraint"
+            )
+            return None, "site config has no %s mapping%s" % (constraint_key, hint)
+        if other.strip() != other:
+            return None, "%s has invalid target value %r" % (constraint_key, other)
+        if other != other.lower():
+            return None, "%s has invalid target value %r" % (constraint_key, other)
         if not safe_rel_subdir(other):
-            return None, "%s is not a safe relative target" % constraint_key
+            return None, "%s has invalid target value %r" % (constraint_key, other)
         if other != target:
             return None, "%s and %s select different targets" % (part_key, constraint_key)
     return target, None
@@ -2170,6 +2206,11 @@ def _check_submit_loaded(env: Mapping[str, str]) -> Tuple[Optional[Tuple[str, ..
         return None, "LOADEDMODULES is empty"
     if any(not module_name_ok(name) for name in names):
         return None, "LOADEDMODULES contains an unsafe module name"
+    seen = set()
+    for name in names:
+        if name in seen:
+            return None, "LOADEDMODULES has duplicate module entry: %s" % name
+        seen.add(name)
     return tuple(name for name in names if not EESSI_MODULE_RE.fullmatch(name)), ""
 
 
@@ -2298,6 +2339,15 @@ def check_submit(
     for root in extend_module_roots(env, os_type, target):
         found.update(target_modules(root))
     installed = tuple(sorted(found))
+    if not installed:
+        reason = "submit target has empty module inventory: %s" % target
+        return finish(
+            2,
+            target=target,
+            loaded=len(loaded),
+            message=reason,
+            stderr_lines=("eessi-arch-guard: check-submit: %s\n" % reason,),
+        )
     files = {_easyconfig_filename(name): name for name in loaded}
     try:
         with tempfile.TemporaryDirectory(prefix="eessi-arch-guard-submit-") as work:
