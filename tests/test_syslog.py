@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import socket
@@ -366,6 +367,18 @@ class SyslogTests(unittest.TestCase):
             self.assertEqual(m_bad.group(8), "32473")
         finally:
             sock.close()
+
+    def test_dry_run_preserves_ipv6_brackets_in_syslog_target(self):
+        env = self._cpu_env(ZEN4, "zen2")
+        for spec in ("tcp://[::1]:514", "udp://[2001:db8::1]:1514"):
+            proc = harness.run_guard(env, ["--dry-run", "--json", f"--syslog={spec}"])
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            doc = json.loads(proc.stdout)
+            self.assertEqual(doc["syslog"]["target"], spec)
+
+        text_proc = harness.run_guard(env, ["--dry-run", "--syslog=tcp://[::1]:514"])
+        self.assertEqual(text_proc.returncode, 0, text_proc.stderr)
+        self.assertIn("syslog: tcp://[::1]:514\n", text_proc.stdout)
 
 
 if __name__ == "__main__":

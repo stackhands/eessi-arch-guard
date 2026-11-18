@@ -108,8 +108,14 @@ pub fn formatTarget(arena: Allocator, target: ?Target) ?[]const u8 {
     return switch (t.scheme) {
         .rfc5424_unix => arena.print("unix://{s}", .{t.host_or_path}) catch null,
         .journal_unix => arena.print("journal+unix://{s}", .{t.host_or_path}) catch null,
-        .rfc5424_udp => arena.print("udp://{s}:{d}", .{ t.host_or_path, t.port }) catch null,
-        .rfc5424_tcp => arena.print("tcp://{s}:{d}", .{ t.host_or_path, t.port }) catch null,
+        .rfc5424_udp => if (std.mem.findScalar(u8, t.host_or_path, ':') != null)
+            arena.print("udp://[{s}]:{d}", .{ t.host_or_path, t.port }) catch null
+        else
+            arena.print("udp://{s}:{d}", .{ t.host_or_path, t.port }) catch null,
+        .rfc5424_tcp => if (std.mem.findScalar(u8, t.host_or_path, ':') != null)
+            arena.print("tcp://[{s}]:{d}", .{ t.host_or_path, t.port }) catch null
+        else
+            arena.print("tcp://{s}:{d}", .{ t.host_or_path, t.port }) catch null,
     };
 }
 
@@ -659,4 +665,13 @@ test "formatRfc5424 escapes structured data values and uses configured PEN" {
     try std.testing.expect(parsePen(a, "0") == null);
     try std.testing.expect(parsePen(a, "abc") == null);
     try std.testing.expectEqualStrings("49152", parsePen(a, "049152").?);
+}
+
+test "formatTarget preserves brackets around IPv6 hosts" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const a = arena_state.allocator();
+    try std.testing.expectEqualStrings("tcp://[::1]:514", formatTarget(a, parseTarget("tcp://[::1]:514")).?);
+    try std.testing.expectEqualStrings("udp://[2001:db8::1]:1514", formatTarget(a, parseTarget("udp://[2001:db8::1]:1514")).?);
+    try std.testing.expectEqualStrings("udp://127.0.0.1:514", formatTarget(a, parseTarget("udp://127.0.0.1:514")).?);
 }
