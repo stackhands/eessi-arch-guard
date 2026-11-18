@@ -2343,6 +2343,15 @@ def check_submit(
         )
 
     module_root = os.path.join(prefix, "software", os_type, target, "modules", "all")
+    if not os.path.isdir(module_root):
+        reason = "target module tree is unavailable: %s" % one_line(module_root, 300)
+        return finish(
+            2,
+            target=target,
+            loaded=len(loaded),
+            message=reason,
+            stderr_lines=("eessi-arch-guard: check-submit: %s\n" % reason,),
+        )
     found = set(target_modules(module_root))
     for root in extend_module_roots(env, os_type, target):
         found.update(target_modules(root))

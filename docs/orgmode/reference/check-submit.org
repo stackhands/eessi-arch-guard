@@ -68,7 +68,7 @@ The temporary files are removed after the subprocess exits.
 |---+---|
 | =0= | Every loaded application module is in the target inventory. |
 | =1= | One or more loaded modules are absent. Each missing module is named on standard error. |
-| =2= | An input, mapping, target path, planner executable, or planner result is invalid. |
+| =2= | An input, mapping, target path, planner executable, or planner result is invalid. This includes an unavailable target module tree, for example when the client mount is not ready. |
 
 The mode never invokes Lmod, =--restore=, =sbatch=, or a provisioning command.
 
