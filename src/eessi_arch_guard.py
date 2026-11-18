@@ -2100,7 +2100,9 @@ def extend_module_roots(env: Mapping[str, str], os_type: str, target: str) -> Tu
         bases.append(os.path.join(home, "eessi"))
     roots = []
     for base in bases:
-        root = os.path.join(base, "versions", version, "software", os_type, target, "modules", "all")
+        root = os.path.join(
+            base, "versions", version, "software", os_type, target, "modules", "all"
+        )
         if root not in roots:
             roots.append(root)
     return tuple(roots)

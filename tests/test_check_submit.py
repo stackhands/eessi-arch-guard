@@ -169,13 +169,16 @@ class CheckSubmitTests(unittest.TestCase):
         env.update(env_extra)
         stderr = io.StringIO()
         with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(stderr):
-            code = guard.check_submit(env, {"submit_target.partition.cpu": ZEN4}, "cpu", "", str(fake))
+            code = guard.check_submit(
+                env, {"submit_target.partition.cpu": ZEN4}, "cpu", "", str(fake)
+            )
         return code, stderr.getvalue()
 
     @staticmethod
     def _install(base: Path, target: str, module: str) -> None:
         name, version = module.split("/")
-        lua = base / "versions" / "2026.06" / "software" / "linux" / target / "modules" / "all" / name
+        tree = base / "versions" / "2026.06" / "software" / "linux" / target
+        lua = tree / "modules" / "all" / name
         lua.mkdir(parents=True, exist_ok=True)
         (lua / (version + ".lua")).write_text("-- module\n", encoding="utf-8")
 
@@ -192,7 +195,8 @@ class CheckSubmitTests(unittest.TestCase):
             root = Path(tmp)
             project = root / "project"
             self._install(project, ZEN2, "Mine/1.0")
-            code, err = self._user_tree_case(root, {"EESSI_PROJECT_INSTALL": str(project), "HOME": str(root / "home")})
+            extra = {"EESSI_PROJECT_INSTALL": str(project), "HOME": str(root / "home")}
+            code, err = self._user_tree_case(root, extra)
             self.assertEqual(code, 1)
             self.assertIn("Mine/1.0", err)
 
@@ -207,7 +211,8 @@ class CheckSubmitTests(unittest.TestCase):
             root = Path(tmp)
             home = root / "home"
             self._install(home / "eessi", ZEN4, "Mine/1.0")
-            # A set but empty EESSI_USER_INSTALL is a user prefix to EESSI-extend, so the default is not read.
+            # A set but empty EESSI_USER_INSTALL is a user prefix to EESSI-extend,
+            # so the default is not read.
             code, err = self._user_tree_case(root, {"HOME": str(home), "EESSI_USER_INSTALL": ""})
             self.assertEqual(code, 1)
             self.assertIn("Mine/1.0", err)
@@ -217,7 +222,8 @@ class CheckSubmitTests(unittest.TestCase):
             root = Path(tmp)
             user = root / "user-prefix"
             self._install(user, ZEN4, "Mine/1.0")
-            code, err = self._user_tree_case(root, {"EESSI_USER_INSTALL": str(user), "EESSI_VERSION": ""})
+            extra = {"EESSI_USER_INSTALL": str(user), "EESSI_VERSION": ""}
+            code, err = self._user_tree_case(root, extra)
             self.assertEqual(code, 1)
             self.assertIn("Mine/1.0", err)
 
@@ -383,7 +389,15 @@ class CheckSubmitTests(unittest.TestCase):
                     "EESSI_TEST_EB_STACK_LOG": str(root / "eb-stack.log"),
                 }
                 proc = subprocess.run(
-                    [*harness.GUARD_ARGV, "--check-submit", "--json", "--partition", "cpu", "--eb-stack", str(fake)],
+                    [
+                        *harness.GUARD_ARGV,
+                        "--check-submit",
+                        "--json",
+                        "--partition",
+                        "cpu",
+                        "--eb-stack",
+                        str(fake),
+                    ],
                     capture_output=True,
                     text=True,
                     env=env,
