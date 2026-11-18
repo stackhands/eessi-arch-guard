@@ -2234,7 +2234,7 @@ def check_submit(
     constraint: str,
     eb_stack_arg: str,
     as_json: bool = False,
-    target_arg: str = "",
+    target_arg: Optional[str] = None,
 ) -> int:
     """Check loaded modules against a mapped target through ``eb-stack stack arch``.
 
@@ -2262,7 +2262,7 @@ def check_submit(
             stderr_lines,
         )
 
-    if target_arg:
+    if target_arg is not None:
         target, error = _direct_target(target_arg, partition, constraint)
     else:
         target, error = submit_target(settings, partition, constraint)
@@ -3480,7 +3480,7 @@ def _main(argv: Sequence[str]) -> int:
             args.constraint or "",
             args.eb_stack or "",
             args.json,
-            args.target or "",
+            args.target,
         )
     chain = None
     chain_path: Optional[str] = None
