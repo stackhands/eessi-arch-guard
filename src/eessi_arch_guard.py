@@ -2439,6 +2439,19 @@ def _config_candidate_path(script_path: str) -> Optional[str]:
     return None
 
 
+def _invoked_path(argv: Sequence[str]) -> str:
+    """Path used to locate the beside-program configuration file."""
+    if not argv:
+        return __file__
+    argv0 = argv[0]
+    if "/" in argv0:
+        return argv0
+    found = shutil.which(argv0)
+    if found:
+        return found
+    return __file__
+
+
 def site_config(script_path: str) -> Tuple[Optional[Dict[str, str]], Optional[str]]:
     """Return (settings, warning). The first existing candidate wins."""
     path = _config_candidate_path(script_path)
@@ -3518,8 +3531,9 @@ def _main(argv: Sequence[str]) -> int:
     env = dict(os.environ)
     chain_out = b""
     # `timeout` is read for `--shell` and for a `--chain` wrapper too.
-    config_path = _config_candidate_path(__file__)
-    settings, config_warning = site_config(__file__)
+    script_path = _invoked_path(argv)
+    config_path = _config_candidate_path(script_path)
+    settings, config_warning = site_config(script_path)
     if settings is not None:
         config_status = "loaded"
     elif config_path is not None or config_warning is not None:
