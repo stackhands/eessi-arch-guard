@@ -951,8 +951,8 @@ fn inventoryModules(arena: Allocator, root: []const u8) []const []const u8 {
 /// EESSI-extend's default user prefix, when `EESSI_USER_INSTALL` is not in the
 /// environment. Unsafe values are skipped.
 fn extendModuleRoots(arena: Allocator, env: envmap.Map, os_type: []const u8, target: []const u8) []const []const u8 {
-    const version = env.get("EESSI_VERSION") orelse "";
-    if (!text.safeRelSubdir(version)) return &.{};
+    const eessi_version = env.get("EESSI_VERSION") orelse "";
+    if (!text.safeRelSubdir(eessi_version)) return &.{};
     var bases: std.ArrayList([]const u8) = .empty;
     for ([_][]const u8{ "EESSI_USER_INSTALL", "EESSI_PROJECT_INSTALL" }) |name| {
         const value = env.get(name) orelse "";
@@ -963,7 +963,7 @@ fn extendModuleRoots(arena: Allocator, env: envmap.Map, os_type: []const u8, tar
         bases.append(arena, std.fs.path.join(arena, &.{ home, "eessi" }) catch oom()) catch oom();
     var roots: std.ArrayList([]const u8) = .empty;
     outer: for (bases.items) |base| {
-        const root = std.fs.path.join(arena, &.{ base, "versions", version, "software", os_type, target, "modules", "all" }) catch oom();
+        const root = std.fs.path.join(arena, &.{ base, "versions", eessi_version, "software", os_type, target, "modules", "all" }) catch oom();
         for (roots.items) |seen| if (std.mem.eql(u8, seen, root)) continue :outer;
         roots.append(arena, root) catch oom();
     }
