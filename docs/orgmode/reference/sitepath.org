@@ -1,0 +1,59 @@
+#+TITLE: The sitepath.py helper
+#+OPTIONS: toc:nil todo:nil num:nil author:nil title:nil
+#+STARTUP: content
+
+* The sitepath.py helper
+
+=share/sitepath.py= is a read-only standard-library diagnostic script.
+The script inspects the mount table, =MODULEPATH=, loaded module metadata, and optional Lmod cache files without modifying the shell or the filesystem.
+
+** Synopsis
+
+#+begin_example
+python3 share/sitepath.py [--repo PATH] [--site PATH] [--eessi PATH]
+                          [--modulepath VALUE] [--mountinfo PATH]
+                          [--require-input] [--retain PATH ...] [--check-cache]
+#+end_example
+
+** Options
+
+| Option | Meaning |
+|---|---|
+| =--repo PATH= | Repository path checked in the mount table. Defaults to =EESSI_CVMFS_REPO= or =/cvmfs/software.eessi.io=. |
+| =--site PATH= | Site =modules/all= directory. Defaults to =EESSI_SITE_SOFTWARE_PATH= with =/modules/all= appended when needed. |
+| =--eessi PATH= | European Environment for Scientific Software Installations (EESSI) module directory, falling back to =EESSI_SOFTWARE_PATH= plus the =/modules/all= suffix if needed. |
+| =--modulepath VALUE= | Module path string to inspect. Defaults to =MODULEPATH=. |
+| =--mountinfo PATH= | Mount table file to read. Defaults to =/proc/self/mountinfo=. |
+| =--require-input= | Exit 2 when either install path resolves to =/modules/all= alone. |
+| =--retain PATH= | Repeatable. Check that =PATH= remains on =MODULEPATH=, report duplicate entries and module precedence collisions across active trees, and verify that loaded sticky modules have present source roots. |
+| =--check-cache= | Inspect configured (=LMOD_RC=) and existing user Lmod caches for readability and staleness, then compare =module -t avail= with =LMOD_IGNORE_CACHE=yes=. Each child process runs with temporary private =HOME=, =XDG_CACHE_HOME=, and =LMOD_CACHEDIR= directories deleted afterward, while still reading =LMOD_RC=, so real user caches stay untouched. |
+
+When neither =--retain= nor =--check-cache= is passed, =share/sitepath.py= runs only the CernVM File System (CVMFS) mount check and the site-before-EESSI order check.
+
+** Environment variables
+
+| Variable | Use |
+|---|---|
+| =EESSI_CVMFS_REPO= | Repository path read unless =--repo= is given. |
+| =EESSI_SITE_SOFTWARE_PATH= | Site software prefix read when =--site= stays unset. |
+| =EESSI_SOFTWARE_PATH= | EESSI prefix consulted if =--eessi= is absent. |
+| =MODULEPATH= | Colon-separated search list read unless =--modulepath= is supplied. |
+| =LOADEDMODULES=, =_LMFILES_=, =_ModuleTable001_= | Loaded module names, backing modulefiles, and sticky-property metadata inspected under =--retain=. |
+| =LMOD_RC= | Colon-separated =lmodrc.lua= files whose =scDescriptT= cache directories and timestamps are inspected under =--check-cache=, and forwarded to both =module -t avail= child runs. |
+| =XDG_CACHE_HOME=, =HOME= | User base directories inspected read-only for existing caches (=$XDG_CACHE_HOME/lmod=, =$HOME/.cache/lmod=, and =$HOME/.lmod.d/.cache=) under =--check-cache=. Neither directory receives writes because child =module -t avail= runs override them with temporary private directories. |
+| =LMOD_CMD=, =PATH= | Executable lookup for =module -t avail= (or =$LMOD_CMD bash -t avail=) inside those isolated child runs. |
+
+** Output and exit status
+
+Each check prints one line prefixed with =ok  = or =FAIL= on stdout.
+
+| Status | Meaning |
+|---|---|
+| =0= | Every enabled check passed. |
+| =1= | One or more enabled checks reported =FAIL=. |
+| =2= | Required inputs were missing, =--require-input= saw =/modules/all=, =--retain= received an empty path, or the mount table could not be opened. |
+
+** See also
+
+- [[file:../howto/check-the-client-mount.org][Client mount and module path guide]]
+- [[file:cli.org][Command-line reference]]

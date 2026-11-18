@@ -4,10 +4,10 @@
 
 * Check the client mount and the site module path
 
-See whether this node has the EESSI repository on a CVMFS mount, and whether the site's module directory comes before EESSI's on =MODULEPATH=.
+See whether this node has the European Environment for Scientific Software Installations (EESSI) repository on a CernVM File System (CVMFS) mount, and whether the site's module directory comes before EESSI's on =MODULEPATH=.
 A directory that merely exists on the root disk is not the client mount.
 The site path in front is what =eval "$(eb-local env)"= arranges, so a module of the same name resolves to the site copy.
-This check changes nothing. It reads the mount table and =MODULEPATH= and prints the answer.
+The script changes nothing in the shell. It reads the mount table, =MODULEPATH=, loaded module metadata, and optional Lmod cache files, then prints the answer.
 
 ** Before you start
 
@@ -38,8 +38,31 @@ This check changes nothing. It reads the mount table and =MODULEPATH= and prints
    ok   site modules /opt/site/versions/2026.06/software/linux/x86_64/amd/zen4/modules/all precede /cvmfs/software.eessi.io/versions/2026.06/software/linux/x86_64/amd/zen4/modules/all
    #+end_example
 
-2. Exit status =1= means a mount or =MODULEPATH= check failed.
-   Status =2= means neither =--site= and =--eessi= nor the two install variables were given, the mount table could not be read, or =--require-input= saw a placeholder =/modules/all= path from unset shell variables.
+2. Add =--retain PATH= (repeatable) when a site keeps additional module roots on =MODULEPATH=:
+
+   #+begin_src bash
+   python3 share/sitepath.py \
+     --site "$EESSI_SITE_SOFTWARE_PATH/modules/all" \
+     --eessi "$EESSI_SOFTWARE_PATH/modules/all" \
+     --retain /opt/local/modules/all \
+     --retain /opt/vendor/modules/all
+   #+end_src
+
+   The helper reports retained roots that disappeared from =MODULEPATH= or from disk, duplicate =MODULEPATH= entries, module precedence collisions across active trees, and loaded sticky modules whose source root is absent.
+
+3. Add =--check-cache= to verify configured and user Lmod caches:
+
+   #+begin_src bash
+   python3 share/sitepath.py \
+     --site "$EESSI_SITE_SOFTWARE_PATH/modules/all" \
+     --eessi "$EESSI_SOFTWARE_PATH/modules/all" \
+     --check-cache
+   #+end_src
+
+   The helper checks configured cache files named by =LMOD_RC= and any existing user cache directory for unreadable or stale files, then compares =module -t avail= against =LMOD_IGNORE_CACHE=yes module -t avail= in child processes.
+
+4. Exit status =1= means a mount, =MODULEPATH=, retained-root, sticky-module, or cache check failed.
+   Status =2= means neither =--site= and =--eessi= nor the two install variables were given, =--retain= received an empty path, the mount table could not be read, or =--require-input= saw a placeholder =/modules/all= path from unset shell variables.
    =site modules PATH are behind EESSI= means the site directory is on =MODULEPATH= after the EESSI one, so =module load= of a name that exists in both takes EESSI's. Load the site tree again so it is prepended.
 
 ** If it fails
@@ -48,12 +71,20 @@ This check changes nothing. It reads the mount table and =MODULEPATH= and prints
 |---|---|---|
 | =sitepath.py: need --site and --eessi= | Neither flag was given and the two install variables are unset (exit 2). | Pass the two =modules/all= directories, or load EESSI and the site tree first. |
 | =sitepath.py: --require-input: install paths are missing= | =--require-input= and a path is =/modules/all= alone from an unset variable in the command above. | Set both install variables, or pass explicit =--site= and =--eessi= (exit 2). |
+| =sitepath.py: --retain requires a non-empty path= | =--retain= received an empty value (exit 2). | Pass a real module-tree directory path to =--retain=. |
 | =FAIL REPO is not on a cvmfs mount= | The path is absent from the mount table, or the mount that holds it is not CVMFS. | Mount the EESSI client repository. A directory on the root disk does not count. |
 | =FAIL site modules PATH are not on MODULEPATH= | The site directory is not an entry. | Prepend it, which the site install's module does. |
 | =FAIL site modules PATH are behind= the EESSI directory | The site entry comes later. | Prepend the site directory so it is the earlier entry. |
+| =FAIL retained root PATH disappeared= | A retained root is missing from =MODULEPATH= or from disk. | Restore the module path entry or mount the directory before running jobs. |
+| =FAIL duplicate MODULEPATH entry PATH= | =MODULEPATH= lists the same directory twice or through a symlink. | Deduplicate =MODULEPATH= in the shell startup or module initialization. |
+| =FAIL precedence collision for MODULE= | Two roots on =MODULEPATH= provide the same =Name/version= module. | Remove the unintended copy or adjust =MODULEPATH= priority deliberately. |
+| =FAIL loaded sticky module MODULE source root PATH is absent= | A loaded sticky module belongs to a root that disappeared from =MODULEPATH= or disk. | Keep the source root on =MODULEPATH= or reload from an active tree. |
+| =FAIL configured cache ... is unreadable= or =is stale= | A cache file or timestamp cannot be read, or a module tree is newer than the cache. | Rebuild or fix permissions on the Lmod spider cache. |
+| =FAIL cached module -t avail inventory differs= | Cached =module -t avail= disagrees with =LMOD_IGNORE_CACHE=yes=. | Regenerate the stale cache or remove the corrupt user cache directory. |
 | =sitepath.py: cannot read PATH= | The mount table cannot be opened. | Pass =--mountinfo= with a copy of the table, or run where =/proc= is mounted. |
 
 ** Related
 
+- [[file:../reference/sitepath.org][The sitepath.py helper]], for all flags, environment inputs, and exit codes
 - [[file:install-the-prolog.org][Install the prolog]], for the nodes this check is about
 - [[https://www.eessi.io/docs/training-events/2025/tutorial-best-practices-cvmfs-hpc/eessi/using-eessi/][Using EESSI]], for the init that puts =modules/all= on =MODULEPATH=
