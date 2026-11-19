@@ -1283,6 +1283,43 @@ class IntegrationTests(unittest.TestCase):
         self.assertEqual(changes["EESSI_SOFTWARE_SUBDIR"], icelake)
         self.assertEqual(changes["EESSI_SOFTWARE_SUBDIR_OVERRIDE"], icelake)
 
+    def test_duplicated_flags_lines_across_identical_blocks_keep_all_flags(self):
+        spr = "x86_64/intel/sapphirerapids"
+        icelake = "x86_64/intel/icelake"
+        self.site.add_cpu(spr)
+        self.site.add_cpu(icelake)
+        self.site.add_module(spr, "R/4.4.2")
+        self.site.add_module(icelake, "R/4.4.2")
+        cpuinfo = "\n".join(
+            (
+                "processor : 0",
+                "vendor_id : GenuineIntel",
+                "cpu family : 6",
+                "model : 143",
+                "flags : avx2 fma avx512f avx512bw avx512cd avx512dq avx512vl "
+                "avx512_vnni avx512_vbmi2 avx512_bf16 amx_tile waitpkg",
+                "flags : avx2 fma avx512f avx512bw avx512cd avx512dq avx512vl "
+                "avx512_vnni avx512_vbmi2",
+                "",
+                "processor : 1",
+                "vendor_id : GenuineIntel",
+                "cpu family : 6",
+                "model : 143",
+                "flags : avx2 fma avx512f avx512bw avx512cd avx512dq avx512vl "
+                "avx512_vnni avx512_vbmi2 avx512_bf16 amx_tile waitpkg",
+                "flags : avx2 fma avx512f avx512bw avx512cd avx512dq avx512vl "
+                "avx512_vnni avx512_vbmi2",
+                "",
+            )
+        )
+        with open(self.site.cpuinfo, "w", encoding="ascii") as handle:
+            handle.write(cpuinfo)
+        env = harness.base_env(self.site, spr, ["R/4.4.2"], gpu="none")
+        proc = harness.run_guard(env)
+        changes, _printed = _assert_prolog(proc)
+        self.assertEqual(changes["EESSI_SOFTWARE_SUBDIR"], icelake)
+        self.assertEqual(changes["EESSI_SOFTWARE_SUBDIR_OVERRIDE"], icelake)
+
     def test_slurm_cpu_bind_hostlist_uses_that_processor(self):
         # Processor 0 is Haswell. Processor 1 is Sapphire Rapids. The stub,
         # like an unscoped read, reports the first processor. A task whose

@@ -703,10 +703,14 @@ fn fieldValue(fields: []const CpuField, norm: []const u8) ?[]const u8 {
 }
 
 fn sameFields(a: []const CpuField, b: []const CpuField) bool {
-    if (a.len != b.len) return false;
     for (a) |f| {
-        const other = fieldValue(b, f.norm) orelse return false;
-        if (!std.mem.eql(u8, f.value, other)) return false;
+        const first_a = fieldValue(a, f.norm) orelse continue;
+        if (!std.mem.eql(u8, f.value, first_a)) continue;
+        const first_b = fieldValue(b, f.norm) orelse return false;
+        if (!std.mem.eql(u8, first_a, first_b)) return false;
+    }
+    for (b) |f| {
+        if (fieldValue(a, f.norm) == null) return false;
     }
     return true;
 }
