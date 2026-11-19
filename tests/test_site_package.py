@@ -134,3 +134,28 @@ class SitePackageTests(unittest.TestCase):
             self.assertIn("DEMO_LOADED", proc.stdout)
             self.assertNotIn("ModuleUsageTracking", proc.stdout)
             self.assertTrue(re.search(r"export\s+DEMO_LOADED", proc.stdout), proc.stdout)
+
+    def test_path_parts_handles_duplicate_software_prefix_and_repeated_slashes(self):
+        sp_path = ROOT / "share" / "lmod" / "SitePackage.lua"
+        script = "\n".join(
+            [
+                f'local sp = dofile("{sp_path}")',
+                "local cpu1, accel1 = sp.path_parts("
+                '"/tmp/software/linux/mirror/software/linux/x86_64/amd/zen4/'
+                'modules/all/Foo/1.0.lua")',
+                'assert(cpu1 == "x86_64/amd/zen4", "cpu1=" .. tostring(cpu1))',
+                'assert(accel1 == nil, "accel1=" .. tostring(accel1))',
+                "local cpu2, accel2 = sp.path_parts("
+                '"/cvmfs/software.eessi.io/versions/2026.06/software/linux//'
+                'x86_64/amd/zen4/accel/nvidia/cc90//modules/all/CUDA/12.6.0.lua")',
+                'assert(cpu2 == "x86_64/amd/zen4", "cpu2=" .. tostring(cpu2))',
+                'assert(accel2 == "accel/nvidia/cc90", "accel2=" .. tostring(accel2))',
+            ]
+        )
+        proc = subprocess.run(
+            [LUA, "-e", script],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(proc.returncode, 0, proc.stderr + proc.stdout)
