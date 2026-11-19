@@ -726,6 +726,62 @@ fn hasUpperAscii(s: []const u8) bool {
     return false;
 }
 
+fn charCountStr(s: []const u8) isize {
+    var n: isize = 0;
+    var i: usize = 0;
+    while (i < s.len) : (n += 1) i += text.nextChar(s[i..]).len;
+    return n;
+}
+
+fn charPrefixLen(a: []const u8, b: []const u8) isize {
+    var n: isize = 0;
+    var ia: usize = 0;
+    var ib: usize = 0;
+    while (ia < a.len and ib < b.len) : (n += 1) {
+        const ca = text.nextChar(a[ia..]);
+        const cb = text.nextChar(b[ib..]);
+        if (ca.cp == null and cb.cp == null) {
+            if (a[ia] != b[ib]) break;
+        } else if (ca.cp != cb.cp) {
+            break;
+        }
+        ia += ca.len;
+        ib += cb.len;
+    }
+    return n;
+}
+
+fn selectorHint(arena: Allocator, settings: Settings, prefix: []const u8, value: []const u8, kind: []const u8) []const u8 {
+    var best: ?[]const u8 = null;
+    var best_prefix: isize = -1;
+    var best_delta: isize = -1_000_000_000;
+    const value_chars = charCountStr(value);
+    var it = settings.iterator();
+    while (it.next()) |kv| {
+        const k = kv.key_ptr.*;
+        if (!std.mem.startsWith(u8, k, prefix)) continue;
+        const cand = k[prefix.len..];
+        const cp_len = charPrefixLen(value, cand);
+        if (cp_len == 0) continue;
+        const cand_chars = charCountStr(cand);
+        const diff = cand_chars - value_chars;
+        const length_delta = if (diff < 0) diff else -diff;
+        const better = if (cp_len != best_prefix)
+            cp_len > best_prefix
+        else if (length_delta != best_delta)
+            length_delta > best_delta
+        else
+            best == null or std.mem.order(u8, cand, best.?) == .gt;
+        if (better) {
+            best = cand;
+            best_prefix = cp_len;
+            best_delta = length_delta;
+        }
+    }
+    const chosen = best orelse return "";
+    return arena.print("; nearest known {s} is {s}{s}", .{ kind, prefix, chosen }) catch "";
+}
+
 fn submitTarget(arena: Allocator, settings: ?Settings, partition: []const u8, constraint: []const u8, why: *[]const u8) ?[]const u8 {
     if (!submitSelector(partition)) {
         why.* = "--partition needs one safe partition name";
@@ -738,7 +794,8 @@ fn submitTarget(arena: Allocator, settings: ?Settings, partition: []const u8, co
     const s: Settings = settings orelse .empty;
     const part_key = arena.print("submit_target.partition.{s}", .{partition}) catch oom();
     const target = s.get(part_key) orelse {
-        why.* = arena.print("site config has no {s} mapping", .{part_key}) catch part_key;
+        const hint = selectorHint(arena, s, "submit_target.partition.", partition, "partition");
+        why.* = arena.print("site config has no {s} mapping{s}", .{ part_key, hint }) catch part_key;
         return null;
     };
     if (!std.mem.eql(u8, text.pyStrip(target), target) or hasUpperAscii(target) or !text.safeRelSubdir(target)) {
@@ -749,7 +806,8 @@ fn submitTarget(arena: Allocator, settings: ?Settings, partition: []const u8, co
     if (constraint.len > 0) {
         const constraint_key = arena.print("submit_target.constraint.{s}", .{constraint}) catch oom();
         const other = s.get(constraint_key) orelse {
-            why.* = arena.print("site config has no {s} mapping", .{constraint_key}) catch constraint_key;
+            const hint = selectorHint(arena, s, "submit_target.constraint.", constraint, "constraint");
+            why.* = arena.print("site config has no {s} mapping{s}", .{ constraint_key, hint }) catch constraint_key;
             return null;
         };
         if (!std.mem.eql(u8, text.pyStrip(other), other) or hasUpperAscii(other) or !text.safeRelSubdir(other)) {
@@ -1433,6 +1491,10 @@ test "submitTarget requires agreeing site mappings" {
     try std.testing.expectEqualStrings("x86_64/amd/zen4", submitTarget(a, settings, "cpu", "zen4", &why).?);
     try std.testing.expect(submitTarget(a, settings, "cpu", "zen2", &why) == null);
     try std.testing.expect(std.mem.indexOf(u8, why, "different targets") != null);
+    try std.testing.expect(submitTarget(a, settings, "cp", "", &why) == null);
+    try std.testing.expectEqualStrings("site config has no submit_target.partition.cp mapping; nearest known partition is submit_target.partition.cpu", why);
+    try std.testing.expect(submitTarget(a, settings, "cpu", "zen", &why) == null);
+    try std.testing.expectEqualStrings("site config has no submit_target.constraint.zen mapping; nearest known constraint is submit_target.constraint.zen4", why);
 }
 
 test "renderCheckSubmitJson is schema_version 1" {
