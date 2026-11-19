@@ -1,0 +1,1 @@
+Both guards map the processor blocks of an `lxcfs`-renumbered `/proc/cpuinfo` onto the cgroup cpuset. A task whose sched affinity is narrower than its cpuset is then judged on the processors it runs on.

@@ -32,6 +32,7 @@ def _unescape(text: str) -> str:
             text[i] == "\\"
             and i + 3 < len(text)
             and all("0" <= ch <= "7" for ch in text[i + 1 : i + 4])
+            and int(text[i + 1 : i + 4], 8) <= 0o377
         ):
             out.append(chr(int(text[i + 1 : i + 4], 8)))
             i += 4

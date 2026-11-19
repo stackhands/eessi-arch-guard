@@ -1,0 +1,1 @@
+The Emerald Rapids test binds to fixture processors in the live affinity mask and skips when none exist. A Zig test passes LXCFS-renumbered blocks through `scopeCpuinfoWithBase` with affinity narrower than the cgroup cpuset.
