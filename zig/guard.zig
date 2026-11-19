@@ -666,7 +666,9 @@ fn normKey(arena: Allocator, key: []const u8) []const u8 {
     return buf[0..n];
 }
 
-fn processorId(line: []const u8) ?usize {
+const ProcessorId = struct { id: ?usize };
+
+fn processorId(line: []const u8) ?ProcessorId {
     const t = std.mem.trim(u8, line, " \t\r");
     const prefix = "processor";
     if (t.len < prefix.len or !std.ascii.eqlIgnoreCase(t[0..prefix.len], prefix)) return null;
@@ -676,7 +678,8 @@ fn processorId(line: []const u8) ?usize {
     i += 1;
     while (i < t.len and (t[i] == ' ' or t[i] == '\t')) i += 1;
     if (i >= t.len) return null;
-    return parseUsize(t[i..]);
+    for (t[i..]) |c| if (c < '0' or c > '9') return null;
+    return .{ .id = parseUsize(t[i..]) };
 }
 
 const CpuField = struct { norm: []const u8, raw: []const u8, value: []const u8 };
@@ -724,16 +727,16 @@ fn tokenSet(arena: Allocator, value: []const u8) std.BufSet {
 
 /// scope_cpuinfo: null when the text is already the allowed processors.
 fn scopeCpuinfo(arena: Allocator, cpuinfo: []const u8, allowed: CpuSet) ?[]const u8 {
-    const Block = struct { id: usize, fields: []const CpuField };
+    const Block = struct { id: ?usize, fields: []const CpuField };
     var blocks: std.ArrayList(Block) = .empty;
-    var cur_id: ?usize = null;
+    var cur_id: ?ProcessorId = null;
     var cur: std.ArrayList(CpuField) = .empty;
     var it = std.mem.splitScalar(u8, cpuinfo, '\n');
     while (it.next()) |line| {
-        if (processorId(line)) |id| {
-            if (cur_id) |prev| blocks.append(arena, .{ .id = prev, .fields = cur.toOwnedSlice(arena) catch return null }) catch return null;
+        if (processorId(line)) |pid| {
+            if (cur_id) |prev| blocks.append(arena, .{ .id = prev.id, .fields = cur.toOwnedSlice(arena) catch return null }) catch return null;
             cur = .empty;
-            cur_id = id;
+            cur_id = pid;
             continue;
         }
         if (cur_id == null) continue;
@@ -741,10 +744,10 @@ fn scopeCpuinfo(arena: Allocator, cpuinfo: []const u8, allowed: CpuSet) ?[]const
             if (!std.mem.eql(u8, f.norm, "processor")) cur.append(arena, f) catch return null;
         }
     }
-    if (cur_id) |prev| blocks.append(arena, .{ .id = prev, .fields = cur.toOwnedSlice(arena) catch return null }) catch return null;
+    if (cur_id) |prev| blocks.append(arena, .{ .id = prev.id, .fields = cur.toOwnedSlice(arena) catch return null }) catch return null;
     if (blocks.items.len == 0) return null;
     var kept: std.ArrayList(Block) = .empty;
-    for (blocks.items) |b| if (allowed.has(b.id)) kept.append(arena, b) catch return null;
+    for (blocks.items) |b| if (b.id) |id| if (allowed.has(id)) kept.append(arena, b) catch return null;
     if (kept.items.len == blocks.items.len and kept.items.len > 0) {
         const base = kept.items[0].fields;
         var same = true;
@@ -757,7 +760,7 @@ fn scopeCpuinfo(arena: Allocator, cpuinfo: []const u8, allowed: CpuSet) ?[]const
     if (kept.items.len == 0) return arena.dupe(u8, "processor : 0\nflags :\n") catch null;
     const first = kept.items[0];
     var out: std.ArrayList(u8) = .empty;
-    out.print(arena, "processor : {d}\n", .{first.id}) catch return null;
+    out.print(arena, "processor : {d}\n", .{first.id.?}) catch return null;
     var seen: std.BufSet = .init(arena);
     for (first.fields) |f| {
         if (seen.contains(f.norm)) continue;

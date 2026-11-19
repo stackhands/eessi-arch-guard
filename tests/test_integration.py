@@ -1430,6 +1430,34 @@ class IntegrationTests(unittest.TestCase):
             self.assertTrue(Path(seen).name.startswith("eessi-arch-guard-cpu-"), seen)
             self.assertFalse(Path(seen).exists())
 
+    def test_oversized_processor_id_does_not_bypass_cpu_scoping(self):
+        spr = "x86_64/intel/sapphirerapids"
+        generic = "x86_64/generic"
+        self.site.add_cpu(spr)
+        self.site.add_cpu(generic)
+        self.site.add_module(spr, "R/4.4.2")
+        self.site.add_module(generic, "R/4.4.2")
+        cpuinfo = "\n".join(
+            (
+                "processor : 999999999999999999999999",
+                "vendor_id : GenuineIntel",
+                "cpu family : 6",
+                "model : 143",
+                "flags : avx2 fma avx512f avx512bw avx512cd avx512dq avx512vl "
+                "avx512_vnni avx512_vbmi2 avx512_bf16 amx_tile waitpkg",
+                "",
+            )
+        )
+        with open(self.site.cpuinfo, "w", encoding="ascii") as handle:
+            handle.write(cpuinfo)
+        env = harness.base_env(self.site, spr, ["R/4.4.2"], gpu="none")
+        env["SLURM_CPU_BIND_LIST"] = "0"
+        proc = harness.run_guard(env, ["--dry-run", "--json"])
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        doc = json.loads(proc.stdout)
+        self.assertEqual(doc["decision"], "reloaded")
+        self.assertEqual(doc["now"], generic)
+
     def test_cache_does_not_reuse_a_decision_for_another_cpu_bind(self):
         # The noop for cpu[1] must not be replayed for a task in the same
         # job whose bind list is cpu[0].
