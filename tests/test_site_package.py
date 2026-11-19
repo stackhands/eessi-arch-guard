@@ -220,3 +220,34 @@ class SitePackageTests(unittest.TestCase):
             check=False,
         )
         self.assertEqual(proc.returncode, 0, proc.stderr + proc.stdout)
+
+    def test_missing_logger_on_path_returns_false_from_emit_syslog_and_zero_flushed(self):
+        sp_path = ROOT / "share" / "lmod" / "SitePackage.lua"
+        mod_path = (
+            "/cvmfs/software.eessi.io/versions/2026.06/software/linux/"
+            "x86_64/amd/zen4/modules/all/GROMACS/2024.1.lua"
+        )
+        script = "\n".join(
+            [
+                f'local sp = dofile("{sp_path}")',
+                "sp.find_posix_syslog = function() return nil end",
+                'assert(sp.emit_syslog({ "user=alice module=A/1 path=/a host=h time=1.0" })'
+                " == false)",
+                f'sp.load_hook({{ fn = "{mod_path}", modFullName = "GROMACS/2024.1" }})',
+                "assert(sp.flush_usage_records() == 0)",
+                "assert(#sp.usage_records == 0)",
+            ]
+        )
+        proc = subprocess.run(
+            [LUA, "-e", script],
+            env={
+                "PATH": "/nonexistent",
+                "USER": "alice",
+                "HOSTNAME": "node01",
+                "EESSI_USAGE_TRACKING": "1",
+            },
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(proc.returncode, 0, proc.stderr + proc.stdout)
