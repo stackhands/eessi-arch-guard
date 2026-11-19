@@ -1,0 +1,67 @@
+#!/usr/bin/env bash
+# Prepare the tree for a release: the pre-bump hook of cog.toml.
+#
+# usage: tools/release-prepare NEW_VERSION
+#
+# `cog bump` runs this with the version it is about to tag, then commits what
+# changed and creates the tag. For NEW_VERSION and the version pyproject.toml
+# still names (OLD) it sets:
+#   - CHANGELOG.md: `towncrier build` writes the fragments of changelog.d/
+#     under a heading for NEW_VERSION and removes them;
+#   - pyproject.toml, src/eessi_arch_guard.py and build.zig.zon: the version.
+#     The Zig build reads its own from build.zig.zon, and the release workflow
+#     compares all three with the tag;
+#   - README.md: the download command;
+#   - docs/orgmode: the lines that show `--version` printing the bare version;
+#   - docs/: the Markdown pages, exported again from their Org sources.
+#
+# Not done here, because it is prose: COMPAT.md, which describes the Python
+# guard at a named tag with line numbers into it; the `--version` example with
+# a commit in docs/orgmode/reference/cli.org; and the "Checked with ..." line
+# of the tutorial. Edit those in a commit before the bump.
+#
+# Needs: towncrier (or uvx), emacs for docs/export.el. A refused run can leave
+# edited files behind; `git checkout -- .` puts the tree back.
+set -euo pipefail
+
+new=${1:?usage: tools/release-prepare NEW_VERSION}
+cd "$(dirname "${BASH_SOURCE[0]}")/.."
+
+die() { echo "release-prepare: $*" >&2; exit 2; }
+
+# set_in FILE SED_EXPRESSION...: edit FILE, and refuse a FILE the expressions
+# leave unchanged, so a version string that moved fails the bump instead of
+# being skipped.
+set_in() {
+    local file=$1 before
+    shift
+    before=$(sha256sum < "${file}")
+    sed -i -E "$@" "${file}"
+    [ "${before}" != "$(sha256sum < "${file}")" ] || die "${file} does not name ${old} where expected"
+}
+
+[[ ${new} =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || die "'${new}' is not X.Y.Z"
+old=$(sed -n 's/^version = "\([0-9.]*\)"$/\1/p' pyproject.toml | head -n 1)
+[ -n "${old}" ] || die "pyproject.toml names no version"
+[ "${old}" != "${new}" ] || die "pyproject.toml already names ${new}"
+old_re=${old//./\\.}
+
+if command -v towncrier > /dev/null 2>&1; then
+    towncrier build --version "${new}" --yes
+else
+    uvx towncrier build --version "${new}" --yes
+fi
+
+set_in pyproject.toml "0,/^version = /s/^(version = )\"${old_re}\"\$/\1\"${new}\"/"
+set_in src/eessi_arch_guard.py "s/^(__version__ = )\"${old_re}\"\$/\1\"${new}\"/"
+set_in build.zig.zon "s/^( *\.version = )\"${old_re}\",\$/\1\"${new}\",/"
+set_in README.md "s/^(v=)${old_re}( arch=)/\1${new}\2/"
+# `--version` prints the version alone on a line.
+for page in howto/install-the-prolog.org tutorials/first-guarded-job.org reference/cli.org; do
+    set_in "docs/orgmode/${page}" "s/^( *)${old_re}\$/\1${new}/"
+done
+
+emacs --batch -l docs/export.el > /dev/null 2>&1
+
+echo "release-prepare: ${old} -> ${new}"
+git status --short | awk '{print $1}' | sort | uniq -c
