@@ -1,0 +1,13 @@
+# `cog bump --minor` (or --patch, --major, --version X.Y.Z) on a release branch:
+# the hook below prepares the tree, cog commits it as `chore(version): X.Y.Z`
+# and creates the tag vX.Y.Z on that commit. RELEASING.md has the steps around it.
+tag_prefix = "v"
+ignore_merge_commits = true
+# CHANGELOG.md is not cog's to write; tools/release-prepare says who writes it.
+disable_changelog = true
+# A release is cut from a branch that becomes a pull request to main.
+branch_whitelist = ["chore/release-*"]
+
+pre_bump_hooks = [
+    "tools/release-prepare {{version}}",
+]
