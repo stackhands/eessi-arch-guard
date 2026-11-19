@@ -409,6 +409,15 @@ class SyslogTests(unittest.TestCase):
             sock_rfc.close()
             sock_jrn.close()
 
+    def test_unicode_whitespace_trimmed_for_syslog_target_and_pen(self):
+        env = self._cpu_env(ZEN4, "zen2", {"EESSI_ARCH_GUARD_SYSLOG_PEN": "\u00a042\u3000"})
+        proc = harness.run_guard(env, ["--dry-run", "--json", "--syslog=\u00a0journald\u3000"])
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertEqual(proc.stderr, "")
+        doc = json.loads(proc.stdout)
+        self.assertEqual(doc["syslog"]["target"], "journal+unix:///run/systemd/journal/socket")
+        self.assertEqual(doc["syslog"]["pen"], "42")
+
 
 if __name__ == "__main__":
     unittest.main()
