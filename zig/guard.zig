@@ -464,6 +464,25 @@ const CpuSet = struct {
         for (a.words, 0..) |word, i| out.words[i] = word & b.words[i];
         return out;
     }
+
+    fn count(s: CpuSet) usize {
+        var n: usize = 0;
+        for (s.words) |w| n += @popCount(w);
+        return n;
+    }
+
+    fn eql(a: CpuSet, b: CpuSet) bool {
+        return std.mem.eql(u64, &a.words, &b.words);
+    }
+
+    fn sortedIds(s: CpuSet, arena: Allocator) Allocator.Error![]usize {
+        var out: std.ArrayList(usize) = .empty;
+        for (s.words, 0..) |word, wi| {
+            var w = word;
+            while (w != 0) : (w &= w - 1) try out.append(arena, wi * 64 + @ctz(w));
+        }
+        return out.toOwnedSlice(arena);
+    }
 };
 
 fn parseUsize(s: []const u8) ?usize {
@@ -568,7 +587,10 @@ fn hasCgroupController(controllers: []const u8, wanted: []const u8) bool {
     return false;
 }
 
-fn cgroupDirectories(arena: Allocator, cgroup_text: []const u8) []const []const u8 {
+fn cgroupDirectoriesFrom(arena: Allocator, cgroup_text: []const u8, cgroup_root: []const u8) []const []const u8 {
+    const trimmed_root = std.mem.trimEnd(u8, cgroup_root, "/");
+    const root = if (trimmed_root.len == 0) "/" else trimmed_root;
+    const base = if (std.mem.eql(u8, root, "/")) "" else root;
     var dirs: std.ArrayList([]const u8) = .empty;
     var it = std.mem.splitScalar(u8, cgroup_text, '\n');
     while (it.next()) |raw_line| {
@@ -581,23 +603,33 @@ fn cgroupDirectories(arena: Allocator, cgroup_text: []const u8) []const []const 
         if (path.len == 0 or path[0] != '/') {
             path = std.fmt.allocPrint(arena, "/{s}", .{path}) catch return &.{};
         }
+        const rel = if (std.mem.eql(u8, path, "/")) "" else path;
         if (std.mem.eql(u8, hier, "0") and controllers.len == 0) {
-            dirs.append(arena, std.fmt.allocPrint(arena, "/sys/fs/cgroup{s}", .{path}) catch return &.{}) catch return &.{};
+            const full = std.fmt.allocPrint(arena, "{s}{s}", .{ base, rel }) catch return &.{};
+            dirs.append(arena, if (full.len == 0) "/" else full) catch return &.{};
         } else if (hasCgroupController(controllers, "cpuset")) {
-            dirs.append(arena, std.fmt.allocPrint(arena, "/sys/fs/cgroup/cpuset{s}", .{path}) catch return &.{}) catch return &.{};
-            dirs.append(arena, std.fmt.allocPrint(arena, "/sys/fs/cgroup{s}", .{path}) catch return &.{}) catch return &.{};
+            dirs.append(arena, std.fmt.allocPrint(arena, "{s}/cpuset{s}", .{ base, rel }) catch return &.{}) catch return &.{};
+            const full = std.fmt.allocPrint(arena, "{s}{s}", .{ base, rel }) catch return &.{};
+            dirs.append(arena, if (full.len == 0) "/" else full) catch return &.{};
         }
     }
     return dirs.items;
 }
 
-fn cgroupCpus(arena: Allocator) ?CpuSet {
-    const cgroup_text = readFile(arena, "/proc/self/cgroup", 1 << 20) orelse return null;
-    for (cgroupDirectories(arena, cgroup_text)) |start| {
+fn cgroupDirectories(arena: Allocator, cgroup_text: []const u8) []const []const u8 {
+    return cgroupDirectoriesFrom(arena, cgroup_text, "/sys/fs/cgroup");
+}
+
+fn cgroupCpusFrom(arena: Allocator, proc_cgroup_path: []const u8, cgroup_root: []const u8) ?CpuSet {
+    const trimmed_root = std.mem.trimEnd(u8, cgroup_root, "/");
+    const root = if (trimmed_root.len == 0) "/" else trimmed_root;
+    const cgroup_text = readFile(arena, proc_cgroup_path, 1 << 20) orelse return null;
+    for (cgroupDirectoriesFrom(arena, cgroup_text, root)) |start| {
         var directory = start;
         var hop: usize = 0;
-        while (hop < 64 and std.mem.startsWith(u8, directory, "/sys/fs/cgroup")) : (hop += 1) {
-            const eff = std.fmt.allocPrint(arena, "{s}/cpuset.cpus.effective", .{directory}) catch return null;
+        while (hop < 64 and (std.mem.eql(u8, directory, root) or std.mem.startsWith(u8, directory, root) and (std.mem.eql(u8, root, "/") or directory[root.len] == '/'))) : (hop += 1) {
+            const eff_dir = if (std.mem.eql(u8, directory, "/")) "" else directory;
+            const eff = std.fmt.allocPrint(arena, "{s}/cpuset.cpus.effective", .{eff_dir}) catch return null;
             if (readFile(arena, eff, 65536)) |raw| {
                 const trimmed = std.mem.trim(u8, raw, " \t\r\n");
                 if (trimmed.len > 0) {
@@ -610,6 +642,10 @@ fn cgroupCpus(arena: Allocator) ?CpuSet {
         }
     }
     return null;
+}
+
+fn cgroupCpus(arena: Allocator) ?CpuSet {
+    return cgroupCpusFrom(arena, "/proc/self/cgroup", "/sys/fs/cgroup");
 }
 
 test "cgroupDirectories preserves colons in paths and requires exact cpuset controller" {
@@ -647,16 +683,25 @@ fn bindCpus(env: Map) ?CpuSet {
     return parseCpuSpec(std.mem.trim(u8, verbose[colon + 1 ..], " \t\r\n"));
 }
 
+const TaskCpuBounds = struct { allowed: ?CpuSet, base_cpus: ?CpuSet };
+
+fn taskCpuBounds(env: Map, affinity: ?CpuSet, cgroup: ?CpuSet) TaskCpuBounds {
+    const base_cpus: ?CpuSet = if (affinity != null or cgroup != null) blk: {
+        var b = affinity orelse cgroup.?;
+        if (affinity) |a| b = b.bitAnd(a);
+        if (cgroup) |g| b = b.bitAnd(g);
+        break :blk b;
+    } else null;
+    const bind = bindCpus(env);
+    var allowed = base_cpus orelse bind orelse return .{ .allowed = null, .base_cpus = null };
+    if (base_cpus) |bc| allowed = allowed.bitAnd(bc);
+    if (bind) |bd| allowed = allowed.bitAnd(bd);
+    return .{ .allowed = allowed, .base_cpus = base_cpus };
+}
+
 /// task_cpu_ids: the intersection of affinity, cpuset, and the Slurm bind list.
 fn taskCpuIds(arena: Allocator, env: Map) ?CpuSet {
-    const affinity = schedCpus();
-    const cgroup = cgroupCpus(arena);
-    const bind = bindCpus(env);
-    var allowed = affinity orelse cgroup orelse bind orelse return null;
-    if (affinity) |a| allowed = allowed.bitAnd(a);
-    if (cgroup) |g| allowed = allowed.bitAnd(g);
-    if (bind) |b| allowed = allowed.bitAnd(b);
-    return allowed;
+    return taskCpuBounds(env, schedCpus(), cgroupCpus(arena)).allowed;
 }
 
 fn normKey(arena: Allocator, key: []const u8) []const u8 {
@@ -738,10 +783,36 @@ fn tokenSet(arena: Allocator, value: []const u8) std.BufSet {
     return set;
 }
 
+const CpuBlock = struct { id: ?usize, fields: []const CpuField };
+
+fn resolveLxcfsLogicalIds(arena: Allocator, blocks: []const CpuBlock, base_cpus: ?CpuSet) ?[]?usize {
+    const out = arena.alloc(?usize, blocks.len) catch return null;
+    var raw_set: CpuSet = .{};
+    var seq = true;
+    for (blocks, 0..) |b, idx| {
+        out[idx] = b.id;
+        const id = b.id orelse {
+            seq = false;
+            continue;
+        };
+        if (id >= cpu_id_max or id != idx) {
+            seq = false;
+        } else raw_set.add(id);
+    }
+    if (base_cpus) |bc| {
+        if (seq and blocks.len > 0 and blocks.len == bc.count() and !raw_set.eql(bc)) {
+            const ids = bc.sortedIds(arena) catch return out;
+            if (ids.len == blocks.len) for (ids, 0..) |lid, idx| {
+                out[idx] = lid;
+            };
+        }
+    }
+    return out;
+}
+
 /// scope_cpuinfo: null when the text is already the allowed processors.
-fn scopeCpuinfo(arena: Allocator, cpuinfo: []const u8, allowed: CpuSet) ?[]const u8 {
-    const Block = struct { id: ?usize, fields: []const CpuField };
-    var blocks: std.ArrayList(Block) = .empty;
+fn scopeCpuinfoWithBase(arena: Allocator, cpuinfo: []const u8, allowed: CpuSet, base_cpus: ?CpuSet) ?[]const u8 {
+    var blocks: std.ArrayList(CpuBlock) = .empty;
     var cur_id: ?ProcessorId = null;
     var cur: std.ArrayList(CpuField) = .empty;
     var it = std.mem.splitScalar(u8, cpuinfo, '\n');
@@ -759,8 +830,9 @@ fn scopeCpuinfo(arena: Allocator, cpuinfo: []const u8, allowed: CpuSet) ?[]const
     }
     if (cur_id) |prev| blocks.append(arena, .{ .id = prev.id, .fields = cur.toOwnedSlice(arena) catch return null }) catch return null;
     if (blocks.items.len == 0) return null;
-    var kept: std.ArrayList(Block) = .empty;
-    for (blocks.items) |b| if (b.id) |id| if (allowed.has(id)) kept.append(arena, b) catch return null;
+    const logical_ids = resolveLxcfsLogicalIds(arena, blocks.items, base_cpus) orelse return null;
+    var kept: std.ArrayList(CpuBlock) = .empty;
+    for (blocks.items, logical_ids) |b, maybe_lid| if (maybe_lid) |lid| if (allowed.has(lid)) kept.append(arena, b) catch return null;
     if (kept.items.len == blocks.items.len and kept.items.len > 0) {
         const base = kept.items[0].fields;
         var same = true;
@@ -823,6 +895,10 @@ fn scopeCpuinfo(arena: Allocator, cpuinfo: []const u8, allowed: CpuSet) ?[]const
     return out.toOwnedSlice(arena) catch null;
 }
 
+fn scopeCpuinfo(arena: Allocator, cpuinfo: []const u8, allowed: CpuSet) ?[]const u8 {
+    return scopeCpuinfoWithBase(arena, cpuinfo, allowed, null);
+}
+
 fn unlinkPath(path: []const u8) void {
     var zb: [sys.path_max:0]u8 = undefined;
     const z = sys.z(&zb, path) catch return;
@@ -850,9 +926,10 @@ const PreparedCpu = struct { path: []const u8, cleanup: ?[]const u8 = null, chil
 fn prepareCpuinfoWithTemp(c: *Ctx, env: Map, temp_env: Map) PreparedCpu {
     const explicit = env.get("EESSI_PROC_CPUINFO") orelse "";
     const path: []const u8 = if (explicit.len > 0) explicit else "/proc/cpuinfo";
-    const allowed = taskCpuIds(c.arena, env) orelse return .{ .path = path, .child = env };
+    const bounds = taskCpuBounds(env, schedCpus(), cgroupCpus(c.arena));
+    const allowed = bounds.allowed orelse return .{ .path = path, .child = env };
     const blob = readFile(c.arena, path, cpuinfo_read_max) orelse return .{ .path = path, .child = env };
-    const scoped = scopeCpuinfo(c.arena, blob, allowed) orelse return .{ .path = path, .child = env };
+    const scoped = scopeCpuinfoWithBase(c.arena, blob, allowed, bounds.base_cpus) orelse return .{ .path = path, .child = env };
     const tmp = tempCpuFile(c, temp_env, scoped) orelse return .{ .path = path, .child = env };
     var child = envmap.clone(c.arena, env) catch {
         unlinkPath(tmp);
@@ -2116,6 +2193,108 @@ test "prepareCpuinfo writes scoped cpuinfo under TMPDIR" {
     defer if (prepared.cleanup) |p| unlinkPath(p);
     const expected_prefix = try std.fmt.allocPrint(a, "{s}/eessi-arch-guard-cpu-", .{tmp_dir});
     try std.testing.expect(std.mem.startsWith(u8, prepared.path, expected_prefix));
+}
+
+test "scopeCpuinfoWithBase maps LXCFS renumbered blocks and keeps gapped logical IDs" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const a = arena_state.allocator();
+
+    const lxcfs_cpuinfo =
+        \\processor : 0
+        \\vendor_id : GenuineIntel
+        \\core id : 1
+        \\flags : avx2 fma
+        \\
+        \\processor : 1
+        \\vendor_id : GenuineIntel
+        \\core id : 3
+        \\flags : avx2 fma avx512f waitpkg
+        \\
+    ;
+    var base_1_3: CpuSet = .{};
+    base_1_3.add(1);
+    base_1_3.add(3);
+    const both = scopeCpuinfoWithBase(a, lxcfs_cpuinfo, base_1_3, base_1_3).?;
+    try std.testing.expect(std.mem.find(u8, both, "waitpkg") == null);
+    try std.testing.expect(std.mem.find(u8, both, "avx2") != null);
+
+    var only_3: CpuSet = .{};
+    only_3.add(3);
+    const three = scopeCpuinfoWithBase(a, lxcfs_cpuinfo, only_3, base_1_3).?;
+    try std.testing.expect(std.mem.find(u8, three, "waitpkg") != null);
+
+    const gapped_cpuinfo =
+        \\processor : 0
+        \\flags : avx2
+        \\
+        \\processor : 2
+        \\flags : avx2 avx512f
+        \\
+        \\processor : 4
+        \\flags : avx2 avx512f waitpkg
+        \\
+        \\processor : 6
+        \\flags : sse2
+        \\
+    ;
+    var allow_2_4: CpuSet = .{};
+    allow_2_4.add(2);
+    allow_2_4.add(4);
+    const gapped = scopeCpuinfoWithBase(a, gapped_cpuinfo, allow_2_4, allow_2_4).?;
+    try std.testing.expect(std.mem.find(u8, gapped, "processor : 2\n") != null);
+    try std.testing.expect(std.mem.find(u8, gapped, "avx512f") != null);
+    try std.testing.expect(std.mem.find(u8, gapped, "waitpkg") == null);
+}
+
+test "cgroupCpusFrom narrows wider sched affinity on cgroup v2 layouts" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const a = arena_state.allocator();
+
+    var cwd_buf: [sys.path_max]u8 = undefined;
+    const here = try fsx.realpath(fsx.cwd, ".", &cwd_buf);
+    const base = try std.fmt.allocPrint(a, "{s}/.zig-cache/eag-cgroupv2-{d}", .{ here, linux.getpid() });
+    var zb: [sys.path_max:0]u8 = undefined;
+    _ = linux.mkdirat(fsx.cwd, (try sys.z(&zb, base)).ptr, 0o700);
+    defer fsx.deleteTree(a, fsx.cwd, base) catch {};
+
+    const cg_root = try std.fmt.allocPrint(a, "{s}/cgroup", .{base});
+    const slice_dir = try std.fmt.allocPrint(a, "{s}/system.slice", .{cg_root});
+    const slurm_dir = try std.fmt.allocPrint(a, "{s}/slurmstepd.scope", .{slice_dir});
+    const job_dir = try std.fmt.allocPrint(a, "{s}/job_42", .{slurm_dir});
+    const step_dir = try std.fmt.allocPrint(a, "{s}/step_0", .{job_dir});
+    const task_dir = try std.fmt.allocPrint(a, "{s}/task_0", .{step_dir});
+    for ([_][]const u8{ cg_root, slice_dir, slurm_dir, job_dir, step_dir, task_dir }) |dir| {
+        _ = linux.mkdirat(fsx.cwd, (try sys.z(&zb, dir)).ptr, 0o700);
+    }
+
+    const step_eff = try std.fmt.allocPrint(a, "{s}/cpuset.cpus.effective", .{step_dir});
+    const task_eff = try std.fmt.allocPrint(a, "{s}/cpuset.cpus.effective", .{task_dir});
+    const proc_cg = try std.fmt.allocPrint(a, "{s}/proc_cgroup", .{base});
+    try std.testing.expect(writePrivateNew(step_eff, "2-3\n", 0o600));
+    try std.testing.expect(writePrivateNew(task_eff, "\n", 0o600));
+    try std.testing.expect(writePrivateNew(proc_cg, "0::/system.slice/slurmstepd.scope/job_42/step_0/task_0\n", 0o600));
+
+    const cg = cgroupCpusFrom(a, proc_cg, cg_root).?;
+    try std.testing.expectEqual(@as(usize, 2), cg.count());
+    try std.testing.expect(cg.has(2) and cg.has(3));
+
+    const ns_root = try std.fmt.allocPrint(a, "{s}/nscg", .{base});
+    _ = linux.mkdirat(fsx.cwd, (try sys.z(&zb, ns_root)).ptr, 0o700);
+    const ns_eff = try std.fmt.allocPrint(a, "{s}/cpuset.cpus.effective", .{ns_root});
+    const ns_proc = try std.fmt.allocPrint(a, "{s}/ns_proc", .{base});
+    try std.testing.expect(writePrivateNew(ns_eff, "4,6\n", 0o600));
+    try std.testing.expect(writePrivateNew(ns_proc, "0::/\n", 0o600));
+    const ns_cg = cgroupCpusFrom(a, ns_proc, ns_root).?;
+    try std.testing.expectEqual(@as(usize, 2), ns_cg.count());
+    try std.testing.expect(ns_cg.has(4) and ns_cg.has(6));
+
+    var wide_sched: CpuSet = .{};
+    for (0..8) |cpu| wide_sched.add(cpu);
+    const bounds = taskCpuBounds(.empty, wide_sched, cg);
+    try std.testing.expect(bounds.allowed.?.eql(cg));
+    try std.testing.expect(bounds.base_cpus.?.eql(cg));
 }
 
 test "parseCpuSpec rejects trailing commas" {

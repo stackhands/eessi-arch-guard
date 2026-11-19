@@ -1361,6 +1361,35 @@ class IntegrationTests(unittest.TestCase):
         self.assertEqual(changes["EESSI_SOFTWARE_SUBDIR"], icelake)
         self.assertEqual(changes["EESSI_SOFTWARE_SUBDIR_OVERRIDE"], icelake)
 
+    def test_real_emeraldrapids_kvm_cpuinfo_and_offline_gaps_fall_back(self):
+        spr = "x86_64/intel/sapphirerapids"
+        icelake = "x86_64/intel/icelake"
+        self.site.add_cpu(spr)
+        self.site.add_cpu(icelake)
+        self.site.add_module(spr, "R/4.4.2")
+        self.site.add_module(icelake, "R/4.4.2")
+        self._copy_cpuinfo("emeraldrapids-kvm-no-waitpkg.cpuinfo")
+        env = harness.base_env(self.site, spr, ["R/4.4.2"], gpu="none")
+        env["SLURM_CPU_BIND_LIST"] = "2-3"
+        proc = harness.run_guard(env)
+        changes, _printed = _assert_prolog(proc)
+        self.assertEqual(changes["EESSI_SOFTWARE_SUBDIR"], icelake)
+        self.assertEqual(changes["EESSI_SOFTWARE_SUBDIR_OVERRIDE"], icelake)
+
+        full_text = Path(self.site.cpuinfo).read_text(encoding="ascii")
+        even_blocks = [
+            block
+            for block in full_text.strip().split("\n\n")
+            if block.splitlines()[0].split(":")[-1].strip() in ("0", "2", "4", "6")
+        ]
+        Path(self.site.cpuinfo).write_text("\n\n".join(even_blocks) + "\n", encoding="ascii")
+        env_gaps = harness.base_env(self.site, spr, ["R/4.4.2"], gpu="none")
+        env_gaps["SLURM_CPU_BIND_LIST"] = "2,4"
+        proc_gaps = harness.run_guard(env_gaps)
+        changes_gaps, _printed = _assert_prolog(proc_gaps)
+        self.assertEqual(changes_gaps["EESSI_SOFTWARE_SUBDIR"], icelake)
+        self.assertEqual(changes_gaps["EESSI_SOFTWARE_SUBDIR_OVERRIDE"], icelake)
+
     def test_slurm_cpu_bind_hostlist_uses_that_processor(self):
         # Processor 0 is Haswell. Processor 1 is Sapphire Rapids. The stub,
         # like an unscoped read, reports the first processor. A task whose
