@@ -535,11 +535,15 @@ function M.emit_syslog(records)
         end
         return true
     end
+    local all_ok = true
     for _, line in ipairs(records) do
         local cmd = "logger -t ModuleUsageTracking -p local0.info -- " .. shell_quote(line) .. " >/dev/null 2>&1"
-        pcall(M.exec_cmd, cmd)
+        local call_ok, exec_ok = pcall(M.exec_cmd, cmd)
+        if not call_ok or not M.command_succeeded(exec_ok) then
+            all_ok = false
+        end
     end
-    return true
+    return all_ok
 end
 
 function M.flush_usage_records()
@@ -548,7 +552,9 @@ function M.flush_usage_records()
     if type(records) ~= "table" or #records == 0 then
         return 0
     end
-    M.emit_syslog(records)
+    if not M.emit_syslog(records) then
+        return 0
+    end
     return #records
 end
 
