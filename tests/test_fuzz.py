@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import random
 import shutil
+import socket
 import subprocess
 import sys
 import tempfile
@@ -14,6 +15,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 import eessi_arch_guard as guard  # noqa: E402
+import harness  # noqa: E402
 from slurm_model import apply_task_prolog  # noqa: E402
 
 SEED = 20261101
@@ -125,6 +127,49 @@ class FuzzTests:
             assert leftover == [], leftover
         finally:
             shutil.rmtree(canary_dir, ignore_errors=True)
+
+    def test_syslog_emergency_sanitizes_newline_subdir(self):
+        with tempfile.TemporaryDirectory(prefix="eessi-arch-guard-em-") as tmp:
+            root = Path(tmp)
+            prefix = root / "prefix"
+            (prefix / "software" / "linux" / "x86_64" / "amd" / "zen4" / "software").mkdir(
+                parents=True
+            )
+            init = root / "init"
+            init.mkdir()
+            tmp_dir = root / "cache_tmp"
+            tmp_dir.mkdir(mode=0o700)
+            ad = init / "eessi_archdetect.sh"
+            ad.write_text(f"#!/bin/sh\nchmod 0000 {str(tmp_dir)!r}\nsleep 0.4\n", encoding="utf-8")
+            ad.chmod(0o755)
+            cpuinfo = root / "cpuinfo"
+            cpuinfo.write_text("processor : 0\nflags : avx2 fma\n", encoding="utf-8")
+
+            sock = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
+            sock_path = root / "em.sock"
+            sock.bind(str(sock_path))
+            sock.settimeout(2.0)
+            try:
+                env = {
+                    "PATH": "/usr/bin:/bin",
+                    "LC_ALL": "C",
+                    "EESSI_SOFTWARE_SUBDIR": "a\nb",
+                    "EESSI_PREFIX": str(prefix),
+                    "EESSI_OS_TYPE": "linux",
+                    "EESSI_INIT_PREFIX": str(init),
+                    "EESSI_PROC_CPUINFO": str(cpuinfo),
+                    "SLURM_JOB_ID": "123",
+                    "TMPDIR": str(tmp_dir),
+                }
+                proc = harness.run_guard(
+                    env, ["--timeout", "0.1", "--syslog", f"journal+unix://{sock_path}"]
+                )
+                assert proc.returncode == 0, proc.stderr
+                pkt = sock.recv(65536)
+                assert b"ARCH_GUARD_WAS=unrecognized\n" in pkt, pkt
+            finally:
+                tmp_dir.chmod(0o700)
+                sock.close()
 
 
 def load_tests(_loader, _tests, _pattern):
