@@ -166,46 +166,6 @@ pub fn neverCache(name: []const u8) bool {
 
 // ---- characters -------------------------------------------------------
 
-/// Length of the maximal subpart of an ill-formed sequence at `s` (Unicode
-/// "best practice", which CPython's 'replace' handler follows): the bytes
-/// that one U+FFFD stands for.
-fn maximalSubpart(s: []const u8) usize {
-    const c0 = s[0];
-    var need: usize = 0;
-    var lo: u8 = 0x80;
-    var hi: u8 = 0xBF;
-    switch (c0) {
-        0xC2...0xDF => need = 1,
-        0xE0 => {
-            need = 2;
-            lo = 0xA0;
-        },
-        0xE1...0xEC, 0xEE...0xEF => need = 2,
-        0xED => {
-            need = 2;
-            hi = 0x9F;
-        },
-        0xF0 => {
-            need = 3;
-            lo = 0x90;
-        },
-        0xF1...0xF3 => need = 3,
-        0xF4 => {
-            need = 3;
-            hi = 0x8F;
-        },
-        else => return 1,
-    }
-    var i: usize = 1;
-    while (i <= need and i < s.len) : (i += 1) {
-        const b = s[i];
-        const l: u8 = if (i == 1) lo else 0x80;
-        const h: u8 = if (i == 1) hi else 0xBF;
-        if (b < l or b > h) break;
-    }
-    return i;
-}
-
 /// one_line: controls (below 32 and 127) become spaces, the result is
 /// stripped, and more than `limit` characters are cut to limit-3 plus "...".
 pub fn oneLine(gpa: Allocator, s: []const u8, limit: usize) Allocator.Error![]u8 {
