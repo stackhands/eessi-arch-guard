@@ -74,7 +74,7 @@ def main(argv=None) -> int:
         sys.stderr.write("cvmfsrev.py: --min must be zero or more\n")
         return 2
     try:
-        text = _read_stat_bytes(args.stat).decode("utf-8")
+        text = _read_stat_bytes(args.stat).decode("utf-8", "replace")
     except OSError as exc:
         sys.stderr.write(f"cvmfsrev.py: cannot read {args.stat}: {exc.strerror}\n")
         return 2
