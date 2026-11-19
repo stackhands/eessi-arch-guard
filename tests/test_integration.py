@@ -600,6 +600,47 @@ class IntegrationTests(unittest.TestCase):
         self.assertNotIn("EESSI_ARCH_GUARD_RELOADED", proc.stdout)
         self.assertEqual(harness.log_lines(self.site.log), [])
 
+    def test_chain_exec_failure_skips_with_python_errno_message(self):
+        env = self._cpu_env(ZEN4, "zen2")
+        bad_shebang = os.path.join(self.site.root, "chain-bad-shebang.sh")
+        with open(bad_shebang, "w", encoding="utf-8") as handle:
+            handle.write("#!/no/such/interpreter\nexit 0\n")
+        os.chmod(bad_shebang, 0o755)
+        empty_exec = os.path.join(self.site.root, "chain-empty.sh")
+        with open(empty_exec, "wb") as handle:
+            handle.write(b"")
+        os.chmod(empty_exec, 0o755)
+
+        cases = (
+            (
+                bad_shebang,
+                [],
+                0,
+                f"print eessi-arch-guard: skipped, FileNotFoundError: "
+                f"[Errno 2] No such file or directory: {bad_shebang!r}\n",
+            ),
+            (
+                bad_shebang,
+                ["--strict"],
+                guard.STRICT_FAILURE_EXIT,
+                f"print eessi-arch-guard: skipped, FileNotFoundError: "
+                f"[Errno 2] No such file or directory: {bad_shebang!r}\n",
+            ),
+            (
+                empty_exec,
+                [],
+                0,
+                f"print eessi-arch-guard: skipped, OSError: "
+                f"[Errno 8] Exec format error: {empty_exec!r}\n",
+            ),
+        )
+        for path, extra, expected_code, expected_out in cases:
+            with self.subTest(path=path, extra=extra):
+                proc = harness.run_guard(env, ["--chain", path, *extra])
+                self.assertEqual(proc.returncode, expected_code, proc.stderr)
+                self.assertEqual(proc.stdout, expected_out)
+                self.assertEqual(proc.stderr, "")
+
     def test_bad_config_byte_keeps_the_other_keys(self):
         conf = harness.PROGRAM.with_name("eessi-arch-guard.conf")
         ok_path = os.path.join(self.site.root, "chain-ok.sh")
