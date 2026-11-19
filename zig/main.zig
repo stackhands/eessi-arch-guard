@@ -700,7 +700,8 @@ fn renderDryRunJson(arena: Allocator, r: DryRunReport) Allocator.Error![]u8 {
 }
 
 fn oneLineField(arena: Allocator, s: []const u8) Allocator.Error![]const u8 {
-    return text.oneLine(arena, s, 500);
+    var buf: [2048]u8 = undefined;
+    return arena.dupe(u8, text.formatBoundedParts(&buf, &.{s}, 500, true, std.math.maxInt(usize)));
 }
 
 fn renderDryRunText(arena: Allocator, r: DryRunReport) Allocator.Error![]u8 {
@@ -1621,6 +1622,14 @@ test "renderDryRunText and renderDryRunJson format a decision summary" {
     try std.testing.expect(std.mem.find(u8, js, "GCC/13.2.0") != null);
     try std.testing.expect(std.mem.find(u8, js, "\"exit\": 0") != null);
     try std.testing.expect(std.mem.endsWith(u8, js, "\n"));
+}
+
+test "oneLineField replaces invalid UTF-8 bytes with question marks" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const a = arena_state.allocator();
+    try std.testing.expectEqualStrings("x86_64/?/zen4", try oneLineField(a, "x86_64/\xff/zen4"));
+    try std.testing.expectEqualStrings("job??1", try oneLineField(a, "job\xe2\x821"));
 }
 
 test "localTaskZero reads the first SLURM_LOCALID" {

@@ -1918,6 +1918,21 @@ class IntegrationTests(unittest.TestCase):
         self.assertEqual(doc["config"]["path"], conf)
         self.assertIn("is a symlink and is ignored", doc["config"]["warning"])
 
+    def test_dry_run_text_replaces_invalid_utf8_bytes(self):
+        env = {
+            "PATH": "/usr/bin:/bin",
+            "LC_ALL": "C",
+            "EESSI_SOFTWARE_SUBDIR": os.fsdecode(b"x86_64/\xff/zen4"),
+            "SLURM_JOB_ID": os.fsdecode(b"job\xff1"),
+        }
+        proc = harness.run_guard(env, ["--dry-run"])
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertEqual(proc.stderr, "")
+        lines = proc.stdout.splitlines()
+        self.assertIn("job: job?1", lines)
+        self.assertIn("was: x86_64/?/zen4", lines)
+        self.assertIn("marker: x86_64/?/zen4->archdetect-failed", lines)
+
     def test_sigint_during_chain_matches_python_skip_path(self):
         ready = os.path.join(self.site.root, "chain-ready")
         chain = os.path.join(self.site.root, "slow-chain.sh")
