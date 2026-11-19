@@ -71,6 +71,19 @@ class RevisionTests(unittest.TestCase):
                     self.assertEqual(proc.stdout, "")
                     self.assertIn("cvmfsrev.py: cannot read ", proc.stderr)
 
+    def test_stat_rejects_oversized_file(self):
+        script = str(ROOT / "share" / "cvmfsrev.py")
+        with tempfile.TemporaryDirectory(prefix="eessi-cvmfsrev-") as tmp:
+            big = Path(tmp) / "stat.big"
+            big.write_bytes(b"revision: 42\n" + b"x" * ((1 << 20) + 64))
+            proc = harness.run_with_timeout(
+                [sys.executable, script, "--stat", str(big)],
+                timeout=1.5,
+            )
+            self.assertEqual(proc.returncode, 2, proc.stderr)
+            self.assertEqual(proc.stdout, "")
+            self.assertIn("file too large", proc.stderr)
+
 
 if __name__ == "__main__":
     unittest.main()
