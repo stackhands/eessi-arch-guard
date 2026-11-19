@@ -627,7 +627,7 @@ pub fn emitEmergency(
     const target = resolved.target orelse return;
     var ch: envmap.Changes = .empty;
     const was = env.get("EESSI_SOFTWARE_SUBDIR") orelse "";
-    const was_side = if (was.len > 0) was else "unrecognized";
+    const was_side = if (was.len > 0 and !text.hasLineBreakOrNul(was)) was else "unrecognized";
     const token = arena.print("{s}->{s}", .{ was_side, kind }) catch "unrecognized->error";
     ch.put(arena, "EESSI_ARCH_GUARD_FAILED", token) catch {};
     const msg = arena.print("eessi-arch-guard: skipped, {s}: {s}", .{ kind, detail }) catch "eessi-arch-guard: skipped";
