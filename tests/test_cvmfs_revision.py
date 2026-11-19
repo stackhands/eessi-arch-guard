@@ -96,6 +96,18 @@ class RevisionTests(unittest.TestCase):
             self.assertEqual(proc.returncode, 0, proc.stderr)
             self.assertEqual(proc.stdout.strip(), "revision 42")
 
+    def test_stat_strips_leading_utf8_bom(self):
+        script = str(ROOT / "share" / "cvmfsrev.py")
+        with tempfile.TemporaryDirectory(prefix="eessi-cvmfsrev-") as tmp:
+            stat_file = Path(tmp) / "stat.bom"
+            stat_file.write_bytes(b"\xef\xbb\xbfRevision: 42\n")
+            proc = harness.run_with_timeout(
+                [sys.executable, script, "--stat", str(stat_file)],
+                timeout=1.5,
+            )
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            self.assertEqual(proc.stdout.strip(), "revision 42")
+
 
 if __name__ == "__main__":
     unittest.main()

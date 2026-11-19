@@ -25,6 +25,7 @@ def revision_of(text: str):
     """The first revision line in text, or None."""
     if not isinstance(text, str):
         return None
+    text = text.lstrip("\ufeff")
     for line in text.splitlines():
         match = _REVISION.match(line.strip())
         if match:
