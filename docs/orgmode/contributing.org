@@ -16,6 +16,7 @@ Every change adds a news fragment, =changelog.d/+SLUG.TYPE.md=, with a short slu
 | =feature= | Features                     |
 | =bugfix=  | Bugfixes                     |
 | =doc=     | Docs                         |
+| =misc=    | Misc                         |
 
 A fragment is one paragraph in the present tense that names the commands, options and files it is about in backticks, as the entries in the [[file:changelog.org][changelog]] do.
 With [[https://towncrier.readthedocs.io][towncrier]] installed, =towncrier build --draft --version 0.2.1= shows the release notes the fragments make.
