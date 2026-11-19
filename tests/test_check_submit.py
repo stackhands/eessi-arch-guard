@@ -782,6 +782,51 @@ with open({str(env_log)!r}, "w", encoding="utf-8") as handle:
             finally:
                 subprocess.check_call(["sudo", "rm", "-f", str(conf)])
 
+    def test_cli_unmapped_partition_and_constraint_report_nearest_hint(self) -> None:
+        conf = harness.PROGRAM.with_name("eessi-arch-guard.conf")
+        conf.write_text(
+            "submit_target.partition.cpu_zen2 = x86_64/amd/zen2\n"
+            "submit_target.partition.cpu_zen4 = x86_64/amd/zen4\n"
+            "submit_target.constraint.zen2 = x86_64/amd/zen2\n"
+            "submit_target.constraint.zen4 = x86_64/amd/zen4\n",
+            encoding="utf-8",
+        )
+        subprocess.check_call(["sudo", "chown", "root:root", str(conf)])
+        subprocess.check_call(["sudo", "chmod", "644", str(conf)])
+        try:
+            env = {"PATH": "/usr/bin:/bin", "HOME": "/tmp", "LANG": "C", "LC_ALL": "C"}
+            p_part = harness.run_guard(
+                env, ["--check-submit", "--partition", "cpu_z", "--json"]
+            )
+            self.assertEqual(p_part.returncode, 2, p_part.stderr)
+            want_part = (
+                "site config has no submit_target.partition.cpu_z mapping; "
+                "nearest known partition is submit_target.partition.cpu_zen4"
+            )
+            self.assertEqual(p_part.stderr, f"eessi-arch-guard: check-submit: {want_part}\n")
+            self.assertEqual(json.loads(p_part.stdout)["message"], want_part)
+
+            p_con = harness.run_guard(
+                env,
+                ["--check-submit", "--partition", "cpu_zen4", "--constraint", "zen", "--json"],
+            )
+            self.assertEqual(p_con.returncode, 2, p_con.stderr)
+            want_con = (
+                "site config has no submit_target.constraint.zen mapping; "
+                "nearest known constraint is submit_target.constraint.zen4"
+            )
+            self.assertEqual(p_con.stderr, f"eessi-arch-guard: check-submit: {want_con}\n")
+            self.assertEqual(json.loads(p_con.stdout)["message"], want_con)
+
+            p_none = harness.run_guard(
+                env, ["--check-submit", "--partition", "gpu", "--json"]
+            )
+            self.assertEqual(p_none.returncode, 2, p_none.stderr)
+            want_none = "site config has no submit_target.partition.gpu mapping"
+            self.assertEqual(p_none.stderr, f"eessi-arch-guard: check-submit: {want_none}\n")
+        finally:
+            subprocess.check_call(["sudo", "rm", "-f", str(conf)])
+
     def test_cli_quotes_invalid_configured_target_like_python(self) -> None:
         conf = harness.PROGRAM.with_name("eessi-arch-guard.conf")
         conf.write_text("submit_target.partition.cpu = X86_64/amd/zen4\n", encoding="utf-8")
