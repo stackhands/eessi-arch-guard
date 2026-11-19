@@ -18,6 +18,7 @@ _REVISION = re.compile(
     r"^(?:catalog revision|repository revision|revision)\s*:\s*(\d+)\s*$",
     re.IGNORECASE,
 )
+_STAT_READ_MAX = 1 << 20
 
 
 def revision_of(text: str):
@@ -49,8 +50,17 @@ def _read_stat_bytes(path: str) -> bytes:
         st = os.fstat(fd)
         if not stat.S_ISREG(st.st_mode):
             raise OSError(0, "not a regular file")
-        with os.fdopen(fd, "rb", closefd=False) as handle:
-            return handle.read()
+        chunks = []
+        total = 0
+        while True:
+            chunk = os.read(fd, 65536)
+            if not chunk:
+                break
+            total += len(chunk)
+            if total > _STAT_READ_MAX:
+                raise OSError(0, "file too large")
+            chunks.append(chunk)
+        return b"".join(chunks)
     finally:
         os.close(fd)
 
