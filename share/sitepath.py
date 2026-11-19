@@ -28,7 +28,11 @@ def _unescape(text: str) -> str:
     out = []
     i = 0
     while i < len(text):
-        if text[i] == "\\" and i + 3 < len(text) and text[i + 1 : i + 4].isdigit():
+        if (
+            text[i] == "\\"
+            and i + 3 < len(text)
+            and all("0" <= ch <= "7" for ch in text[i + 1 : i + 4])
+        ):
             out.append(chr(int(text[i + 1 : i + 4], 8)))
             i += 4
             continue

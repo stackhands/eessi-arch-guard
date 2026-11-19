@@ -1,0 +1,1 @@
+The Zig build sends its syslog and journald events through `zig-common` 0.12.0 (`syslog.send`): the unix datagram and stream sends, UDP, and TCP with octet counting are the code eb-keep-logs uses. The events and their formatting are unchanged.

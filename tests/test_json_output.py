@@ -159,6 +159,28 @@ class JsonOutputTests(unittest.TestCase):
         )
         self.restore_validator.validate(sample)
 
+    def test_unreadable_config_reports_errno_permission_denied(self):
+        conf = harness.PROGRAM.with_name("eessi-arch-guard.conf")
+        conf.write_text("timeout = 10\n", encoding="utf-8")
+        subprocess.check_call(["sudo", "chown", "root:root", str(conf)])
+        subprocess.check_call(["sudo", "chmod", "0000", str(conf)])
+        try:
+            proc = harness.run_guard(
+                {"PATH": "/usr/bin:/bin", "LC_ALL": "C"},
+                ["--dry-run", "--json"],
+            )
+            expected = (
+                f"eessi-arch-guard: config ignored: [Errno 13] Permission denied: {str(conf)!r}"
+            )
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            self.assertEqual(proc.stderr, expected + "\n")
+            doc = json.loads(proc.stdout)
+            self.dry_run_validator.validate(doc)
+            self.assertEqual(doc["config"]["status"], "ignored")
+            self.assertEqual(doc["config"]["warning"], expected)
+        finally:
+            subprocess.check_call(["sudo", "rm", "-f", str(conf)])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -847,13 +847,13 @@ fn tempCpuFile(c: *Ctx, env: Map, data: []const u8) ?[]const u8 {
 
 const PreparedCpu = struct { path: []const u8, cleanup: ?[]const u8 = null, child: Map };
 
-fn prepareCpuinfo(c: *Ctx, env: Map) PreparedCpu {
+fn prepareCpuinfoWithTemp(c: *Ctx, env: Map, temp_env: Map) PreparedCpu {
     const explicit = env.get("EESSI_PROC_CPUINFO") orelse "";
     const path: []const u8 = if (explicit.len > 0) explicit else "/proc/cpuinfo";
     const allowed = taskCpuIds(c.arena, env) orelse return .{ .path = path, .child = env };
     const blob = readFile(c.arena, path, cpuinfo_read_max) orelse return .{ .path = path, .child = env };
     const scoped = scopeCpuinfo(c.arena, blob, allowed) orelse return .{ .path = path, .child = env };
-    const tmp = tempCpuFile(c, env, scoped) orelse return .{ .path = path, .child = env };
+    const tmp = tempCpuFile(c, temp_env, scoped) orelse return .{ .path = path, .child = env };
     var child = envmap.clone(c.arena, env) catch {
         unlinkPath(tmp);
         return .{ .path = path, .child = env };
@@ -863,6 +863,10 @@ fn prepareCpuinfo(c: *Ctx, env: Map) PreparedCpu {
         return .{ .path = path, .child = env };
     };
     return .{ .path = tmp, .cleanup = tmp, .child = child };
+}
+
+fn prepareCpuinfo(c: *Ctx, env: Map) PreparedCpu {
+    return prepareCpuinfoWithTemp(c, env, env);
 }
 
 /// probe_cpu: this node's CPU target. Runs `eessi_archdetect.sh -a cpupath`
@@ -1288,11 +1292,23 @@ fn doRestore(c: *Ctx, payload: json.Value, raised: *[]const u8) HelperError!Repl
 
     const p = try applyLmod(c, module_env, lmod, &.{ "--force", "purge" }, raised);
     var current = p.env orelse return .{ .ok = false, .err = line1(c, if (p.err.len > 0) p.err else "purge failed", 300) };
-    const e = try applyLmod(c, pinnedEnv(c, current, pin), lmod, &.{ "load", eessi }, raised);
-    current = e.env orelse {
+    const orig_cpuinfo = current.get("EESSI_PROC_CPUINFO");
+    const prepared = prepareCpuinfoWithTemp(c, pinnedEnv(c, current, pin), c.env);
+    const e = applyLmod(c, prepared.child, lmod, &.{ "load", eessi }, raised) catch |err| {
+        if (prepared.cleanup) |cp| unlinkPath(cp);
+        return err;
+    };
+    if (prepared.cleanup) |cp| unlinkPath(cp);
+    var next_env = e.env orelse {
         const miss = a.dupe([]const u8, &.{eessi}) catch &.{};
         return .{ .ok = false, .missing = miss, .err = line1(c, if (e.err.len > 0) e.err else "EESSI load failed", 300) };
     };
+    if (orig_cpuinfo) |orig| {
+        next_env.put(a, "EESSI_PROC_CPUINFO", orig) catch main_mod.oom();
+    } else {
+        _ = next_env.orderedRemove("EESSI_PROC_CPUINFO");
+    }
+    current = next_env;
     if (modules.items.len > 0) {
         var args: std.ArrayList([]const u8) = .empty;
         args.append(a, "load") catch main_mod.oom();
@@ -2107,7 +2123,10 @@ test "parseCpuSpec rejects trailing commas" {
     try std.testing.expect(parseCpuSpec("0-1,") == null);
     try std.testing.expect(parseCpuSpec("0, ") == null);
     try std.testing.expect(parseCpuSpec("cpu[0,]") == null);
+    try std.testing.expect(parseCpuSpec("0 1") == null);
+    try std.testing.expect(parseCpuSpec("0 - 1") == null);
     try std.testing.expect(parseCpuSpec("0,1") != null);
+    try std.testing.expect(parseCpuSpec("cpu[0, 1]") != null);
 }
 
 test "resolvePath searches default_path and empty colon entries" {
