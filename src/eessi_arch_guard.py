@@ -2356,7 +2356,7 @@ def check_submit(
     configured = (settings or {}).get("eb_stack", "")
     selected = eb_stack_arg or configured or "eb-stack"
     eb_stack = shutil.which(selected)
-    if eb_stack is None:
+    if eb_stack is None or not os.path.isfile(eb_stack):
         reason = "eb-stack is not executable: %s" % one_line(selected, 200)
         return finish(
             2,

@@ -2054,3 +2054,19 @@ class IntegrationTests(unittest.TestCase):
                     self.assertEqual(
                         stdout, "print eessi-arch-guard: skipped, KeyboardInterrupt:\n"
                     )
+
+    def test_check_submit_rejects_fifo_eb_stack_as_not_executable(self):
+        fifo = os.path.join(self.site.root, "eb-stack.fifo")
+        os.mkfifo(fifo, 0o755)
+        env = harness.base_env(self.site, ZEN4, ())
+        proc = harness.run_with_timeout(
+            [*harness.GUARD_ARGV, "--check-submit", "--target", ZEN4, "--eb-stack", fifo, "--json"],
+            env=env,
+            timeout=2.0,
+        )
+        self.assertEqual(proc.returncode, 2, proc.stderr)
+        self.assertIn("eb-stack is not executable", proc.stderr)
+        doc = json.loads(proc.stdout)
+        self.assertEqual(doc["kind"], "check-submit")
+        self.assertEqual(doc["exit"], 2)
+        self.assertIn("eb-stack is not executable", doc["message"])
