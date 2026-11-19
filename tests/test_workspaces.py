@@ -9,8 +9,10 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 import eessi_arch_guard as guard  # noqa: E402
+import harness  # noqa: E402
 
 
 class WorkspaceTests(unittest.TestCase):
@@ -95,3 +97,69 @@ class WorkspaceTests(unittest.TestCase):
             self.assertFalse(guard._STRICT_MODE)
             self.assertEqual(guard.main(["--strict"]), 0)
             self.assertFalse(guard._STRICT_MODE)
+
+
+class RestoreMismatchTests(unittest.TestCase):
+    def test_restore_mismatch_refusals_across_cpu_accel_eessi_and_app_modules(self):
+        zen2 = "x86_64/amd/zen2"
+        zen4 = "x86_64/amd/zen4"
+        cc80 = "accel/nvidia/cc80"
+        cases = (
+            (
+                "cpu-target",
+                "none",
+                "",
+                "echo 'export EESSI_SOFTWARE_SUBDIR=x86_64/amd/zen4'\n"
+                "echo 'export LOADEDMODULES=EESSI/2025.06:R/4.4.2'\n",
+                "reload did not select this node's CPU target",
+            ),
+            (
+                "accel-target",
+                "1",
+                "9.0",
+                "echo 'export EESSI_SOFTWARE_SUBDIR=x86_64/amd/zen2'\n"
+                f"echo 'export EESSI_ACCEL_SUBDIR={cc80}'\n"
+                "echo 'export LOADEDMODULES=EESSI/2025.06:R/4.4.2'\n",
+                "reload did not select this node's accelerator target",
+            ),
+            (
+                "eessi-module",
+                "none",
+                "",
+                "echo 'export EESSI_SOFTWARE_SUBDIR=x86_64/amd/zen2'\n"
+                "echo 'export EESSI_ACCEL_SUBDIR='\n"
+                "echo 'export LOADEDMODULES=R/4.4.2'\n",
+                "reload did not load the EESSI module",
+            ),
+            (
+                "app-module",
+                "none",
+                "",
+                "echo 'export EESSI_SOFTWARE_SUBDIR=x86_64/amd/zen2'\n"
+                "echo 'export EESSI_ACCEL_SUBDIR='\n"
+                "echo 'export LOADEDMODULES=EESSI/2025.06'\n",
+                "reload did not load R/4.4.2",
+            ),
+        )
+        for name, gpu, cc, lmod_script, expected_reason in cases:
+            with self.subTest(case=name):
+                site = harness.Site()
+                try:
+                    site.add_cpu(zen2)
+                    site.add_cpu(zen4)
+                    site.add_module(zen4, "R/4.4.2")
+                    site.add_module(zen2, "R/4.4.2")
+                    site.write_cpuinfo("zen2")
+                    lmod_path = Path(site.root) / f"lmod-{name}"
+                    lmod_path.write_text("#!/bin/sh\n" + lmod_script, encoding="utf-8")
+                    lmod_path.chmod(0o755)
+                    env = harness.base_env(site, zen4, ["R/4.4.2"], gpu=gpu, gpu_cc=cc)
+                    env["LMOD_CMD"] = str(lmod_path)
+                    proc = harness.run_guard(env)
+                    self.assertEqual(proc.returncode, 0, proc.stderr)
+                    self.assertEqual(proc.stderr, "")
+                    self.assertIn("->restore-failed", proc.stdout)
+                    self.assertIn(expected_reason, proc.stdout)
+                    self.assertIn("environment left as it was", proc.stdout)
+                finally:
+                    site.close()
