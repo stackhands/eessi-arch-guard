@@ -845,18 +845,6 @@ fn submitTarget(arena: Allocator, settings: ?Settings, partition: []const u8, co
     return target;
 }
 
-fn findExecutable(arena: Allocator, env: envmap.Map, selected: []const u8) ?[]const u8 {
-    if (std.mem.findScalar(u8, selected, '/') != null)
-        return if (guard.lmodInvocable(selected)) selected else null;
-    var paths = std.mem.splitScalar(u8, env.get("PATH") orelse "", ':');
-    while (paths.next()) |dir| {
-        if (dir.len == 0) continue;
-        const candidate = std.fs.path.join(arena, &.{ dir, selected }) catch return null;
-        if (guard.lmodInvocable(candidate)) return candidate;
-    }
-    return null;
-}
-
 fn submitWritableDir(p: []const u8) bool {
     const st = fsx.statAt(fsx.cwd, p, true) catch return false;
     if (!st.isDir()) return false;
@@ -1152,7 +1140,12 @@ fn checkSubmit(arena: Allocator, args: Args, env: envmap.Map, settings: ?Setting
         configured
     else
         "eb-stack";
-    const eb_stack = findExecutable(arena, env, selected) orelse {
+    const eb_stack = (if (std.mem.findScalar(u8, selected, '/') != null)
+        (if (guard.lmodInvocable(selected)) selected else null)
+    else if (if (env.get("PATH")) |p| p.len == 0 else false)
+        null
+    else
+        guard.resolvePath(arena, selected, env)) orelse {
         const shown = text.oneLine(arena, selected, 200) catch selected;
         const reason = arena.print("eb-stack is not executable: {s}", .{shown}) catch shown;
         const line = arena.print("eessi-arch-guard: check-submit: {s}", .{reason}) catch reason;
