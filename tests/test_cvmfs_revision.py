@@ -84,6 +84,18 @@ class RevisionTests(unittest.TestCase):
             self.assertEqual(proc.stdout, "")
             self.assertIn("file too large", proc.stderr)
 
+    def test_stat_decodes_non_utf8_bytes_with_replacement(self):
+        script = str(ROOT / "share" / "cvmfsrev.py")
+        with tempfile.TemporaryDirectory(prefix="eessi-cvmfsrev-") as tmp:
+            stat_file = Path(tmp) / "stat.bin"
+            stat_file.write_bytes(b"Comment: \xff\xfe\nRevision: 42\n")
+            proc = harness.run_with_timeout(
+                [sys.executable, script, "--stat", str(stat_file)],
+                timeout=1.5,
+            )
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            self.assertEqual(proc.stdout.strip(), "revision 42")
+
 
 if __name__ == "__main__":
     unittest.main()
