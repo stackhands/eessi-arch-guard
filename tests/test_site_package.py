@@ -190,3 +190,33 @@ class SitePackageTests(unittest.TestCase):
             check=False,
         )
         self.assertEqual(proc.returncode, 0, proc.stderr + proc.stdout)
+
+    def test_usage_record_rejects_control_only_fields_and_trims_edges(self):
+        sp_path = ROOT / "share" / "lmod" / "SitePackage.lua"
+        script = "\n".join(
+            [
+                f'local sp = dofile("{sp_path}")',
+                'assert(sp.format_usage_record({ modFullName = "\\x01\\x02", fn = "/a/1.lua" })'
+                " == nil)",
+                'assert(sp.format_usage_record({ modFullName = "A/1.0", fn = "\\x7f" }) == nil)',
+                'local rec = sp.format_usage_record({ modFullName = "  A/1.0\\n", '
+                'fn = "\\t/opt/site/a b/1.0.lua " })',
+                'assert(rec ~= nil and rec:find("module=A/1.0 ", 1, true), tostring(rec))',
+                'assert(rec:find("path=/opt/site/a_b/1.0.lua ", 1, true), tostring(rec))',
+                'assert(rec:find("user=unknown ", 1, true), tostring(rec))',
+                'assert(rec:find("jobid=nil ", 1, true), tostring(rec))',
+            ]
+        )
+        proc = subprocess.run(
+            [LUA, "-e", script],
+            env={
+                "PATH": "/usr/bin:/bin",
+                "USER": "\x01",
+                "HOSTNAME": "node01",
+                "SLURM_JOB_ID": "\x1b",
+            },
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(proc.returncode, 0, proc.stderr + proc.stdout)
