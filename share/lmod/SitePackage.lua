@@ -19,18 +19,31 @@ function M.path_parts(fn)
     if type(fn) ~= "string" then
         return nil, nil
     end
-    local body = fn:match("/software/linux/(.-)/modules/")
-    if body == nil then
+    local norm = fn:gsub("/+", "/")
+    local best_body = nil
+    local pos = 1
+    while true do
+        local _, e = norm:find("/software/linux/", pos, true)
+        if e == nil then
+            break
+        end
+        local candidate = norm:sub(e + 1):match("^(.-)/modules/")
+        if candidate ~= nil and candidate ~= "" and not candidate:find("/software/linux/", 1, true) then
+            best_body = candidate
+        end
+        pos = e + 1
+    end
+    if best_body == nil then
         return nil, nil
     end
-    local cpu, accel = body:match("^(.-)/(accel/nvidia/cc%d+)$")
+    local cpu, accel = best_body:match("^(.-)/(accel/nvidia/cc%d+)$")
     if cpu == nil or cpu == "" then
-        cpu, accel = body:match("^(.-)/(accel/amd/gfx[0-9a-f]+)$")
+        cpu, accel = best_body:match("^(.-)/(accel/amd/gfx[0-9a-f]+)$")
     end
     if cpu ~= nil and cpu ~= "" and accel ~= nil then
         return cpu, accel
     end
-    return body, nil
+    return best_body, nil
 end
 
 function M.software_subdir(fn)
