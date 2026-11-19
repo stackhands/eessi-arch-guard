@@ -686,15 +686,11 @@ fn bindCpus(env: Map) ?CpuSet {
 const TaskCpuBounds = struct { allowed: ?CpuSet, base_cpus: ?CpuSet };
 
 fn taskCpuBounds(env: Map, affinity: ?CpuSet, cgroup: ?CpuSet) TaskCpuBounds {
-    const base_cpus: ?CpuSet = if (affinity != null or cgroup != null) blk: {
-        var b = affinity orelse cgroup.?;
-        if (affinity) |a| b = b.bitAnd(a);
-        if (cgroup) |g| b = b.bitAnd(g);
-        break :blk b;
-    } else null;
+    const base_cpus: ?CpuSet = cgroup orelse affinity;
     const bind = bindCpus(env);
-    var allowed = base_cpus orelse bind orelse return .{ .allowed = null, .base_cpus = null };
-    if (base_cpus) |bc| allowed = allowed.bitAnd(bc);
+    var allowed = affinity orelse cgroup orelse bind orelse return .{ .allowed = null, .base_cpus = null };
+    if (affinity) |a| allowed = allowed.bitAnd(a);
+    if (cgroup) |cg| allowed = allowed.bitAnd(cg);
     if (bind) |bd| allowed = allowed.bitAnd(bd);
     return .{ .allowed = allowed, .base_cpus = base_cpus };
 }
@@ -801,7 +797,7 @@ fn resolveLxcfsLogicalIds(arena: Allocator, blocks: []const CpuBlock, base_cpus:
     }
     if (base_cpus) |bc| {
         if (seq and blocks.len > 0 and blocks.len == bc.count() and !raw_set.eql(bc)) {
-            const ids = bc.sortedIds(arena) catch return out;
+            const ids = bc.sortedIds(arena) catch return null;
             if (ids.len == blocks.len) for (ids, 0..) |lid, idx| {
                 out[idx] = lid;
             };
@@ -2295,6 +2291,12 @@ test "cgroupCpusFrom narrows wider sched affinity on cgroup v2 layouts" {
     const bounds = taskCpuBounds(.empty, wide_sched, cg);
     try std.testing.expect(bounds.allowed.?.eql(cg));
     try std.testing.expect(bounds.base_cpus.?.eql(cg));
+
+    var narrow_sched: CpuSet = .{};
+    narrow_sched.add(2);
+    const narrow = taskCpuBounds(.empty, narrow_sched, cg);
+    try std.testing.expect(narrow.base_cpus.?.eql(cg));
+    try std.testing.expect(narrow.allowed.?.eql(narrow_sched));
 }
 
 test "parseCpuSpec rejects trailing commas" {

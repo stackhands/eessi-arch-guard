@@ -838,15 +838,9 @@ def _task_cpu_bounds(
     sched: Optional[frozenset],
     cgroup: Optional[frozenset],
 ) -> Tuple[Optional[frozenset], Optional[frozenset]]:
-    base_parts = [item for item in (sched, cgroup) if item is not None]
-    base_cpus: Optional[frozenset] = None
-    if base_parts:
-        base_set = set(base_parts[0])
-        for item in base_parts[1:]:
-            base_set &= item
-        base_cpus = frozenset(base_set)
     bind = bind_cpus(env)
-    parts = [item for item in (base_cpus, bind) if item is not None]
+    base_cpus: Optional[frozenset] = cgroup if cgroup is not None else sched
+    parts = [item for item in (sched, cgroup, bind) if item is not None]
     if not parts:
         return None, None
     allowed_set = set(parts[0])
