@@ -2107,7 +2107,10 @@ test "parseCpuSpec rejects trailing commas" {
     try std.testing.expect(parseCpuSpec("0-1,") == null);
     try std.testing.expect(parseCpuSpec("0, ") == null);
     try std.testing.expect(parseCpuSpec("cpu[0,]") == null);
+    try std.testing.expect(parseCpuSpec("0 1") == null);
+    try std.testing.expect(parseCpuSpec("0 - 1") == null);
     try std.testing.expect(parseCpuSpec("0,1") != null);
+    try std.testing.expect(parseCpuSpec("cpu[0, 1]") != null);
 }
 
 test "resolvePath searches default_path and empty colon entries" {

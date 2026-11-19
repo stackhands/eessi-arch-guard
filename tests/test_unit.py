@@ -839,6 +839,10 @@ class UnitTests:
         assert guard.parse_cpu_spec("[1]") == frozenset({1})
         assert guard.parse_cpu_spec("nid[00001-00002]") is None
         assert guard.parse_cpu_spec("quiet") is None
+        assert guard.parse_cpu_spec("0 1") is None
+        assert guard.parse_cpu_spec("0 - 1") is None
+        assert guard.parse_cpu_spec("0, 1") == frozenset({0, 1})
+        assert guard.parse_cpu_spec("cpu[0, 1]") == frozenset({0, 1})
         bound = guard.task_cpu_ids({"SLURM_CPU_BIND_LIST": "cpu[1]"})
         assert bound is not None
         assert 1 in bound
