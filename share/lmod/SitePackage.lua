@@ -51,20 +51,32 @@ function M.software_subdir(fn)
     return cpu
 end
 
-function M.warn_mismatch(fn, expected, fullname)
-    local got = M.software_subdir(fn)
-    if got == nil or expected == nil or expected == "" or got == expected then
+local function clean_label(value)
+    if type(value) ~= "string" then
         return nil
     end
-    local name = fullname
-    if type(name) ~= "string" or name == "" then
-        name = fn
+    local trimmed = value:match("^[%s%c]*(.-)[%s%c]*$")
+    if trimmed == nil or trimmed == "" then
+        return nil
+    end
+    return trimmed:gsub("[%c]+", " ")
+end
+
+function M.warn_mismatch(fn, expected, fullname)
+    local got = M.software_subdir(fn)
+    local exp = clean_label(expected)
+    if got == nil or exp == nil or got == exp then
+        return nil
+    end
+    local name = clean_label(fullname) or clean_label(fn)
+    if name == nil then
+        return nil
     end
     return string.format(
         "eessi-arch-guard: %s is under software/linux/%s but EESSI_SOFTWARE_SUBDIR is %s\n",
         name,
         got,
-        expected
+        exp
     )
 end
 
@@ -90,9 +102,9 @@ function M.warn_accel(fn, node_accel, fullname)
     if got == nil or node == nil or got == node then
         return nil
     end
-    local name = fullname
-    if type(name) ~= "string" or name == "" then
-        name = fn
+    local name = clean_label(fullname) or clean_label(fn)
+    if name == nil then
+        return nil
     end
     local got_cc = got:match("^accel/nvidia/(cc%d+)$")
     local node_cc = node:match("^accel/nvidia/(cc%d+)$")
