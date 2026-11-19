@@ -877,6 +877,116 @@ class UnitTests:
         assert guard.scope_cpuinfo(single, frozenset({0, 1, 2})) is None
         assert guard.scope_cpuinfo("eessi_arch_matches: x86_64/generic\n", frozenset({0})) is None
 
+    def test_scope_cpuinfo_maps_lxcfs_renumbered_blocks_and_keeps_gapped_ids(self):
+        root = Path(__file__).resolve().parents[1] / "tests" / "fixtures" / "cpuinfo"
+        spr_real = (root / "sapphirerapids-8488C.cpuinfo").read_text(encoding="ascii")
+        spr_kvm = (root / "sapphirerapids-kvm-no-waitpkg.cpuinfo").read_text(encoding="ascii")
+        emr_text = (root / "emeraldrapids-kvm-no-waitpkg.cpuinfo").read_text(encoding="ascii")
+
+        # LXCFS renumbers constrained cpuset blocks 0..K-1 even when cpuset is {1, 3}.
+        lxcfs_text = (
+            spr_kvm.replace("core id         : 0", "core id         : 1", 1)
+            + "\n"
+            + spr_real.replace("processor       : 0", "processor       : 1", 1).replace(
+                "core id         : 0", "core id         : 3", 1
+            )
+        )
+        scoped_lxcfs = guard.scope_cpuinfo(
+            lxcfs_text, frozenset({1, 3}), base_cpus=frozenset({1, 3})
+        )
+        assert scoped_lxcfs is not None
+        assert "avx512_bf16" in scoped_lxcfs
+        assert "waitpkg" not in scoped_lxcfs
+
+        # Subset bind inside the LXCFS container picks logical 3 (block 1).
+        only_3 = guard.scope_cpuinfo(lxcfs_text, frozenset({3}), base_cpus=frozenset({1, 3}))
+        assert only_3 is not None
+        assert "waitpkg" in only_3
+
+        # Gapped logical IDs (0,2,4,6) from offline CPUs match directly without remapping.
+        gap_blocks = [
+            block
+            for block in emr_text.strip().split("\n\n")
+            if block.splitlines()[0].split(":")[-1].strip() in ("0", "2", "4", "6")
+        ]
+        gap_cpuinfo = "\n\n".join(gap_blocks) + "\n"
+        scoped_gaps = guard.scope_cpuinfo(
+            gap_cpuinfo, frozenset({4, 6}), base_cpus=frozenset({4, 6})
+        )
+        assert scoped_gaps is not None
+        assert "processor : 4\n" in scoped_gaps
+        assert "amx_tile" in scoped_gaps
+        assert "waitpkg" not in scoped_gaps
+
+    def test_probe_cpu_scopes_lxcfs_cpuinfo_under_cgroup_v2(self):
+        from unittest import mock
+
+        root = Path(__file__).resolve().parents[1] / "tests" / "fixtures" / "cpuinfo"
+        spr_real = (root / "sapphirerapids-8488C.cpuinfo").read_text(encoding="ascii")
+        spr_kvm = (root / "sapphirerapids-kvm-no-waitpkg.cpuinfo").read_text(encoding="ascii")
+        site = harness.Site()
+        try:
+            spr = "x86_64/intel/sapphirerapids"
+            icelake = "x86_64/intel/icelake"
+            generic = "x86_64/generic"
+            for target in (spr, icelake, generic):
+                site.add_cpu(target)
+            with open(site.cpuinfo, "w", encoding="ascii") as handle:
+                handle.write(
+                    spr_kvm.replace("core id         : 0", "core id         : 4", 1)
+                    + "\n"
+                    + spr_real.replace("processor       : 0", "processor       : 1", 1).replace(
+                        "core id         : 0", "core id         : 5", 1
+                    )
+                )
+            env = harness.base_env(site, spr, ["R/4.4.2"], gpu="none")
+            with (
+                mock.patch.object(guard, "sched_cpus", return_value=frozenset(range(8))),
+                mock.patch.object(guard, "cgroup_cpus", return_value=frozenset({4, 5})),
+            ):
+                probe = guard.probe_cpu(env)
+            assert probe.status == "ok", probe
+            assert probe.target == icelake, probe
+            assert probe.override == icelake, probe
+        finally:
+            site.close()
+
+    def test_cgroup_v2_narrows_wider_sched_affinity(self):
+        root = Path(__file__).resolve().parents[1] / "tests" / "fixtures" / "cpuinfo"
+        emr_text = (root / "emeraldrapids-kvm-no-waitpkg.cpuinfo").read_text(encoding="ascii")
+        with tempfile.TemporaryDirectory(prefix="eag-cgroup-v2-") as tmp:
+            tmp_path = Path(tmp)
+            cg_root = tmp_path / "sys_fs_cgroup"
+            step_dir = cg_root / "system.slice" / "slurmstepd.scope" / "job_42" / "step_0"
+            task_dir = step_dir / "task_0"
+            task_dir.mkdir(parents=True)
+            (step_dir / "cpuset.cpus.effective").write_text("2-3\n", encoding="ascii")
+            (task_dir / "cpuset.cpus.effective").write_text("\n", encoding="ascii")
+            proc_cg = tmp_path / "proc_cgroup"
+            proc_cg.write_text(
+                "0::/system.slice/slurmstepd.scope/job_42/step_0/task_0\n",
+                encoding="ascii",
+            )
+            cg_set = guard.cgroup_cpus_from(str(proc_cg), str(cg_root))
+            assert cg_set == frozenset({2, 3}), cg_set
+
+            ns_root = tmp_path / "ns_cgroup"
+            ns_root.mkdir()
+            (ns_root / "cpuset.cpus.effective").write_text("4,6\n", encoding="ascii")
+            ns_proc = tmp_path / "ns_proc_cgroup"
+            ns_proc.write_text("0::/\n", encoding="ascii")
+            assert guard.cgroup_cpus_from(str(ns_proc), str(ns_root)) == frozenset({4, 6})
+
+            allowed, base = guard._task_cpu_bounds({}, frozenset(range(8)), cg_set)
+            assert base == frozenset({2, 3})
+            assert allowed == frozenset({2, 3})
+
+            scoped = guard.scope_cpuinfo(emr_text, allowed, base_cpus=base)
+            assert scoped is not None
+            assert "model\t\t: 207" in scoped or "model : 207" in scoped
+            assert "amx_tile" in scoped
+            assert "waitpkg" not in scoped
+
     def test_waitpkg_march_requires_the_flag(self):
         root = Path(__file__).resolve().parents[1] / "tests" / "fixtures" / "cpuinfo"
         real_path = root / "sapphirerapids-8488C.cpuinfo"

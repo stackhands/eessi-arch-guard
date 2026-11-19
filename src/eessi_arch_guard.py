@@ -759,11 +759,16 @@ def _read_text(path: str, limit: int = 65536) -> Optional[str]:
     return blob.decode("utf-8", "replace")
 
 
-def cgroup_cpus() -> Optional[frozenset]:
+def cgroup_cpus_from(
+    proc_cgroup_path: str = "/proc/self/cgroup",
+    cgroup_root: str = "/sys/fs/cgroup",
+) -> Optional[frozenset]:
     """Processors in this process's cgroup cpuset, walking up to an effective list."""
-    text = _read_text("/proc/self/cgroup")
+    text = _read_text(proc_cgroup_path)
     if not text:
         return None
+    root = cgroup_root.rstrip("/") or "/"
+    base = "" if root == "/" else root
     directories = []
     for line in text.splitlines():
         parts = line.split(":", 2)
@@ -772,15 +777,16 @@ def cgroup_cpus() -> Optional[frozenset]:
         hier, controllers, path = parts
         if not path.startswith("/"):
             path = "/" + path
+        rel = "" if path == "/" else path
         if hier == "0" and controllers == "":
-            directories.append("/sys/fs/cgroup" + path)
+            directories.append((base + rel) or "/")
         elif "cpuset" in controllers.split(","):
-            directories.append("/sys/fs/cgroup/cpuset" + path)
-            directories.append("/sys/fs/cgroup" + path)
+            directories.append(base + "/cpuset" + rel)
+            directories.append((base + rel) or "/")
     for start in directories:
         directory = start
         for _ in range(64):
-            if not directory.startswith("/sys/fs/cgroup"):
+            if root != "/" and directory != root and not directory.startswith(root + "/"):
                 break
             raw = _read_text(os.path.join(directory, "cpuset.cpus.effective"))
             if raw is not None and raw.strip():
@@ -792,6 +798,11 @@ def cgroup_cpus() -> Optional[frozenset]:
                 break
             directory = parent
     return None
+
+
+def cgroup_cpus() -> Optional[frozenset]:
+    """Processors in this process's cgroup cpuset, walking up to an effective list."""
+    return cgroup_cpus_from()
 
 
 def sched_cpus() -> Optional[frozenset]:
@@ -814,22 +825,36 @@ def bind_cpus(env: Mapping[str, str]) -> Optional[frozenset]:
     return parse_cpu_spec(verbose.rsplit(":", 1)[-1].strip())
 
 
+def _task_cpu_bounds(
+    env: Mapping[str, str],
+    sched: Optional[frozenset],
+    cgroup: Optional[frozenset],
+) -> Tuple[Optional[frozenset], Optional[frozenset]]:
+    base_parts = [item for item in (sched, cgroup) if item is not None]
+    base_cpus: Optional[frozenset] = None
+    if base_parts:
+        base_set = set(base_parts[0])
+        for item in base_parts[1:]:
+            base_set &= item
+        base_cpus = frozenset(base_set)
+    bind = bind_cpus(env)
+    parts = [item for item in (base_cpus, bind) if item is not None]
+    if not parts:
+        return None, None
+    allowed_set = set(parts[0])
+    for item in parts[1:]:
+        allowed_set &= item
+    return frozenset(allowed_set), base_cpus
+
+
 def task_cpu_ids(env: Mapping[str, str]) -> Optional[frozenset]:
     """Intersection of affinity, cpuset, and the Slurm bind list.
 
     None when none of the three can be read. An empty set means the three
     disagree: the task is not allowed to run on any processor they share.
     """
-    parts = []
-    for item in (sched_cpus(), cgroup_cpus(), bind_cpus(env)):
-        if item is not None:
-            parts.append(item)
-    if not parts:
-        return None
-    allowed = set(parts[0])
-    for item in parts[1:]:
-        allowed &= item
-    return frozenset(allowed)
+    allowed, _base = _task_cpu_bounds(env, sched_cpus(), cgroup_cpus())
+    return allowed
 
 
 def _cpuinfo_field(line: str) -> Optional[Tuple[str, str, str]]:
@@ -841,7 +866,26 @@ def _cpuinfo_field(line: str) -> Optional[Tuple[str, str, str]]:
     return norm, key.strip(), value.strip()
 
 
-def scope_cpuinfo(text: str, allowed: Optional[frozenset]) -> Optional[str]:
+def _block_logical_ids(
+    blocks: Sequence[dict],
+    base_cpus: Optional[frozenset],
+) -> List[Optional[int]]:
+    raw_ids = [block["id"] for block in blocks]
+    if (
+        base_cpus is not None
+        and len(blocks) == len(base_cpus)
+        and raw_ids == list(range(len(blocks)))
+        and set(raw_ids) != base_cpus
+    ):
+        return sorted(base_cpus)
+    return raw_ids
+
+
+def scope_cpuinfo(
+    text: str,
+    allowed: Optional[frozenset],
+    base_cpus: Optional[frozenset] = None,
+) -> Optional[str]:
     """Cpuinfo limited to ``allowed``, or None when ``text`` already is.
 
     No ``processor`` lines means the file is not a per-CPU cpuinfo (an
@@ -849,7 +893,10 @@ def scope_cpuinfo(text: str, allowed: Optional[frozenset]) -> Optional[str]:
     left alone. Kept processors that do not share a vendor, model, and flag
     set are collapsed to one record whose flags are the intersection, so a
     consumer that reads only the last record cannot see a richer CPU than
-    every processor the task may run.
+    every processor the task may run. When LXCFS renumbers sequential
+    ``0..K-1`` blocks for a constrained cgroup and affinity set
+    ``base_cpus``, those blocks are mapped by ordinal position to the
+    sorted logical IDs in ``base_cpus``.
     """
     if allowed is None:
         return None
@@ -867,7 +914,8 @@ def scope_cpuinfo(text: str, allowed: Optional[frozenset]) -> Optional[str]:
         blocks.append(current)
     if not blocks:
         return None
-    kept = [block for block in blocks if block["id"] in allowed]
+    logical_ids = _block_logical_ids(blocks, base_cpus)
+    kept = [block for block, lid in zip(blocks, logical_ids) if lid in allowed]
 
     def fields_of(block: dict) -> List[Tuple[str, str, str]]:
         found = []
@@ -939,7 +987,7 @@ def _prepare_cpuinfo(env: Mapping[str, str]) -> Tuple[str, Optional[str], Mappin
     """
     explicit = env.get("EESSI_PROC_CPUINFO") or ""
     path = explicit if explicit else "/proc/cpuinfo"
-    allowed = task_cpu_ids(env)
+    allowed, base_cpus = _task_cpu_bounds(env, sched_cpus(), cgroup_cpus())
     if allowed is None:
         return path, None, env
     try:
@@ -948,7 +996,7 @@ def _prepare_cpuinfo(env: Mapping[str, str]) -> Tuple[str, Optional[str], Mappin
     except OSError:
         return path, None, env
     text = blob[:_CPUINFO_READ_MAX].decode("utf-8", "replace")
-    scoped = scope_cpuinfo(text, allowed)
+    scoped = scope_cpuinfo(text, allowed, base_cpus=base_cpus)
     if scoped is None:
         return path, None, env
     fd, tmp = tempfile.mkstemp(prefix="eessi-arch-guard-cpu-")
