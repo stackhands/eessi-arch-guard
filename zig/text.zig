@@ -41,9 +41,7 @@ fn isAlnumU(c: u8) bool {
 
 /// ENV_NAME_RE: ^[A-Za-z_][A-Za-z0-9_]*$
 pub fn envName(s: []const u8) bool {
-    if (s.len == 0 or !(std.ascii.isAlphabetic(s[0]) or s[0] == '_')) return false;
-    for (s[1..]) |c| if (!isAlnumU(c)) return false;
-    return true;
+    return common.env.validName(s);
 }
 
 /// _MOD_SEGMENT: [A-Za-z0-9_][A-Za-z0-9._+-]*
@@ -277,6 +275,7 @@ test "validators" {
     try std.testing.expect(safeComponent("login1.local"));
     try std.testing.expect(!safeComponent("a b"));
     try std.testing.expect(neverCache("LD_PRELOAD") and neverTouch("SLURM_JOB_ID") and !neverTouch("LD_PRELOAD"));
+    try std.testing.expect(envName("_OK_1") and !envName("") and !envName("1BAD") and !envName("A=B") and !envName("A\nB") and !envName("A\x00B"));
 }
 
 test "oneLine and messageBytes" {
