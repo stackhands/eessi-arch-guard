@@ -186,3 +186,15 @@ def log_lines(path: str):
         return []
     with open(path, encoding="utf-8") as handle:
         return [line.rstrip("\n") for line in handle if line.strip()]
+
+
+def run_with_timeout(argv, env=None, timeout: float = 2.0):
+    """Run ``argv`` with a bounded wall-clock timeout."""
+    return subprocess.run(
+        list(argv),
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=timeout,
+        check=False,
+    )
