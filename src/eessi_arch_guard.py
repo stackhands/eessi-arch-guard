@@ -684,10 +684,8 @@ def read_cpu_flags(path: str) -> frozenset:
 # sched_getaffinity and cpuset lists name processors in this range. A bind
 # mask with a bit past it is ignored rather than applied in part.
 _CPU_ID_MAX = 4096
-_CPU_LIST_RE = re.compile(r"\d+(?:-\d+)?(?:,\d+(?:-\d+)?)*")
-_CPU_HOSTLIST_RE = re.compile(
-    r"(?:cpu)?\[(\d+(?:-\d+)?(?:,\d+(?:-\d+)?)*)\]", re.IGNORECASE
-)
+_CPU_ITEM_RE = re.compile(r"[0-9]+(?:-[0-9]+)?")
+_CPU_HOSTLIST_RE = re.compile(r"(?:cpu)?\[([^\[\]]+)\]", re.IGNORECASE)
 _PROCESSOR_LINE_RE = re.compile(r"(?i)^processor[ \t]*:[ \t]*(\d+)\s*$")
 _FLAG_KEYS = frozenset(("flags", "features", "isa"))
 _IDENTITY_KEYS = frozenset(
@@ -730,12 +728,22 @@ def parse_cpu_spec(text: str) -> Optional[frozenset]:
         if mask:
             return None
         return frozenset(found)
-    host = _CPU_HOSTLIST_RE.fullmatch(raw)
-    body = host.group(1) if host else raw.replace(" ", "")
-    if _CPU_LIST_RE.fullmatch(body) is None:
+    if raw.endswith("]"):
+        host = _CPU_HOSTLIST_RE.fullmatch(raw)
+        if host is None:
+            return None
+        body = host.group(1)
+    elif "[" in raw:
+        return None
+    else:
+        body = raw
+    if not body:
         return None
     found = set()
-    for part in body.split(","):
+    for raw_part in body.split(","):
+        part = raw_part.strip(" ")
+        if _CPU_ITEM_RE.fullmatch(part) is None:
+            return None
         if "-" in part:
             left, right = part.split("-", 1)
             start, end = int(left), int(right)
@@ -1319,13 +1327,27 @@ def do_restore(payload: Mapping[str, object]) -> Dict[str, object]:
     current, err = apply_lmod(module_env, lmod_cmd, ["--force", "purge"])
     if current is None:
         return {"ok": False, "missing": [], "error": one_line(err or "purge failed", 300)}
-    current, err = apply_lmod(pinned_env(current, pin), lmod_cmd, ["load", eessi])
+    had_cpuinfo = "EESSI_PROC_CPUINFO" in current
+    orig_cpuinfo = current.get("EESSI_PROC_CPUINFO")
+    _cpuinfo_path, cleanup, load_env = _prepare_cpuinfo(pinned_env(current, pin))
+    try:
+        current, err = apply_lmod(load_env, lmod_cmd, ["load", eessi])
+    finally:
+        if cleanup:
+            try:
+                os.unlink(cleanup)
+            except OSError:
+                pass
     if current is None:
         return {
             "ok": False,
             "missing": [eessi],
             "error": one_line(err or "EESSI load failed", 300),
         }
+    if had_cpuinfo and orig_cpuinfo is not None:
+        current["EESSI_PROC_CPUINFO"] = orig_cpuinfo
+    else:
+        current.pop("EESSI_PROC_CPUINFO", None)
     if modules:
         nxt, err = apply_lmod(current, lmod_cmd, ["load", *modules])
         if nxt is None:

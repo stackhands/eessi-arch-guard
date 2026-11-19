@@ -14,6 +14,8 @@ import sys
 
 def _norm(path: str) -> str:
     path = (path or "").strip()
+    while "//" in path:
+        path = path.replace("//", "/")
     while len(path) > 1 and path.endswith("/"):
         path = path[:-1]
     return path
@@ -125,7 +127,9 @@ def report(mountinfo: str, modulepath: str, repo: str, site: str, eessi: str):
 
 
 def _modules(value: str) -> str:
-    value = value.strip().rstrip("/")
+    value = _norm(value)
+    if value == "/":
+        return "/modules/all"
     if value.endswith("/modules/all"):
         return value
     return value + "/modules/all"
@@ -149,12 +153,17 @@ def main(argv=None) -> int:
         help="exit 2 when install paths are missing or expand to /modules/all alone",
     )
     args = parser.parse_args(argv)
-    site = args.site or os.environ.get("EESSI_SITE_SOFTWARE_PATH") or ""
-    eessi = args.eessi or os.environ.get("EESSI_SOFTWARE_PATH") or ""
+    site = (args.site or os.environ.get("EESSI_SITE_SOFTWARE_PATH") or "").strip()
+    eessi = (args.eessi or os.environ.get("EESSI_SOFTWARE_PATH") or "").strip()
     if not site or not eessi:
         sys.stderr.write("sitepath.py: need --site and --eessi, or EESSI_SITE_SOFTWARE_PATH and EESSI_SOFTWARE_PATH\n")
         return 2
-    if args.require_input and (_placeholder_modules_path(site) or _placeholder_modules_path(eessi)):
+    if args.require_input and (
+        _placeholder_modules_path(site)
+        or _placeholder_modules_path(eessi)
+        or _placeholder_modules_path(_modules(site))
+        or _placeholder_modules_path(_modules(eessi))
+    ):
         sys.stderr.write(
             "sitepath.py: --require-input: install paths are missing "
             "(unset shell variables expand to /modules/all)\n"

@@ -74,25 +74,94 @@ const help_text =
 var emergency_shell = false;
 var emergency_announce = true;
 var emergency_strict = false;
+var emergency_json = false;
+var emergency_json_shell = false;
+var emergency_was: []const u8 = "unrecognized";
+
+fn formatEmergencyLine(out: []u8, kind: []const u8, detail: []const u8) []const u8 {
+    return text.formatBoundedParts(
+        out,
+        &.{ "eessi-arch-guard: skipped, ", kind, ": ", detail },
+        500,
+        true,
+        text.prolog_line_max - "print ".len - 1,
+    );
+}
 
 fn emergencyWrite(kind: []const u8, detail: []const u8) void {
-    var buf: [1024]u8 = undefined;
-    const msg = std.mem.print(&buf, "eessi-arch-guard: skipped, {s}: {s}", .{ kind, detail }) catch "eessi-arch-guard: skipped";
     // No allocation here: a crash may have come from the allocator.
-    var clean: [1024]u8 = undefined;
-    var n: usize = 0;
-    for (msg) |ch| {
-        clean[n] = if (ch < 32 or ch == 127) ' ' else ch;
-        n += 1;
-    }
+    var buf: [2048]u8 = undefined;
+    const line = formatEmergencyLine(&buf, kind, detail);
     if (emergency_shell) {
-        cli.put(2, clean[0..n]);
+        cli.put(2, line);
         cli.put(2, "\n");
     } else if (emergency_announce) {
         cli.put(1, "print ");
-        cli.put(1, clean[0..n]);
+        cli.put(1, line);
         cli.put(1, "\n");
     }
+}
+
+fn appendJsonBytes(buf: []u8, pos: *usize, s: []const u8) bool {
+    for (s) |c| {
+        if (c == '"' or c == '\\') {
+            if (pos.* + 2 > buf.len) return false;
+            buf[pos.*] = '\\';
+            buf[pos.* + 1] = c;
+            pos.* += 2;
+        } else if (c < 0x20 or c >= 0x7f) {
+            if (pos.* + 6 > buf.len) return false;
+            const hex = "0123456789abcdef";
+            buf[pos.*] = '\\';
+            buf[pos.* + 1] = 'u';
+            buf[pos.* + 2] = '0';
+            buf[pos.* + 3] = '0';
+            buf[pos.* + 4] = hex[c >> 4];
+            buf[pos.* + 5] = hex[c & 15];
+            pos.* += 6;
+        } else {
+            if (pos.* + 1 > buf.len) return false;
+            buf[pos.*] = c;
+            pos.* += 1;
+        }
+    }
+    return true;
+}
+
+fn emergencyWriteJson(kind: []const u8) void {
+    var buf: [2048]u8 = undefined;
+    var pos: usize = 0;
+    const code: u8 = if (emergency_strict) strict_failure_exit else 0;
+    const semantic: []const u8 = if (emergency_strict) "strict-failure" else "ok";
+    const shell_s: []const u8 = if (emergency_json_shell) "true" else "false";
+    const strict_s: []const u8 = if (emergency_strict) "true" else "false";
+    const p1 = std.mem.print(buf[pos..], "{{\"cached\": false, \"cause\": \"", .{}) catch return;
+    pos += p1.len;
+    if (!appendJsonBytes(&buf, &pos, kind)) return;
+    const p2 = std.mem.print(
+        buf[pos..],
+        "\", \"decision\": \"failed\", \"detail\": null, \"exit\": {d}, \"exit_semantic\": \"{s}\", \"kind\": \"decision\", \"message\": \"\", \"now\": null, \"reload_needed\": true, \"schema_version\": 1, \"shell\": {s}, \"strict\": {s}, \"was\": \"",
+        .{ code, semantic, shell_s, strict_s },
+    ) catch return;
+    pos += p2.len;
+    if (!appendJsonBytes(&buf, &pos, emergency_was)) return;
+    const p3 = std.mem.print(buf[pos..], "\"}}\n", .{}) catch return;
+    pos += p3.len;
+    cli.put(1, buf[0..pos]);
+}
+
+fn rawEnvWas(envp: proc.Envp) []const u8 {
+    const prefix = "EESSI_SOFTWARE_SUBDIR=";
+    var i: usize = 0;
+    while (envp[i]) |p| : (i += 1) {
+        const entry = std.mem.span(p);
+        if (std.mem.startsWith(u8, entry, prefix)) {
+            const v = entry[prefix.len..];
+            if (v.len == 0 or v.len > 512 or text.hasLineBreakOrNul(v)) return "unrecognized";
+            return v;
+        }
+    }
+    return "unrecognized";
 }
 
 /// _announce for a prolog: SLURM_LOCALID unset or exactly "0". Read from the
@@ -117,8 +186,12 @@ var emergency_chain: []const u8 = "";
 /// the strict status).
 fn emergencyExit(kind: []const u8, detail: []const u8) noreturn {
     guard.stopChild();
-    if (emergency_chain.len > 0) writeStdout(emergency_chain, "");
-    emergencyWrite(kind, detail);
+    if (emergency_json) {
+        emergencyWriteJson(kind);
+    } else {
+        if (emergency_chain.len > 0) writeStdout(emergency_chain, "");
+        emergencyWrite(kind, detail);
+    }
     linux.exit_group(if (emergency_strict) strict_failure_exit else 0);
 }
 
@@ -146,6 +219,10 @@ fn onCrash(sig: linux.SIG) callconv(.c) void {
     });
 }
 
+fn onInterrupt(_: linux.SIG) callconv(.c) void {
+    emergencyExit("KeyboardInterrupt", "");
+}
+
 /// The stack the crash handlers run on: a SIGSEGV from a stack overflow
 /// has no stack left to run a handler on the thread's own.
 var crash_stack: [64 * 1024]u8 align(16) = undefined;
@@ -155,6 +232,8 @@ fn installCrashHandlers() void {
     const on_stack = linux.errno(linux.sigaltstack(&alt, null)) == .SUCCESS;
     var act: linux.Sigaction = .{ .handler = .{ .handler = onCrash }, .mask = linux.sigemptyset(), .flags = if (on_stack) linux.SA.ONSTACK else 0 };
     for ([_]linux.SIG{ .SEGV, .BUS, .ILL, .FPE }) |s| _ = linux.sigaction(s, &act, null);
+    var int_act: linux.Sigaction = .{ .handler = .{ .handler = onInterrupt }, .mask = linux.sigemptyset(), .flags = if (on_stack) linux.SA.ONSTACK else 0 };
+    _ = linux.sigaction(.INT, &int_act, null);
     // A closed stdout must not kill the prolog: writes fail instead.
     var ign: linux.Sigaction = .{ .handler = .{ .handler = linux.SIG.IGN }, .mask = linux.sigemptyset(), .flags = 0 };
     _ = linux.sigaction(.PIPE, &ign, null);
@@ -467,57 +546,12 @@ fn invokedPath(arena: Allocator, argv0: []const u8) []const u8 {
     return selfExe(arena);
 }
 
-/// posixpath.normpath: "." parts and repeated slashes dropped, and each
-/// ".." taking off the part before it, without following symbolic links.
-/// One or two leading slashes stay; three or more become one.
-fn normPath(gpa: Allocator, path: []const u8) Allocator.Error![]u8 {
-    const slashes: usize = if (!std.mem.startsWith(u8, path, "/"))
-        0
-    else if (std.mem.startsWith(u8, path, "//") and !std.mem.startsWith(u8, path, "///"))
-        2
-    else
-        1;
-    var parts: std.ArrayList([]const u8) = .empty;
-    defer parts.deinit(gpa);
-    var it = std.mem.splitScalar(u8, path, '/');
-    while (it.next()) |part| {
-        if (part.len == 0 or std.mem.eql(u8, part, ".")) continue;
-        const after_up = parts.items.len > 0 and std.mem.eql(u8, parts.items[parts.items.len - 1], "..");
-        if (!std.mem.eql(u8, part, "..") or (slashes == 0 and parts.items.len == 0) or after_up) {
-            try parts.append(gpa, part);
-        } else {
-            _ = parts.pop();
-        }
-    }
-    var out: std.ArrayList(u8) = .empty;
-    errdefer out.deinit(gpa);
-    try out.appendNTimes(gpa, '/', slashes);
-    for (parts.items, 0..) |part, i| {
-        if (i > 0) try out.append(gpa, '/');
-        try out.appendSlice(gpa, part);
-    }
-    if (out.items.len == 0) try out.append(gpa, '.');
-    return out.toOwnedSlice(gpa);
-}
-
-/// os.path.abspath of the Python guard's __file__: Python's start-up puts
-/// a relative script path after the working directory and a "/", even when
-/// that directory is "/" itself, and abspath normalizes the result.
-fn absPath(gpa: Allocator, path: []const u8) Allocator.Error![]u8 {
-    if (std.mem.startsWith(u8, path, "/")) return normPath(gpa, path);
-    var buf: [sys.path_max]u8 = undefined;
-    const cwd = fsx.realpath(fsx.cwd, ".", &buf) catch return normPath(gpa, path);
-    const joined = try std.mem.concat(gpa, u8, &.{ cwd, "/", path });
-    defer gpa.free(joined);
-    return normPath(gpa, joined);
-}
-
 const config_name = "eessi-arch-guard.conf";
 
 /// site_config's second candidate, os.path.join(os.path.dirname(
 /// os.path.abspath(invoked)), "eessi-arch-guard.conf").
 fn configBeside(gpa: Allocator, invoked: []const u8) Allocator.Error![]u8 {
-    const abs = try absPath(gpa, invoked);
+    const abs = try fsx.absPath(gpa, invoked);
     defer gpa.free(abs);
     const cut = std.mem.findScalarLast(u8, abs, '/') orelse return gpa.dupe(u8, config_name);
     var head: []const u8 = abs[0 .. cut + 1];
@@ -666,7 +700,8 @@ fn renderDryRunJson(arena: Allocator, r: DryRunReport) Allocator.Error![]u8 {
 }
 
 fn oneLineField(arena: Allocator, s: []const u8) Allocator.Error![]const u8 {
-    return text.oneLine(arena, s, 500);
+    var buf: [2048]u8 = undefined;
+    return arena.dupe(u8, text.formatBoundedParts(&buf, &.{s}, 500, true, std.math.maxInt(usize)));
 }
 
 fn renderDryRunText(arena: Allocator, r: DryRunReport) Allocator.Error![]u8 {
@@ -771,6 +806,62 @@ fn hasUpperAscii(s: []const u8) bool {
     return false;
 }
 
+fn charCountStr(s: []const u8) isize {
+    var n: isize = 0;
+    var i: usize = 0;
+    while (i < s.len) : (n += 1) i += text.nextChar(s[i..]).len;
+    return n;
+}
+
+fn charPrefixLen(a: []const u8, b: []const u8) isize {
+    var n: isize = 0;
+    var ia: usize = 0;
+    var ib: usize = 0;
+    while (ia < a.len and ib < b.len) : (n += 1) {
+        const ca = text.nextChar(a[ia..]);
+        const cb = text.nextChar(b[ib..]);
+        if (ca.cp == null and cb.cp == null) {
+            if (a[ia] != b[ib]) break;
+        } else if (ca.cp != cb.cp) {
+            break;
+        }
+        ia += ca.len;
+        ib += cb.len;
+    }
+    return n;
+}
+
+fn selectorHint(arena: Allocator, settings: Settings, prefix: []const u8, value: []const u8, kind: []const u8) []const u8 {
+    var best: ?[]const u8 = null;
+    var best_prefix: isize = -1;
+    var best_delta: isize = -1_000_000_000;
+    const value_chars = charCountStr(value);
+    var it = settings.iterator();
+    while (it.next()) |kv| {
+        const k = kv.key_ptr.*;
+        if (!std.mem.startsWith(u8, k, prefix)) continue;
+        const cand = k[prefix.len..];
+        const cp_len = charPrefixLen(value, cand);
+        if (cp_len == 0) continue;
+        const cand_chars = charCountStr(cand);
+        const diff = cand_chars - value_chars;
+        const length_delta = if (diff < 0) diff else -diff;
+        const better = if (cp_len != best_prefix)
+            cp_len > best_prefix
+        else if (length_delta != best_delta)
+            length_delta > best_delta
+        else
+            best == null or std.mem.order(u8, cand, best.?) == .gt;
+        if (better) {
+            best = cand;
+            best_prefix = cp_len;
+            best_delta = length_delta;
+        }
+    }
+    const chosen = best orelse return "";
+    return arena.print("; nearest known {s} is {s}{s}", .{ kind, prefix, chosen }) catch "";
+}
+
 fn submitTarget(arena: Allocator, settings: ?Settings, partition: []const u8, constraint: []const u8, why: *[]const u8) ?[]const u8 {
     if (!submitSelector(partition)) {
         why.* = "--partition needs one safe partition name";
@@ -782,30 +873,28 @@ fn submitTarget(arena: Allocator, settings: ?Settings, partition: []const u8, co
     }
     const s: Settings = settings orelse .empty;
     const part_key = arena.print("submit_target.partition.{s}", .{partition}) catch oom();
-    const target = s.get(part_key) orelse {
-        why.* = arena.print("site config has no {s} mapping", .{part_key}) catch part_key;
-        return null;
-    };
-    if (!std.mem.eql(u8, text.pyStrip(target), target) or hasUpperAscii(target)) {
-        why.* = arena.print("{s} has invalid target value {s}", .{ part_key, target }) catch part_key;
+    const target = s.get(part_key) orelse "";
+    if (target.len == 0) {
+        const hint = selectorHint(arena, s, "submit_target.partition.", partition, "partition");
+        why.* = arena.print("site config has no {s} mapping{s}", .{ part_key, hint }) catch part_key;
         return null;
     }
-    if (!text.safeRelSubdir(target)) {
-        why.* = arena.print("{s} has invalid target value {s}", .{ part_key, target }) catch part_key;
+    if (!std.mem.eql(u8, text.pyStrip(target), target) or hasUpperAscii(target) or !text.safeRelSubdir(target)) {
+        const shown = text.pyRepr(arena, target) catch target;
+        why.* = arena.print("{s} has invalid target value {s}", .{ part_key, shown }) catch part_key;
         return null;
     }
     if (constraint.len > 0) {
         const constraint_key = arena.print("submit_target.constraint.{s}", .{constraint}) catch oom();
-        const other = s.get(constraint_key) orelse {
-            why.* = arena.print("site config has no {s} mapping", .{constraint_key}) catch constraint_key;
-            return null;
-        };
-        if (!std.mem.eql(u8, text.pyStrip(other), other) or hasUpperAscii(other)) {
-            why.* = arena.print("{s} has invalid target value {s}", .{ constraint_key, other }) catch constraint_key;
+        const other = s.get(constraint_key) orelse "";
+        if (other.len == 0) {
+            const hint = selectorHint(arena, s, "submit_target.constraint.", constraint, "constraint");
+            why.* = arena.print("site config has no {s} mapping{s}", .{ constraint_key, hint }) catch constraint_key;
             return null;
         }
-        if (!text.safeRelSubdir(other)) {
-            why.* = arena.print("{s} has invalid target value {s}", .{ constraint_key, other }) catch constraint_key;
+        if (!std.mem.eql(u8, text.pyStrip(other), other) or hasUpperAscii(other) or !text.safeRelSubdir(other)) {
+            const shown = text.pyRepr(arena, other) catch other;
+            why.* = arena.print("{s} has invalid target value {s}", .{ constraint_key, shown }) catch constraint_key;
             return null;
         }
         if (!std.mem.eql(u8, target, other)) {
@@ -814,18 +903,6 @@ fn submitTarget(arena: Allocator, settings: ?Settings, partition: []const u8, co
         }
     }
     return target;
-}
-
-fn findExecutable(arena: Allocator, env: envmap.Map, selected: []const u8) ?[]const u8 {
-    if (std.mem.findScalar(u8, selected, '/') != null)
-        return if (guard.lmodInvocable(selected)) selected else null;
-    var paths = std.mem.splitScalar(u8, env.get("PATH") orelse "", ':');
-    while (paths.next()) |dir| {
-        if (dir.len == 0) continue;
-        const candidate = std.fs.path.join(arena, &.{ dir, selected }) catch return null;
-        if (guard.lmodInvocable(candidate)) return candidate;
-    }
-    return null;
 }
 
 fn submitWritableDir(p: []const u8) bool {
@@ -1116,8 +1193,19 @@ fn checkSubmit(arena: Allocator, args: Args, env: envmap.Map, settings: ?Setting
         return finishCheckSubmit(arena, args, partition, constraint, 2, null, null, &.{}, reason, &.{line});
     }
     const configured = if (settings) |s| s.get("eb_stack") orelse "" else "";
-    const selected = args.eb_stack orelse (if (configured.len > 0) configured else "eb-stack");
-    const eb_stack = findExecutable(arena, env, selected) orelse {
+    const cli_eb_stack = args.eb_stack orelse "";
+    const selected = if (cli_eb_stack.len > 0)
+        cli_eb_stack
+    else if (configured.len > 0)
+        configured
+    else
+        "eb-stack";
+    const eb_stack = (if (std.mem.findScalar(u8, selected, '/') != null)
+        (if (guard.lmodInvocable(selected)) selected else null)
+    else if (if (env.get("PATH")) |p| p.len == 0 else false)
+        null
+    else
+        guard.resolvePath(arena, selected, env)) orelse {
         const shown = text.oneLine(arena, selected, 200) catch selected;
         const reason = arena.print("eb-stack is not executable: {s}", .{shown}) catch shown;
         const line = arena.print("eessi-arch-guard: check-submit: {s}", .{reason}) catch reason;
@@ -1237,14 +1325,6 @@ fn checkSubmit(arena: Allocator, args: Args, env: envmap.Map, settings: ?Setting
 
 fn realMain(arena: Allocator, argv0: []const u8, argv: []const []const u8, envp: proc.Envp) u8 {
     const args = parseArgs(argv);
-    const env = envmap.fromEnvp(arena, envp) catch emergencyExit("MemoryError", "out of memory");
-    var ctx: guard.Ctx = .{
-        .arena = arena,
-        .env = env,
-        .strict = emergency_strict,
-        .self_exe = selfExe(arena),
-    };
-    if (args.restore) return guard.restoreMain(&ctx);
     if (args.help) {
         cli.put(1, help_text);
         return 0;
@@ -1253,6 +1333,14 @@ fn realMain(arena: Allocator, argv0: []const u8, argv: []const []const u8, envp:
         cli.put(1, version_text);
         return 0;
     }
+    const env = envmap.fromEnvp(arena, envp) catch emergencyExit("MemoryError", "out of memory");
+    var ctx: guard.Ctx = .{
+        .arena = arena,
+        .env = env,
+        .strict = emergency_strict,
+        .self_exe = selfExe(arena),
+    };
+    if (args.restore) return guard.restoreMain(&ctx);
 
     var chain_out: []const u8 = "";
     const cfg = siteConfig(arena, invokedPath(arena, argv0));
@@ -1314,7 +1402,22 @@ fn realMain(arena: Allocator, argv0: []const u8, argv: []const []const u8, envp:
                 .stderr_limit = 64 << 20,
                 .timeout_ms = null,
                 .new_session = false,
-            }) catch |err| emergencyExit("OSError", @errorName(err));
+                .exec_error = true,
+            }) catch |err| {
+                if (sys.asError(err)) |se| {
+                    const cls = switch (se) {
+                        error.NotFound => "FileNotFoundError",
+                        error.AccessDenied => "PermissionError",
+                        error.NotDir => "NotADirectoryError",
+                        error.IsDir => "IsADirectoryError",
+                        else => "OSError",
+                    };
+                    const shown = text.pyRepr(arena, path) catch path;
+                    const msg = arena.print("{s}: {s}", .{ sys.describe(se), shown }) catch sys.describe(se);
+                    emergencyExit(cls, msg);
+                }
+                emergencyExit("OSError", @errorName(err));
+            };
             if (r.stderr.len > 0) cli.put(2, r.stderr);
             // A chain killed by a signal is 1, as a negative returncode is.
             const code: u8 = switch (r.term) {
@@ -1333,7 +1436,8 @@ fn realMain(arena: Allocator, argv0: []const u8, argv: []const []const u8, envp:
     const t = resolveTimeout(arena, args.timeout, cfg.settings);
     if (t.warning) |w| writeMessage(arena, 2, w);
     const sl = syslog.resolve(arena, args.syslog, env, cfg.settings);
-    if (sl.warning) |w| writeMessage(arena, 2, w);
+    if (sl.target_warning) |w| writeMessage(arena, 2, w);
+    if (sl.pen_warning) |w| writeMessage(arena, 2, w);
 
     if (args.dry_run) {
         const mode: []const u8 = if (args.shell) "shell" else "prolog";
@@ -1397,21 +1501,18 @@ fn realMain(arena: Allocator, argv0: []const u8, argv: []const []const u8, envp:
         return code;
     };
     const announce = !args.shell and std.mem.eql(u8, env.get("SLURM_LOCALID") orelse "0", "0");
-    const body = envmap.render(arena, outcome.changes, outcome.message, args.shell, announce) catch |err| {
-        const cls = if (err == error.OutOfMemory) "MemoryError" else "ValueError";
-        const detail = envmap.renderErrorText(err);
-        const was = env.get("EESSI_SOFTWARE_SUBDIR") orelse "";
-        const failed = guard.failureOutcome(arena, was, cls, detail, detail);
-        syslog.emitEmergency(arena, sl, env, cls, detail, args.strict);
-        const code: u8 = if (args.strict) strict_failure_exit else 0;
-        if (args.json) {
-            jsonout.emit(arena, failed, env, false, args.strict, args.shell, code);
-        } else {
+    var body: []u8 = &.{};
+    if (!args.json) {
+        body = envmap.render(arena, outcome.changes, outcome.message, args.shell, announce) catch |err| {
+            const cls = if (err == error.OutOfMemory) "MemoryError" else "ValueError";
+            const detail = envmap.renderErrorText(err);
+            syslog.emitEmergency(arena, sl, env, cls, detail, args.strict);
+            const code: u8 = if (args.strict) strict_failure_exit else 0;
             writeStdout(chain_out, "");
             emergencyWrite(cls, detail);
-        }
-        return code;
-    };
+            return code;
+        };
+    }
     syslog.emitDecision(arena, sl, outcome, env, guard.last_cached, args.strict);
     if (args.shell) if (outcome.message) |m| if (m.len > 0) writeMessage(arena, 2, m);
     if (std.mem.eql(u8, env.get("EESSI_ARCH_GUARD_VERBOSE") orelse empty, "1")) if (outcome.detail) |d| if (d.len > 0) writeMessage(arena, 2, d);
@@ -1430,6 +1531,7 @@ fn realMain(arena: Allocator, argv0: []const u8, argv: []const []const u8, envp:
 /// prints the skip line where that run would print it.
 pub fn main(init: std.process.Init.Minimal) u8 {
     emergency_announce = localTaskZero(init.environ.block.slice.ptr);
+    emergency_was = rawEnvWas(init.environ.block.slice.ptr);
     var arena_state = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     const arena = arena_state.allocator();
     const all = init.args.toSlice(arena) catch emergencyExit("MemoryError", "out of memory");
@@ -1438,6 +1540,8 @@ pub fn main(init: std.process.Init.Minimal) u8 {
     for (argv, 0..) |*a, i| a.* = all[i + 1];
     emergency_shell = contains(argv, "--shell") or contains(argv, "--dry-run");
     emergency_strict = contains(argv, "--strict");
+    emergency_json_shell = contains(argv, "--shell");
+    emergency_json = contains(argv, "--json") and !contains(argv, "--dry-run");
     installCrashHandlers();
     return realMain(arena, argv0, argv, init.environ.block.slice.ptr);
 }
@@ -1484,6 +1588,13 @@ test "submitTarget requires agreeing site mappings" {
     try std.testing.expectEqualStrings("x86_64/amd/zen4", submitTarget(a, settings, "cpu", "zen4", &why).?);
     try std.testing.expect(submitTarget(a, settings, "cpu", "zen2", &why) == null);
     try std.testing.expect(std.mem.indexOf(u8, why, "different targets") != null);
+    try std.testing.expect(submitTarget(a, settings, "cp", "", &why) == null);
+    try std.testing.expectEqualStrings("site config has no submit_target.partition.cp mapping; nearest known partition is submit_target.partition.cpu", why);
+    try std.testing.expect(submitTarget(a, settings, "cpu", "zen", &why) == null);
+    try std.testing.expectEqualStrings("site config has no submit_target.constraint.zen mapping; nearest known constraint is submit_target.constraint.zen4", why);
+    try settings.put(a, "submit_target.partition.blank", "");
+    try std.testing.expect(submitTarget(a, settings, "blank", "", &why) == null);
+    try std.testing.expectEqualStrings("site config has no submit_target.partition.blank mapping; nearest known partition is submit_target.partition.blank", why);
 }
 
 test "renderCheckSubmitJson is schema_version 1" {
@@ -1574,6 +1685,14 @@ test "renderDryRunText and renderDryRunJson format a decision summary" {
     try std.testing.expect(std.mem.endsWith(u8, js, "\n"));
 }
 
+test "oneLineField replaces invalid UTF-8 bytes with question marks" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const a = arena_state.allocator();
+    try std.testing.expectEqualStrings("x86_64/?/zen4", try oneLineField(a, "x86_64/\xff/zen4"));
+    try std.testing.expectEqualStrings("job??1", try oneLineField(a, "job\xe2\x821"));
+}
+
 test "localTaskZero reads the first SLURM_LOCALID" {
     const first = [_:null]?[*:0]const u8{ "PATH=/bin", "SLURM_LOCALID=0", "SLURM_LOCALID=3" };
     const other = [_:null]?[*:0]const u8{"SLURM_LOCALID=3"};
@@ -1618,7 +1737,7 @@ test "parseConfigBytes keeps other keys after a bad value" {
 }
 
 fn expectNormPath(gpa: Allocator, path: []const u8, want: []const u8) !void {
-    const got = try normPath(gpa, path);
+    const got = try fsx.normPath(gpa, path);
     defer gpa.free(got);
     try std.testing.expectEqualStrings(want, got);
 }
@@ -1699,4 +1818,16 @@ test "osErrorText uses standard strerror descriptions for any errno" {
     try std.testing.expectEqualStrings("[Errno 36] File name too long: '/long'", osErrorText(a, .NAMETOOLONG, "/long"));
     try std.testing.expectEqualStrings("[Errno 30] Read-only file system: '/ro'", osErrorText(a, .ROFS, "/ro"));
     try std.testing.expectEqualStrings("[Errno 28] No space left on device: '/full'", osErrorText(a, .NOSPC, "/full"));
+}
+
+test "formatEmergencyLine truncates long detail and replaces invalid UTF-8" {
+    var buf: [2048]u8 = undefined;
+    const long: [520]u8 = @splat('x');
+    const got = formatEmergencyLine(&buf, "OSError", &long);
+    try std.testing.expectEqual(@as(usize, 500), got.len);
+    try std.testing.expect(std.mem.startsWith(u8, got, "eessi-arch-guard: skipped, OSError: "));
+    try std.testing.expect(std.mem.endsWith(u8, got, "..."));
+
+    const bad = formatEmergencyLine(&buf, "OSError", "bad\xff\nmsg\x7f  ");
+    try std.testing.expectEqualStrings("eessi-arch-guard: skipped, OSError: bad? msg", bad);
 }

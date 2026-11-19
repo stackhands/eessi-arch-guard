@@ -15,6 +15,7 @@ The title names the task.
    check-the-client-mount
    check-before-submit
    configure
+   check-the-client-revision
    use-as-a-user-task-prolog
    use-in-a-batch-script
    hand-built-software

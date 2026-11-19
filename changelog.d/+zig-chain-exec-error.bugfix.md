@@ -1,0 +1,1 @@
+Pass `.exec_error = true` and format `OSError` errno details in `zig/main.zig` when executing `--chain` or configured `chain` fails `execve`, so the guard takes the Python skip path instead of exiting `127`.

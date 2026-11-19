@@ -6,17 +6,10 @@ const text = @import("text.zig");
 const envmap = @import("envmap.zig");
 const guard = @import("guard.zig");
 
-const sys = common.sys;
 const Allocator = std.mem.Allocator;
-const Io = std.Io;
-const net = Io.net;
 
-pub const Scheme = enum {
-    rfc5424_unix,
-    journal_unix,
-    rfc5424_udp,
-    rfc5424_tcp,
-};
+/// The transports, as zig-common names them.
+pub const Scheme = common.syslog.Scheme;
 
 pub const Target = struct {
     scheme: Scheme,
@@ -32,17 +25,14 @@ pub const Resolved = struct {
     target: ?Target = null,
     log_all: bool = false,
     pen: []const u8 = default_pen,
-    warning: ?[]const u8 = null,
+    target_warning: ?[]const u8 = null,
+    pen_warning: ?[]const u8 = null,
 };
 
 const Param = struct {
     key: []const u8,
     value: []const u8,
 };
-
-fn trimWs(s: []const u8) []const u8 {
-    return std.mem.trim(u8, s, " \t\n\r\x0b\x0c");
-}
 
 fn splitHostPort(addr: []const u8) ?struct { host: []const u8, port: u16 } {
     if (addr.len == 0) return null;
@@ -66,7 +56,7 @@ fn splitHostPort(addr: []const u8) ?struct { host: []const u8, port: u16 } {
 }
 
 pub fn parseTarget(raw: []const u8) ?Target {
-    const s = trimWs(raw);
+    const s = text.pyStrip(raw);
     if (s.len == 0 or text.hasLineBreakOrNul(s)) return null;
     if (std.mem.eql(u8, s, "syslog")) return .{ .scheme = .rfc5424_unix, .host_or_path = "/dev/log" };
     if (std.mem.eql(u8, s, "journald") or std.mem.eql(u8, s, "journal"))
@@ -94,7 +84,7 @@ pub fn parseTarget(raw: []const u8) ?Target {
 }
 
 pub fn parsePen(arena: Allocator, raw: []const u8) ?[]const u8 {
-    const s = trimWs(raw);
+    const s = text.pyStrip(raw);
     if (s.len == 0 or s.len > 20) return null;
     for (s) |c| if (c < '0' or c > '9') return null;
     const val = std.fmt.parseInt(u64, s, 10) catch return null;
@@ -151,7 +141,7 @@ pub fn resolve(
         }
     };
 
-    var warnings: std.ArrayList([]const u8) = .empty;
+    var pen_warnings: std.ArrayList([]const u8) = .empty;
     var pen: []const u8 = default_pen;
     if (settings) |st| if (st.get("syslog_pen")) |cv| if (cv.len > 0) {
         if (parsePen(arena, cv)) |p| {
@@ -159,7 +149,7 @@ pub fn resolve(
         } else {
             const shown = text.oneLine(arena, cv, 64) catch cv;
             if (arena.print("eessi-arch-guard: config syslog_pen is not a positive integer: {s}", .{shown}) catch null) |w| {
-                warnings.append(arena, w) catch {};
+                pen_warnings.append(arena, w) catch {};
             }
         }
     };
@@ -169,24 +159,29 @@ pub fn resolve(
         } else {
             const shown = text.oneLine(arena, ev, 64) catch ev;
             if (arena.print("eessi-arch-guard: EESSI_ARCH_GUARD_SYSLOG_PEN is not a positive integer: {s}", .{shown}) catch null) |w| {
-                warnings.append(arena, w) catch {};
+                pen_warnings.append(arena, w) catch {};
             }
         }
     };
 
     var target: ?Target = null;
+    var target_warning: ?[]const u8 = null;
     if (raw) |spec| if (spec.len > 0) {
         target = parseTarget(spec) orelse blk: {
             const shown = text.oneLine(arena, spec, 120) catch spec;
-            if (arena.print("eessi-arch-guard: {s} is not a valid syslog target: {s}", .{ source, shown }) catch null) |w| {
-                warnings.append(arena, w) catch {};
-            }
+            target_warning = arena.print("eessi-arch-guard: {s} is not a valid syslog target: {s}", .{ source, shown }) catch null;
             break :blk null;
         };
     };
 
-    const warning: ?[]const u8 = if (warnings.items.len == 0) null else (std.mem.join(arena, " ", warnings.items) catch null);
-    return .{ .target = target, .log_all = log_all, .pen = pen, .warning = warning };
+    const pen_warning: ?[]const u8 = if (pen_warnings.items.len == 0) null else (std.mem.join(arena, " ", pen_warnings.items) catch null);
+    return .{
+        .target = target,
+        .log_all = log_all,
+        .pen = pen,
+        .target_warning = target_warning,
+        .pen_warning = pen_warning,
+    };
 }
 
 fn sdEscape(arena: Allocator, value: []const u8) Allocator.Error![]u8 {
@@ -416,179 +411,6 @@ fn formatJournald(arena: Allocator, ev: BuiltEvent) Allocator.Error![]u8 {
     return out.items;
 }
 
-fn setSockTimeout(fd: linux.fd_t) void {
-    const tv: linux.timeval = .{ .sec = 0, .usec = 500_000 };
-    _ = linux.setsockopt(fd, linux.SOL.SOCKET, linux.SO.SNDTIMEO, std.mem.asBytes(&tv), @sizeOf(linux.timeval));
-    _ = linux.setsockopt(fd, linux.SOL.SOCKET, linux.SO.RCVTIMEO, std.mem.asBytes(&tv), @sizeOf(linux.timeval));
-}
-
-fn sendAllFd(fd: linux.fd_t, data: []const u8) bool {
-    var off: usize = 0;
-    while (off < data.len) {
-        const rc = linux.sendto(fd, data[off..].ptr, data.len - off, 0, null, 0);
-        switch (linux.errno(rc)) {
-            .SUCCESS => {
-                if (rc == 0) return false;
-                off += rc;
-            },
-            .INTR => continue,
-            else => return false,
-        }
-    }
-    return true;
-}
-
-fn sendUnixOnce(path: []const u8, sock_type: u32, payload: []const u8) bool {
-    var addr: linux.sockaddr.un = .{ .family = linux.AF.UNIX, .path = @splat(0) };
-    if (path.len >= addr.path.len) return false;
-    @memcpy(addr.path[0..path.len], path);
-    const addr_len: linux.socklen_t = @intCast(@offsetOf(linux.sockaddr.un, "path") + path.len + 1);
-    const s_rc = linux.socket(linux.AF.UNIX, sock_type | linux.SOCK.CLOEXEC, 0);
-    if (linux.errno(s_rc) != .SUCCESS) return false;
-    const fd: linux.fd_t = @intCast(s_rc);
-    defer sys.close(fd);
-    setSockTimeout(fd);
-    while (true) {
-        const c_rc = linux.connect(fd, @ptrCast(&addr), addr_len);
-        switch (linux.errno(c_rc)) {
-            .SUCCESS => break,
-            .INTR => continue,
-            else => return false,
-        }
-    }
-    return sendAllFd(fd, payload);
-}
-
-fn sendUnix(arena: Allocator, path: []const u8, payload: []const u8, stream_nl: bool) void {
-    if (sendUnixOnce(path, linux.SOCK.DGRAM, payload)) return;
-    if (!stream_nl) return;
-    const framed = arena.print("{s}\n", .{payload}) catch return;
-    _ = sendUnixOnce(path, linux.SOCK.STREAM, framed);
-}
-
-fn sendUdpIp(ip: net.IpAddress, payload: []const u8) bool {
-    switch (ip) {
-        .ip4 => |ip4| {
-            const s_rc = linux.socket(linux.AF.INET, linux.SOCK.DGRAM | linux.SOCK.CLOEXEC, linux.IPPROTO.UDP);
-            if (linux.errno(s_rc) != .SUCCESS) return false;
-            const fd: linux.fd_t = @intCast(s_rc);
-            defer sys.close(fd);
-            setSockTimeout(fd);
-            var sa: linux.sockaddr.in = .{
-                .family = linux.AF.INET,
-                .port = std.mem.nativeToBig(u16, ip4.port),
-                .addr = @bitCast(ip4.bytes),
-            };
-            while (true) {
-                const rc = linux.sendto(fd, payload.ptr, payload.len, 0, @ptrCast(&sa), @sizeOf(linux.sockaddr.in));
-                switch (linux.errno(rc)) {
-                    .SUCCESS => return rc == payload.len,
-                    .INTR => continue,
-                    else => return false,
-                }
-            }
-        },
-        .ip6 => |ip6| {
-            const s_rc = linux.socket(linux.AF.INET6, linux.SOCK.DGRAM | linux.SOCK.CLOEXEC, linux.IPPROTO.UDP);
-            if (linux.errno(s_rc) != .SUCCESS) return false;
-            const fd: linux.fd_t = @intCast(s_rc);
-            defer sys.close(fd);
-            setSockTimeout(fd);
-            var sa: linux.sockaddr.in6 = .{
-                .family = linux.AF.INET6,
-                .port = std.mem.nativeToBig(u16, ip6.port),
-                .flowinfo = 0,
-                .addr = ip6.bytes,
-                .scope_id = ip6.interface.index,
-            };
-            while (true) {
-                const rc = linux.sendto(fd, payload.ptr, payload.len, 0, @ptrCast(&sa), @sizeOf(linux.sockaddr.in6));
-                switch (linux.errno(rc)) {
-                    .SUCCESS => return rc == payload.len,
-                    .INTR => continue,
-                    else => return false,
-                }
-            }
-        },
-    }
-}
-
-fn sendTcpIp(ip: net.IpAddress, frame: []const u8) bool {
-    switch (ip) {
-        .ip4 => |ip4| {
-            const s_rc = linux.socket(linux.AF.INET, linux.SOCK.STREAM | linux.SOCK.CLOEXEC, linux.IPPROTO.TCP);
-            if (linux.errno(s_rc) != .SUCCESS) return false;
-            const fd: linux.fd_t = @intCast(s_rc);
-            defer sys.close(fd);
-            setSockTimeout(fd);
-            var sa: linux.sockaddr.in = .{
-                .family = linux.AF.INET,
-                .port = std.mem.nativeToBig(u16, ip4.port),
-                .addr = @bitCast(ip4.bytes),
-            };
-            while (true) {
-                const rc = linux.connect(fd, @ptrCast(&sa), @sizeOf(linux.sockaddr.in));
-                switch (linux.errno(rc)) {
-                    .SUCCESS => break,
-                    .INTR => continue,
-                    else => return false,
-                }
-            }
-            return sendAllFd(fd, frame);
-        },
-        .ip6 => |ip6| {
-            const s_rc = linux.socket(linux.AF.INET6, linux.SOCK.STREAM | linux.SOCK.CLOEXEC, linux.IPPROTO.TCP);
-            if (linux.errno(s_rc) != .SUCCESS) return false;
-            const fd: linux.fd_t = @intCast(s_rc);
-            defer sys.close(fd);
-            setSockTimeout(fd);
-            var sa: linux.sockaddr.in6 = .{
-                .family = linux.AF.INET6,
-                .port = std.mem.nativeToBig(u16, ip6.port),
-                .flowinfo = 0,
-                .addr = ip6.bytes,
-                .scope_id = ip6.interface.index,
-            };
-            while (true) {
-                const rc = linux.connect(fd, @ptrCast(&sa), @sizeOf(linux.sockaddr.in6));
-                switch (linux.errno(rc)) {
-                    .SUCCESS => break,
-                    .INTR => continue,
-                    else => return false,
-                }
-            }
-            return sendAllFd(fd, frame);
-        },
-    }
-}
-
-fn sendInet(arena: Allocator, host: []const u8, port: u16, tcp: bool, payload: []const u8) void {
-    const data = if (tcp) (arena.print("{d} {s}", .{ payload.len, payload }) catch return) else payload;
-    if (net.IpAddress.parse(host, port)) |ip| {
-        _ = if (tcp) sendTcpIp(ip, data) else sendUdpIp(ip, data);
-        return;
-    } else |_| {}
-    const io = Io.Threaded.global_single_threaded.io();
-    net.HostName.validate(host) catch return;
-    const hn: net.HostName = .{ .bytes = host };
-    var canonical: [net.HostName.max_len]u8 = undefined;
-    var buf: [16]net.HostName.LookupResult = undefined;
-    var q: Io.Queue(net.HostName.LookupResult) = .init(&buf);
-    var fut = io.async(net.HostName.lookup, .{ hn, io, &q, .{
-        .port = port,
-        .canonical_name_buffer = &canonical,
-    } });
-    defer fut.cancel(io) catch {};
-    while (q.getOne(io)) |item| {
-        switch (item) {
-            .address => |ip| {
-                if (if (tcp) sendTcpIp(ip, data) else sendUdpIp(ip, data)) return;
-            },
-            .canonical_name => {},
-        }
-    } else |_| {}
-}
-
 pub fn emitDecision(
     arena: Allocator,
     resolved: Resolved,
@@ -600,24 +422,17 @@ pub fn emitDecision(
     const target = resolved.target orelse return;
     if ((outcome.kind == .skip or outcome.kind == .noop) and !resolved.log_all) return;
     const ev = buildEvent(arena, outcome, env, cached, strict) catch return;
-    switch (target.scheme) {
-        .journal_unix => {
-            const payload = formatJournald(arena, ev) catch return;
-            sendUnix(arena, target.host_or_path, payload, false);
-        },
-        .rfc5424_unix => {
-            const payload = formatRfc5424(arena, ev, resolved.pen) catch return;
-            sendUnix(arena, target.host_or_path, payload, true);
-        },
-        .rfc5424_udp => {
-            const payload = formatRfc5424(arena, ev, resolved.pen) catch return;
-            sendInet(arena, target.host_or_path, target.port, false, payload);
-        },
-        .rfc5424_tcp => {
-            const payload = formatRfc5424(arena, ev, resolved.pen) catch return;
-            sendInet(arena, target.host_or_path, target.port, true, payload);
-        },
-    }
+    const payload = switch (target.scheme) {
+        .journal_unix => formatJournald(arena, ev),
+        else => formatRfc5424(arena, ev, resolved.pen),
+    } catch return;
+    // The transport is zig-common's: a unix syslog socket as a datagram and
+    // then as a stream, UDP, or TCP with octet counting. Best effort.
+    _ = common.syslog.send(arena, .{
+        .scheme = target.scheme,
+        .host_or_path = target.host_or_path,
+        .port = target.port,
+    }, payload);
 }
 
 pub fn emitEmergency(
@@ -631,7 +446,7 @@ pub fn emitEmergency(
     const target = resolved.target orelse return;
     var ch: envmap.Changes = .empty;
     const was = env.get("EESSI_SOFTWARE_SUBDIR") orelse "";
-    const was_side = if (was.len > 0) was else "unrecognized";
+    const was_side = if (was.len > 0 and !text.hasLineBreakOrNul(was)) was else "unrecognized";
     const token = arena.print("{s}->{s}", .{ was_side, kind }) catch "unrecognized->error";
     ch.put(arena, "EESSI_ARCH_GUARD_FAILED", token) catch {};
     const msg = arena.print("eessi-arch-guard: skipped, {s}: {s}", .{ kind, detail }) catch "eessi-arch-guard: skipped";
@@ -711,4 +526,17 @@ test "formatRfc5424 and formatJournald replace invalid UTF-8 bytes" {
     try std.testing.expect(std.unicode.utf8ValidateSlice(jrn));
     try std.testing.expect(std.mem.find(u8, jrn, "SLURM_JOB_ID=77?\n") != null);
     try std.testing.expect(std.mem.find(u8, jrn, "MESSAGE=bad?msg\n") != null);
+}
+
+test "resolve separates target_warning and pen_warning" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const a = arena_state.allocator();
+    var env: envmap.Map = .empty;
+    try env.put(a, "EESSI_ARCH_GUARD_SYSLOG_PEN", "bad-pen");
+    const r = resolve(a, "bad-target", env, null);
+    try std.testing.expect(r.target == null);
+    try std.testing.expectEqualStrings(default_pen, r.pen);
+    try std.testing.expectEqualStrings("eessi-arch-guard: --syslog is not a valid syslog target: bad-target", r.target_warning.?);
+    try std.testing.expectEqualStrings("eessi-arch-guard: EESSI_ARCH_GUARD_SYSLOG_PEN is not a positive integer: bad-pen", r.pen_warning.?);
 }

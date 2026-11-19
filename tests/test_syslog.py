@@ -6,6 +6,7 @@ import json
 import os
 import re
 import socket
+import subprocess
 import sys
 import tempfile
 import threading
@@ -408,6 +409,60 @@ class SyslogTests(unittest.TestCase):
         finally:
             sock_rfc.close()
             sock_jrn.close()
+
+    def test_unicode_whitespace_trimmed_for_syslog_target_and_pen(self):
+        env = self._cpu_env(ZEN4, "zen2", {"EESSI_ARCH_GUARD_SYSLOG_PEN": "\u00a042\u3000"})
+        proc = harness.run_guard(env, ["--dry-run", "--json", "--syslog=\u00a0journald\u3000"])
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertEqual(proc.stderr, "")
+        doc = json.loads(proc.stdout)
+        self.assertEqual(doc["syslog"]["target"], "journal+unix:///run/systemd/journal/socket")
+        self.assertEqual(doc["syslog"]["pen"], "42")
+
+    def test_invalid_syslog_target_and_config_pen_warn_and_keep_defaults(self):
+        env = self._cpu_env(ZEN2, "zen2")
+        cli_proc = harness.run_guard(env, ["--dry-run", "--json", "--syslog=bad://x"])
+        self.assertEqual(cli_proc.returncode, 0, cli_proc.stderr)
+        self.assertEqual(
+            cli_proc.stderr,
+            "eessi-arch-guard: --syslog is not a valid syslog target: bad://x\n",
+        )
+        self.assertIsNone(json.loads(cli_proc.stdout)["syslog"]["target"])
+
+        env_bad = dict(env)
+        env_bad["EESSI_ARCH_GUARD_SYSLOG"] = "bad://y"
+        env_proc = harness.run_guard(env_bad, ["--dry-run", "--json"])
+        self.assertEqual(env_proc.returncode, 0, env_proc.stderr)
+        self.assertEqual(
+            env_proc.stderr,
+            "eessi-arch-guard: EESSI_ARCH_GUARD_SYSLOG is not a valid syslog target: bad://y\n",
+        )
+        self.assertIsNone(json.loads(env_proc.stdout)["syslog"]["target"])
+
+        conf = harness.PROGRAM.with_name("eessi-arch-guard.conf")
+        conf.write_text("syslog_pen = bogus\n", encoding="utf-8")
+        subprocess.check_call(["sudo", "chown", "root:root", str(conf)])
+        subprocess.check_call(["sudo", "chmod", "644", str(conf)])
+        try:
+            pen_proc = harness.run_guard(env, ["--dry-run", "--json"])
+            self.assertEqual(pen_proc.returncode, 0, pen_proc.stderr)
+            self.assertEqual(
+                pen_proc.stderr,
+                "eessi-arch-guard: config syslog_pen is not a positive integer: bogus\n",
+            )
+            self.assertEqual(json.loads(pen_proc.stdout)["syslog"]["pen"], "32473")
+        finally:
+            subprocess.check_call(["sudo", "rm", "-f", str(conf)])
+
+    def test_invalid_syslog_target_and_pen_emit_separate_ordered_warnings(self):
+        env = self._cpu_env(ZEN2, "zen2", {"EESSI_ARCH_GUARD_SYSLOG_PEN": "not-int"})
+        proc = harness.run_guard(env, ["--dry-run", "--json", "--syslog=bad-target"])
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertEqual(
+            proc.stderr,
+            "eessi-arch-guard: --syslog is not a valid syslog target: bad-target\n"
+            "eessi-arch-guard: EESSI_ARCH_GUARD_SYSLOG_PEN is not a positive integer: not-int\n",
+        )
 
 
 if __name__ == "__main__":
