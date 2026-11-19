@@ -4,6 +4,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
@@ -34,6 +35,17 @@ class CgroupV1ProcTree(unittest.TestCase):
         for escaped, expected in cases:
             with self.subTest(escaped=escaped):
                 self.assertEqual(guard._unescape_mountinfo(escaped), expected)
+
+    def test_root_cpuset_walk_does_not_read_relative_to_cwd(self):
+        paths = []
+
+        def read(path):
+            paths.append(path)
+            return "7\n" if path == "cpuset.cpus.effective" else None
+
+        with mock.patch.object(guard, "_read_text", side_effect=read):
+            self.assertIsNone(guard._walk_cpuset("/", "/"))
+        self.assertEqual(paths, ["/cpuset.cpus.effective"])
 
     def test_v1_cpuset_mounted_off_the_default_path(self):
         point = self.root / "cgroup" / "cpuset"

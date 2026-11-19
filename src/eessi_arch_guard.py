@@ -830,6 +830,8 @@ def _walk_cpuset(directory: str, stop: str) -> Optional[frozenset]:
             parsed = parse_cpu_spec(raw.strip())
             if parsed is not None:
                 return parsed
+        if directory == "/":
+            break
         parent = os.path.dirname(directory.rstrip("/"))
         if parent == directory:
             break

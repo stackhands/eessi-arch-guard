@@ -2591,6 +2591,15 @@ test "mountinfo unescape keeps invalid octal literal" {
     );
 }
 
+test "root cpuset walk does not read relative to cwd" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const relative = "cpuset.cpus.effective";
+    try std.testing.expect(writePrivateNew(relative, "7\n", 0o600));
+    defer unlinkPath(relative);
+    try std.testing.expect(walkCpuset(arena_state.allocator(), "/", "/") == null);
+}
+
 test "cgroup v1 cpuset mounted off the default path" {
     var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena_state.deinit();
