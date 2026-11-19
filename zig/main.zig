@@ -873,11 +873,12 @@ fn submitTarget(arena: Allocator, settings: ?Settings, partition: []const u8, co
     }
     const s: Settings = settings orelse .empty;
     const part_key = arena.print("submit_target.partition.{s}", .{partition}) catch oom();
-    const target = s.get(part_key) orelse {
+    const target = s.get(part_key) orelse "";
+    if (target.len == 0) {
         const hint = selectorHint(arena, s, "submit_target.partition.", partition, "partition");
         why.* = arena.print("site config has no {s} mapping{s}", .{ part_key, hint }) catch part_key;
         return null;
-    };
+    }
     if (!std.mem.eql(u8, text.pyStrip(target), target) or hasUpperAscii(target) or !text.safeRelSubdir(target)) {
         const shown = text.pyRepr(arena, target) catch target;
         why.* = arena.print("{s} has invalid target value {s}", .{ part_key, shown }) catch part_key;
@@ -885,11 +886,12 @@ fn submitTarget(arena: Allocator, settings: ?Settings, partition: []const u8, co
     }
     if (constraint.len > 0) {
         const constraint_key = arena.print("submit_target.constraint.{s}", .{constraint}) catch oom();
-        const other = s.get(constraint_key) orelse {
+        const other = s.get(constraint_key) orelse "";
+        if (other.len == 0) {
             const hint = selectorHint(arena, s, "submit_target.constraint.", constraint, "constraint");
             why.* = arena.print("site config has no {s} mapping{s}", .{ constraint_key, hint }) catch constraint_key;
             return null;
-        };
+        }
         if (!std.mem.eql(u8, text.pyStrip(other), other) or hasUpperAscii(other) or !text.safeRelSubdir(other)) {
             const shown = text.pyRepr(arena, other) catch other;
             why.* = arena.print("{s} has invalid target value {s}", .{ constraint_key, shown }) catch constraint_key;
@@ -1597,6 +1599,9 @@ test "submitTarget requires agreeing site mappings" {
     try std.testing.expectEqualStrings("site config has no submit_target.partition.cp mapping; nearest known partition is submit_target.partition.cpu", why);
     try std.testing.expect(submitTarget(a, settings, "cpu", "zen", &why) == null);
     try std.testing.expectEqualStrings("site config has no submit_target.constraint.zen mapping; nearest known constraint is submit_target.constraint.zen4", why);
+    try settings.put(a, "submit_target.partition.blank", "");
+    try std.testing.expect(submitTarget(a, settings, "blank", "", &why) == null);
+    try std.testing.expectEqualStrings("site config has no submit_target.partition.blank mapping; nearest known partition is submit_target.partition.blank", why);
 }
 
 test "renderCheckSubmitJson is schema_version 1" {

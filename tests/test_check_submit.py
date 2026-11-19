@@ -827,6 +827,43 @@ with open({str(env_log)!r}, "w", encoding="utf-8") as handle:
         finally:
             subprocess.check_call(["sudo", "rm", "-f", str(conf)])
 
+    def test_cli_blank_submit_target_mapping_is_treated_as_unmapped(self) -> None:
+        conf = harness.PROGRAM.with_name("eessi-arch-guard.conf")
+        conf.write_text(
+            "submit_target.partition.cpu = \n"
+            "submit_target.partition.gpu = x86_64/amd/zen4\n"
+            "submit_target.constraint.zen4 = \n",
+            encoding="utf-8",
+        )
+        subprocess.check_call(["sudo", "chown", "root:root", str(conf)])
+        subprocess.check_call(["sudo", "chmod", "644", str(conf)])
+        try:
+            env = {"PATH": "/usr/bin:/bin", "HOME": "/tmp", "LANG": "C", "LC_ALL": "C"}
+            p_part = harness.run_guard(
+                env, ["--check-submit", "--partition", "cpu", "--json"]
+            )
+            self.assertEqual(p_part.returncode, 2, p_part.stderr)
+            self.assertIn("site config has no submit_target.partition.cpu mapping", p_part.stderr)
+            self.assertIn(
+                "site config has no submit_target.partition.cpu mapping",
+                json.loads(p_part.stdout)["message"],
+            )
+
+            p_con = harness.run_guard(
+                env,
+                ["--check-submit", "--partition", "gpu", "--constraint", "zen4", "--json"],
+            )
+            self.assertEqual(p_con.returncode, 2, p_con.stderr)
+            self.assertIn(
+                "site config has no submit_target.constraint.zen4 mapping", p_con.stderr
+            )
+            self.assertIn(
+                "site config has no submit_target.constraint.zen4 mapping",
+                json.loads(p_con.stdout)["message"],
+            )
+        finally:
+            subprocess.check_call(["sudo", "rm", "-f", str(conf)])
+
     def test_cli_quotes_invalid_configured_target_like_python(self) -> None:
         conf = harness.PROGRAM.with_name("eessi-arch-guard.conf")
         conf.write_text("submit_target.partition.cpu = X86_64/amd/zen4\n", encoding="utf-8")
