@@ -400,10 +400,14 @@ function M.find_posix_syslog()
 end
 
 local function sanitize_field(value, fallback)
-    if type(value) ~= "string" or not value:match("%S") then
+    if type(value) ~= "string" then
         return fallback
     end
-    local cleaned = value:gsub("[%s%c]+", "_")
+    local trimmed = value:match("^[%s%c]*(.-)[%s%c]*$")
+    if trimmed == nil or trimmed == "" then
+        return fallback
+    end
+    local cleaned = trimmed:gsub("[%s%c]+", "_")
     if cleaned == "" then
         return fallback
     end
