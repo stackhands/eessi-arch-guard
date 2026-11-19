@@ -134,3 +134,120 @@ class SitePackageTests(unittest.TestCase):
             self.assertIn("DEMO_LOADED", proc.stdout)
             self.assertNotIn("ModuleUsageTracking", proc.stdout)
             self.assertTrue(re.search(r"export\s+DEMO_LOADED", proc.stdout), proc.stdout)
+
+    def test_path_parts_handles_duplicate_software_prefix_and_repeated_slashes(self):
+        sp_path = ROOT / "share" / "lmod" / "SitePackage.lua"
+        script = "\n".join(
+            [
+                f'local sp = dofile("{sp_path}")',
+                "local cpu1, accel1 = sp.path_parts("
+                '"/tmp/software/linux/mirror/software/linux/x86_64/amd/zen4/'
+                'modules/all/Foo/1.0.lua")',
+                'assert(cpu1 == "x86_64/amd/zen4", "cpu1=" .. tostring(cpu1))',
+                'assert(accel1 == nil, "accel1=" .. tostring(accel1))',
+                "local cpu2, accel2 = sp.path_parts("
+                '"/cvmfs/software.eessi.io/versions/2026.06/software/linux//'
+                'x86_64/amd/zen4/accel/nvidia/cc90//modules/all/CUDA/12.6.0.lua")',
+                'assert(cpu2 == "x86_64/amd/zen4", "cpu2=" .. tostring(cpu2))',
+                'assert(accel2 == "accel/nvidia/cc90", "accel2=" .. tostring(accel2))',
+            ]
+        )
+        proc = subprocess.run(
+            [LUA, "-e", script],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(proc.returncode, 0, proc.stderr + proc.stdout)
+
+    def test_blank_and_control_module_names_fall_back_to_path_and_sanitize_warnings(self):
+        sp_path = ROOT / "share" / "lmod" / "SitePackage.lua"
+        zen3 = (
+            "/cvmfs/software.eessi.io/versions/2026.06/software/linux/"
+            "x86_64/amd/zen3/modules/all/Foo/1.0.lua"
+        )
+        cc90 = (
+            "/cvmfs/software.eessi.io/versions/2026.06/software/linux/"
+            "x86_64/amd/zen4/accel/nvidia/cc90/modules/all/CUDA/12.6.0.lua"
+        )
+        script = "\n".join(
+            [
+                f'local sp = dofile("{sp_path}")',
+                f'local m1 = sp.warn_mismatch("{zen3}", "x86_64/amd/zen4", "   ")',
+                f'assert(m1 ~= nil and m1:find("{zen3}", 1, true), tostring(m1))',
+                f'assert(sp.warn_mismatch("{zen3}", "   ", "Foo/1.0") == nil)',
+                f'local m2 = sp.warn_mismatch("{zen3}", "x86_64/amd/zen4", "Foo\\n1.0")',
+                'assert(m2 ~= nil and m2:sub(1, #m2 - 1):find("\\n", 1, true) == nil, '
+                'tostring(m2))',
+                f'local a1 = sp.warn_accel("{cc90}", "accel/nvidia/cc80", "\\x01\\x02")',
+                f'assert(a1 ~= nil and a1:find("{cc90}", 1, true), tostring(a1))',
+            ]
+        )
+        proc = subprocess.run(
+            [LUA, "-e", script],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(proc.returncode, 0, proc.stderr + proc.stdout)
+
+    def test_usage_record_rejects_control_only_fields_and_trims_edges(self):
+        sp_path = ROOT / "share" / "lmod" / "SitePackage.lua"
+        script = "\n".join(
+            [
+                f'local sp = dofile("{sp_path}")',
+                'assert(sp.format_usage_record({ modFullName = "\\x01\\x02", fn = "/a/1.lua" })'
+                " == nil)",
+                'assert(sp.format_usage_record({ modFullName = "A/1.0", fn = "\\x7f" }) == nil)',
+                'local rec = sp.format_usage_record({ modFullName = "  A/1.0\\n", '
+                'fn = "\\t/opt/site/a b/1.0.lua " })',
+                'assert(rec ~= nil and rec:find("module=A/1.0 ", 1, true), tostring(rec))',
+                'assert(rec:find("path=/opt/site/a_b/1.0.lua ", 1, true), tostring(rec))',
+                'assert(rec:find("user=unknown ", 1, true), tostring(rec))',
+                'assert(rec:find("jobid=nil ", 1, true), tostring(rec))',
+            ]
+        )
+        proc = subprocess.run(
+            [LUA, "-e", script],
+            env={
+                "PATH": "/usr/bin:/bin",
+                "USER": "\x01",
+                "HOSTNAME": "node01",
+                "SLURM_JOB_ID": "\x1b",
+            },
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(proc.returncode, 0, proc.stderr + proc.stdout)
+
+    def test_missing_logger_on_path_returns_false_from_emit_syslog_and_zero_flushed(self):
+        sp_path = ROOT / "share" / "lmod" / "SitePackage.lua"
+        mod_path = (
+            "/cvmfs/software.eessi.io/versions/2026.06/software/linux/"
+            "x86_64/amd/zen4/modules/all/GROMACS/2024.1.lua"
+        )
+        script = "\n".join(
+            [
+                f'local sp = dofile("{sp_path}")',
+                "sp.find_posix_syslog = function() return nil end",
+                'assert(sp.emit_syslog({ "user=alice module=A/1 path=/a host=h time=1.0" })'
+                " == false)",
+                f'sp.load_hook({{ fn = "{mod_path}", modFullName = "GROMACS/2024.1" }})',
+                "assert(sp.flush_usage_records() == 0)",
+                "assert(#sp.usage_records == 0)",
+            ]
+        )
+        proc = subprocess.run(
+            [LUA, "-e", script],
+            env={
+                "PATH": "/nonexistent",
+                "USER": "alice",
+                "HOSTNAME": "node01",
+                "EESSI_USAGE_TRACKING": "1",
+            },
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(proc.returncode, 0, proc.stderr + proc.stdout)

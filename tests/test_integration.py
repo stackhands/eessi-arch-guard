@@ -634,12 +634,53 @@ class IntegrationTests(unittest.TestCase):
                 f"[Errno 8] Exec format error: {empty_exec!r}\n",
             ),
         )
+        for segs in (["a" * 150] * 4, ["b" * 200] * 5):
+            long_path = os.path.join(self.site.root, *segs[:-1], "chain.sh")
+            os.makedirs(os.path.dirname(long_path), exist_ok=True)
+            shutil.copy2(bad_shebang, long_path)
+            message = (
+                f"eessi-arch-guard: skipped, FileNotFoundError: "
+                f"[Errno 2] No such file or directory: {long_path!r}"
+            )
+            cases += ((long_path, [], 0, f"print {guard.one_line(message)}\n"),)
         for path, extra, expected_code, expected_out in cases:
             with self.subTest(path=path, extra=extra):
                 proc = harness.run_guard(env, ["--chain", path, *extra])
                 self.assertEqual(proc.returncode, expected_code, proc.stderr)
                 self.assertEqual(proc.stdout, expected_out)
                 self.assertEqual(proc.stderr, "")
+
+    def test_json_decision_with_oversized_subdir_matches_python(self):
+        long_was = "a" * 5000
+        env = {"PATH": "/usr/bin:/bin", "LC_ALL": "C", "EESSI_SOFTWARE_SUBDIR": long_was}
+        proc = harness.run_guard(env, ["--json"])
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertEqual(proc.stderr, "")
+        expected_msg = (
+            "eessi-arch-guard: archdetect failed "
+            "(EESSI_PREFIX, EESSI_OS_TYPE, or EESSI_INIT_PREFIX is missing or unsafe); "
+            "environment left as it was"
+        )
+        expected = {
+            "cached": False,
+            "cause": "archdetect-failed",
+            "decision": "failed",
+            "detail": None,
+            "exit": 0,
+            "exit_semantic": "ok",
+            "kind": "decision",
+            "message": expected_msg,
+            "now": None,
+            "reload_needed": True,
+            "schema_version": 1,
+            "shell": False,
+            "strict": False,
+            "was": long_was,
+        }
+        self.assertEqual(
+            proc.stdout,
+            json.dumps(expected, ensure_ascii=True, sort_keys=True) + "\n",
+        )
 
     def test_bad_config_byte_keeps_the_other_keys(self):
         conf = harness.PROGRAM.with_name("eessi-arch-guard.conf")
@@ -1359,6 +1400,47 @@ class IntegrationTests(unittest.TestCase):
         self.assertEqual(proc.returncode, 0, proc.stderr)
         self.assertEqual(proc.stdout, "", proc.stdout)
 
+    def test_slurm_cpu_bind_reloads_using_scoped_cpuinfo(self):
+        # Processor 0 is Sapphire Rapids. Processor 1 is Haswell. A task
+        # bound to cpu[1] must reload to Haswell without Lmod reading
+        # processor 0 from the unscoped cpuinfo.
+        spr = "x86_64/intel/sapphirerapids"
+        haswell = "x86_64/intel/haswell"
+        self.site.add_cpu(spr)
+        self.site.add_cpu(haswell)
+        self.site.add_cpu(ZEN4)
+        self.site.add_module(spr, "R/4.4.2")
+        self.site.add_module(haswell, "R/4.4.2")
+        self.site.add_module(ZEN4, "R/4.4.2")
+        cpuinfo = "\n".join(
+            (
+                "processor : 0",
+                "vendor_id : GenuineIntel",
+                "cpu family : 6",
+                "model : 143",
+                "model name : Intel Sapphire Rapids",
+                "flags : avx2 fma avx512f avx512bw avx512cd avx512dq avx512vl "
+                "avx512_bf16 amx_tile waitpkg",
+                "",
+                "processor : 1",
+                "vendor_id : GenuineIntel",
+                "cpu family : 6",
+                "model : 60",
+                "model name : Intel Haswell",
+                "flags : avx2 fma",
+                "",
+            )
+        )
+        with open(self.site.cpuinfo, "w", encoding="ascii") as handle:
+            handle.write(cpuinfo)
+        env = harness.base_env(self.site, ZEN4, ["R/4.4.2"], gpu="none")
+        env["SLURM_CPU_BIND_LIST"] = "cpu[1]"
+        proc = harness.run_guard(env)
+        changes, _printed = _assert_prolog(proc)
+        self.assertEqual(changes["EESSI_SOFTWARE_SUBDIR"], haswell)
+        self.assertNotIn("EESSI_PROC_CPUINFO", changes)
+        self.assertNotIn("EESSI_ARCH_GUARD_FAILED", changes)
+
     def test_malformed_trailing_comma_cpu_bind_is_ignored(self):
         spr = "x86_64/intel/sapphirerapids"
         haswell = "x86_64/intel/haswell"
@@ -1389,6 +1471,40 @@ class IntegrationTests(unittest.TestCase):
             handle.write(cpuinfo)
         env = harness.base_env(self.site, haswell, ["R/4.4.2"], gpu="none")
         env["SLURM_CPU_BIND_LIST"] = "1,"
+        proc = harness.run_guard(env)
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertEqual(proc.stdout, "", proc.stdout)
+
+    def test_malformed_space_separated_cpu_bind_is_ignored(self):
+        spr = "x86_64/intel/sapphirerapids"
+        haswell = "x86_64/intel/haswell"
+        self.site.add_cpu(spr)
+        self.site.add_cpu(haswell)
+        self.site.add_module(spr, "R/4.4.2")
+        self.site.add_module(haswell, "R/4.4.2")
+        cpuinfo = "\n".join(
+            (
+                "processor : 0",
+                "vendor_id : GenuineIntel",
+                "cpu family : 6",
+                "model : 60",
+                "model name : Intel Haswell",
+                "flags : avx2 fma",
+                "",
+                "processor : 1",
+                "vendor_id : GenuineIntel",
+                "cpu family : 6",
+                "model : 143",
+                "model name : Intel Sapphire Rapids",
+                "flags : avx2 fma avx512f avx512bw avx512cd avx512dq avx512vl "
+                "avx512_bf16 amx_tile waitpkg",
+                "",
+            )
+        )
+        with open(self.site.cpuinfo, "w", encoding="ascii") as handle:
+            handle.write(cpuinfo)
+        env = harness.base_env(self.site, haswell, ["R/4.4.2"], gpu="none")
+        env["SLURM_CPU_BIND_LIST"] = "0 1"
         proc = harness.run_guard(env)
         self.assertEqual(proc.returncode, 0, proc.stderr)
         self.assertEqual(proc.stdout, "", proc.stdout)
@@ -1876,6 +1992,21 @@ class IntegrationTests(unittest.TestCase):
         self.assertEqual(doc["config"]["status"], "ignored")
         self.assertEqual(doc["config"]["path"], conf)
         self.assertIn("is a symlink and is ignored", doc["config"]["warning"])
+
+    def test_dry_run_text_replaces_invalid_utf8_bytes(self):
+        env = {
+            "PATH": "/usr/bin:/bin",
+            "LC_ALL": "C",
+            "EESSI_SOFTWARE_SUBDIR": os.fsdecode(b"x86_64/\xff/zen4"),
+            "SLURM_JOB_ID": os.fsdecode(b"job\xff1"),
+        }
+        proc = harness.run_guard(env, ["--dry-run"])
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertEqual(proc.stderr, "")
+        lines = proc.stdout.splitlines()
+        self.assertIn("job: job?1", lines)
+        self.assertIn("was: x86_64/?/zen4", lines)
+        self.assertIn("marker: x86_64/?/zen4->archdetect-failed", lines)
 
     def test_sigint_during_chain_matches_python_skip_path(self):
         ready = os.path.join(self.site.root, "chain-ready")

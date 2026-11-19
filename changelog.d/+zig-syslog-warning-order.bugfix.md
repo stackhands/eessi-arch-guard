@@ -1,0 +1,1 @@
+- Emit invalid syslog target and PEN warnings as separate ordered lines in `syslog.resolve` and `realMain`, matching Python `resolve_syslog` and `resolve_syslog_pen`.

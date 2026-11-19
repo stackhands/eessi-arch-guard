@@ -782,6 +782,107 @@ with open({str(env_log)!r}, "w", encoding="utf-8") as handle:
             finally:
                 subprocess.check_call(["sudo", "rm", "-f", str(conf)])
 
+    def test_cli_unmapped_partition_and_constraint_report_nearest_hint(self) -> None:
+        conf = harness.PROGRAM.with_name("eessi-arch-guard.conf")
+        conf.write_text(
+            "submit_target.partition.cpu_zen2 = x86_64/amd/zen2\n"
+            "submit_target.partition.cpu_zen4 = x86_64/amd/zen4\n"
+            "submit_target.constraint.zen2 = x86_64/amd/zen2\n"
+            "submit_target.constraint.zen4 = x86_64/amd/zen4\n",
+            encoding="utf-8",
+        )
+        subprocess.check_call(["sudo", "chown", "root:root", str(conf)])
+        subprocess.check_call(["sudo", "chmod", "644", str(conf)])
+        try:
+            env = {"PATH": "/usr/bin:/bin", "HOME": "/tmp", "LANG": "C", "LC_ALL": "C"}
+            p_part = harness.run_guard(
+                env, ["--check-submit", "--partition", "cpu_z", "--json"]
+            )
+            self.assertEqual(p_part.returncode, 2, p_part.stderr)
+            want_part = (
+                "site config has no submit_target.partition.cpu_z mapping; "
+                "nearest known partition is submit_target.partition.cpu_zen4"
+            )
+            self.assertEqual(p_part.stderr, f"eessi-arch-guard: check-submit: {want_part}\n")
+            self.assertEqual(json.loads(p_part.stdout)["message"], want_part)
+
+            p_con = harness.run_guard(
+                env,
+                ["--check-submit", "--partition", "cpu_zen4", "--constraint", "zen", "--json"],
+            )
+            self.assertEqual(p_con.returncode, 2, p_con.stderr)
+            want_con = (
+                "site config has no submit_target.constraint.zen mapping; "
+                "nearest known constraint is submit_target.constraint.zen4"
+            )
+            self.assertEqual(p_con.stderr, f"eessi-arch-guard: check-submit: {want_con}\n")
+            self.assertEqual(json.loads(p_con.stdout)["message"], want_con)
+
+            p_none = harness.run_guard(
+                env, ["--check-submit", "--partition", "gpu", "--json"]
+            )
+            self.assertEqual(p_none.returncode, 2, p_none.stderr)
+            want_none = "site config has no submit_target.partition.gpu mapping"
+            self.assertEqual(p_none.stderr, f"eessi-arch-guard: check-submit: {want_none}\n")
+        finally:
+            subprocess.check_call(["sudo", "rm", "-f", str(conf)])
+
+    def test_cli_blank_submit_target_mapping_is_treated_as_unmapped(self) -> None:
+        conf = harness.PROGRAM.with_name("eessi-arch-guard.conf")
+        conf.write_text(
+            "submit_target.partition.cpu = \n"
+            "submit_target.partition.gpu = x86_64/amd/zen4\n"
+            "submit_target.constraint.zen4 = \n",
+            encoding="utf-8",
+        )
+        subprocess.check_call(["sudo", "chown", "root:root", str(conf)])
+        subprocess.check_call(["sudo", "chmod", "644", str(conf)])
+        try:
+            env = {"PATH": "/usr/bin:/bin", "HOME": "/tmp", "LANG": "C", "LC_ALL": "C"}
+            p_part = harness.run_guard(
+                env, ["--check-submit", "--partition", "cpu", "--json"]
+            )
+            self.assertEqual(p_part.returncode, 2, p_part.stderr)
+            self.assertIn("site config has no submit_target.partition.cpu mapping", p_part.stderr)
+            self.assertIn(
+                "site config has no submit_target.partition.cpu mapping",
+                json.loads(p_part.stdout)["message"],
+            )
+
+            p_con = harness.run_guard(
+                env,
+                ["--check-submit", "--partition", "gpu", "--constraint", "zen4", "--json"],
+            )
+            self.assertEqual(p_con.returncode, 2, p_con.stderr)
+            self.assertIn(
+                "site config has no submit_target.constraint.zen4 mapping", p_con.stderr
+            )
+            self.assertIn(
+                "site config has no submit_target.constraint.zen4 mapping",
+                json.loads(p_con.stdout)["message"],
+            )
+        finally:
+            subprocess.check_call(["sudo", "rm", "-f", str(conf)])
+
+    def test_cli_quotes_invalid_configured_target_like_python(self) -> None:
+        conf = harness.PROGRAM.with_name("eessi-arch-guard.conf")
+        conf.write_text("submit_target.partition.cpu = X86_64/amd/zen4\n", encoding="utf-8")
+        subprocess.check_call(["sudo", "chown", "root:root", str(conf)])
+        subprocess.check_call(["sudo", "chmod", "644", str(conf)])
+        try:
+            proc = harness.run_guard(
+                {"PATH": "/usr/bin:/bin", "HOME": "/tmp", "LANG": "C", "LC_ALL": "C"},
+                ["--check-submit", "--partition", "cpu", "--json"],
+            )
+            self.assertEqual(proc.returncode, 2, proc.stderr)
+            expected = "submit_target.partition.cpu has invalid target value 'X86_64/amd/zen4'"
+            self.assertEqual(proc.stderr, f"eessi-arch-guard: check-submit: {expected}\n")
+            payload = json.loads(proc.stdout)
+            self.assertEqual(payload["message"], expected)
+            self.assertEqual(payload["exit_semantic"], "invalid")
+        finally:
+            subprocess.check_call(["sudo", "rm", "-f", str(conf)])
+
 
 class CheckSubmitEmptyTargetTests(unittest.TestCase):
     def test_bare_or_empty_target_is_refused_as_target_mode(self) -> None:
@@ -803,6 +904,48 @@ class CheckSubmitEmptyTargetTests(unittest.TestCase):
                 )
                 self.assertEqual(proc.returncode, 2, proc.stdout + proc.stderr)
                 self.assertIn(expected, proc.stderr)
+
+    def test_cli_eb_stack_lookup_matches_shutil_which_when_path_unset(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            prefix = root / "prefix"
+            mod_dir = prefix / "software" / "linux" / ZEN4 / "modules" / "all" / "R"
+            mod_dir.mkdir(parents=True)
+            (mod_dir / "4.4.2.lua").write_text("--\n", encoding="utf-8")
+            base_env = {
+                "HOME": str(root / "home"),
+                "LANG": "C",
+                "LC_ALL": "C",
+                "EESSI_PREFIX": str(prefix),
+                "EESSI_OS_TYPE": "linux",
+                "LOADEDMODULES": "EESSI/2025.06:R/4.4.2",
+            }
+            for label, extra_path, eb_arg, expected_code in (
+                ("unset", None, "true", 0),
+                ("colon", ":/bin:/usr/bin", "true", 0),
+                ("empty", "", "true", 2),
+                ("nonexec-slash", "/usr/bin:/bin", "./README.md", 2),
+            ):
+                with self.subTest(label=label):
+                    env = dict(base_env)
+                    if extra_path is not None:
+                        env["PATH"] = extra_path
+                    proc = harness.run_guard(
+                        env,
+                        ["--check-submit", "--json", "--target", ZEN4, "--eb-stack", eb_arg],
+                    )
+                    self.assertEqual(proc.returncode, expected_code, proc.stderr)
+                    payload = json.loads(proc.stdout)
+                    self.assertEqual(payload["exit"], expected_code)
+                    if expected_code == 0:
+                        self.assertEqual(proc.stderr, "")
+                        self.assertEqual(payload["exit_semantic"], "ok")
+                    else:
+                        expected_msg = f"eb-stack is not executable: {eb_arg}"
+                        self.assertEqual(
+                            proc.stderr, f"eessi-arch-guard: check-submit: {expected_msg}\n"
+                        )
+                        self.assertEqual(payload["message"], expected_msg)
 
 
 class CheckSubmitZigParityTests(unittest.TestCase):
@@ -921,6 +1064,45 @@ class CheckSubmitZigParityTests(unittest.TestCase):
             self.assertIn("could not run eb-stack:", proc_exec.stderr)
             self.assertIn("Exec format error", proc_exec.stderr)
             self.assertIn("could not run eb-stack:", json.loads(proc_exec.stdout)["message"])
+
+    def test_empty_eb_stack_flag_falls_back_to_default(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            prefix = root / "eessi"
+            mod_dir = prefix / "software" / "linux" / ZEN4 / "modules" / "all" / "R"
+            mod_dir.mkdir(parents=True)
+            (mod_dir / "4.4.2.lua").write_text("-- R\n", encoding="utf-8")
+            bindir = root / "bin"
+            bindir.mkdir()
+            _fake_eb_stack(bindir)
+            log_path = root / "eb-stack.log"
+
+            env_ok = {
+                "PATH": f"{bindir}:/usr/bin:/bin",
+                "LC_ALL": "C",
+                "TMPDIR": tmp,
+                "EESSI_PREFIX": str(prefix),
+                "EESSI_OS_TYPE": "linux",
+                "EESSI_TEST_EB_STACK_LOG": str(log_path),
+                "LOADEDMODULES": "EESSI/2025.06:R/4.4.2",
+            }
+            for extra in (["--eb-stack="], ["--eb-stack", "--json"]):
+                with self.subTest(extra=extra):
+                    proc = harness.run_guard(
+                        env_ok, ["--check-submit", "--target", ZEN4, *extra]
+                    )
+                    self.assertEqual(proc.returncode, 0, proc.stderr)
+                    self.assertEqual(proc.stderr, "")
+
+            env_missing = dict(env_ok, PATH="/usr/bin:/bin")
+            proc_fail = harness.run_guard(
+                env_missing, ["--check-submit", "--target", ZEN4, "--eb-stack", ""]
+            )
+            self.assertEqual(proc_fail.returncode, 2, proc_fail.stderr)
+            self.assertEqual(
+                proc_fail.stderr,
+                "eessi-arch-guard: check-submit: eb-stack is not executable: eb-stack\n",
+            )
 
 
 if __name__ == "__main__":

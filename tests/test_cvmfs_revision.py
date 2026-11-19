@@ -3,10 +3,15 @@
 from __future__ import annotations
 
 import importlib.util
+import os
+import sys
+import tempfile
 import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import harness  # noqa: E402
 
 
 def load():
@@ -45,6 +50,63 @@ class RevisionTests(unittest.TestCase):
         page = (ROOT / "docs" / "orgmode" / "howto" / "check-the-client-revision.org").read_text()
         self.assertIn("cvmfsrev.py", page)
         self.assertIn("--min", page)
+
+    def test_stat_rejects_non_regular_and_dangling_stat(self):
+        script = str(ROOT / "share" / "cvmfsrev.py")
+        with tempfile.TemporaryDirectory(prefix="eessi-cvmfsrev-") as tmp:
+            root = Path(tmp)
+            fifo = root / "stat.fifo"
+            os.mkfifo(fifo, 0o600)
+            sdir = root / "stat.dir"
+            sdir.mkdir()
+            dangle = root / "stat.dangle"
+            dangle.symlink_to(root / "absent.txt")
+            for path in (fifo, sdir, dangle):
+                with self.subTest(path=path.name):
+                    proc = harness.run_with_timeout(
+                        [sys.executable, script, "--stat", str(path)],
+                        timeout=1.5,
+                    )
+                    self.assertEqual(proc.returncode, 2, proc.stderr)
+                    self.assertEqual(proc.stdout, "")
+                    self.assertIn("cvmfsrev.py: cannot read ", proc.stderr)
+
+    def test_stat_rejects_oversized_file(self):
+        script = str(ROOT / "share" / "cvmfsrev.py")
+        with tempfile.TemporaryDirectory(prefix="eessi-cvmfsrev-") as tmp:
+            big = Path(tmp) / "stat.big"
+            big.write_bytes(b"revision: 42\n" + b"x" * ((1 << 20) + 64))
+            proc = harness.run_with_timeout(
+                [sys.executable, script, "--stat", str(big)],
+                timeout=1.5,
+            )
+            self.assertEqual(proc.returncode, 2, proc.stderr)
+            self.assertEqual(proc.stdout, "")
+            self.assertIn("file too large", proc.stderr)
+
+    def test_stat_decodes_non_utf8_bytes_with_replacement(self):
+        script = str(ROOT / "share" / "cvmfsrev.py")
+        with tempfile.TemporaryDirectory(prefix="eessi-cvmfsrev-") as tmp:
+            stat_file = Path(tmp) / "stat.bin"
+            stat_file.write_bytes(b"Comment: \xff\xfe\nRevision: 42\n")
+            proc = harness.run_with_timeout(
+                [sys.executable, script, "--stat", str(stat_file)],
+                timeout=1.5,
+            )
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            self.assertEqual(proc.stdout.strip(), "revision 42")
+
+    def test_stat_strips_leading_utf8_bom(self):
+        script = str(ROOT / "share" / "cvmfsrev.py")
+        with tempfile.TemporaryDirectory(prefix="eessi-cvmfsrev-") as tmp:
+            stat_file = Path(tmp) / "stat.bom"
+            stat_file.write_bytes(b"\xef\xbb\xbfRevision: 42\n")
+            proc = harness.run_with_timeout(
+                [sys.executable, script, "--stat", str(stat_file)],
+                timeout=1.5,
+            )
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            self.assertEqual(proc.stdout.strip(), "revision 42")
 
 
 if __name__ == "__main__":

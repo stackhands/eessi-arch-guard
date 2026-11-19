@@ -78,23 +78,26 @@ var emergency_json = false;
 var emergency_json_shell = false;
 var emergency_was: []const u8 = "unrecognized";
 
+fn formatEmergencyLine(out: []u8, kind: []const u8, detail: []const u8) []const u8 {
+    return text.formatBoundedParts(
+        out,
+        &.{ "eessi-arch-guard: skipped, ", kind, ": ", detail },
+        500,
+        true,
+        text.prolog_line_max - "print ".len - 1,
+    );
+}
+
 fn emergencyWrite(kind: []const u8, detail: []const u8) void {
-    var buf: [1024]u8 = undefined;
-    const msg = std.mem.print(&buf, "eessi-arch-guard: skipped, {s}: {s}", .{ kind, detail }) catch "eessi-arch-guard: skipped";
     // No allocation here: a crash may have come from the allocator.
-    var clean: [1024]u8 = undefined;
-    var n: usize = 0;
-    for (msg) |ch| {
-        clean[n] = if (ch < 32 or ch == 127) ' ' else ch;
-        n += 1;
-    }
-    while (n > 0 and clean[n - 1] == ' ') n -= 1;
+    var buf: [2048]u8 = undefined;
+    const line = formatEmergencyLine(&buf, kind, detail);
     if (emergency_shell) {
-        cli.put(2, clean[0..n]);
+        cli.put(2, line);
         cli.put(2, "\n");
     } else if (emergency_announce) {
         cli.put(1, "print ");
-        cli.put(1, clean[0..n]);
+        cli.put(1, line);
         cli.put(1, "\n");
     }
 }
@@ -697,7 +700,8 @@ fn renderDryRunJson(arena: Allocator, r: DryRunReport) Allocator.Error![]u8 {
 }
 
 fn oneLineField(arena: Allocator, s: []const u8) Allocator.Error![]const u8 {
-    return text.oneLine(arena, s, 500);
+    var buf: [2048]u8 = undefined;
+    return arena.dupe(u8, text.formatBoundedParts(&buf, &.{s}, 500, true, std.math.maxInt(usize)));
 }
 
 fn renderDryRunText(arena: Allocator, r: DryRunReport) Allocator.Error![]u8 {
@@ -802,6 +806,62 @@ fn hasUpperAscii(s: []const u8) bool {
     return false;
 }
 
+fn charCountStr(s: []const u8) isize {
+    var n: isize = 0;
+    var i: usize = 0;
+    while (i < s.len) : (n += 1) i += text.nextChar(s[i..]).len;
+    return n;
+}
+
+fn charPrefixLen(a: []const u8, b: []const u8) isize {
+    var n: isize = 0;
+    var ia: usize = 0;
+    var ib: usize = 0;
+    while (ia < a.len and ib < b.len) : (n += 1) {
+        const ca = text.nextChar(a[ia..]);
+        const cb = text.nextChar(b[ib..]);
+        if (ca.cp == null and cb.cp == null) {
+            if (a[ia] != b[ib]) break;
+        } else if (ca.cp != cb.cp) {
+            break;
+        }
+        ia += ca.len;
+        ib += cb.len;
+    }
+    return n;
+}
+
+fn selectorHint(arena: Allocator, settings: Settings, prefix: []const u8, value: []const u8, kind: []const u8) []const u8 {
+    var best: ?[]const u8 = null;
+    var best_prefix: isize = -1;
+    var best_delta: isize = -1_000_000_000;
+    const value_chars = charCountStr(value);
+    var it = settings.iterator();
+    while (it.next()) |kv| {
+        const k = kv.key_ptr.*;
+        if (!std.mem.startsWith(u8, k, prefix)) continue;
+        const cand = k[prefix.len..];
+        const cp_len = charPrefixLen(value, cand);
+        if (cp_len == 0) continue;
+        const cand_chars = charCountStr(cand);
+        const diff = cand_chars - value_chars;
+        const length_delta = if (diff < 0) diff else -diff;
+        const better = if (cp_len != best_prefix)
+            cp_len > best_prefix
+        else if (length_delta != best_delta)
+            length_delta > best_delta
+        else
+            best == null or std.mem.order(u8, cand, best.?) == .gt;
+        if (better) {
+            best = cand;
+            best_prefix = cp_len;
+            best_delta = length_delta;
+        }
+    }
+    const chosen = best orelse return "";
+    return arena.print("; nearest known {s} is {s}{s}", .{ kind, prefix, chosen }) catch "";
+}
+
 fn submitTarget(arena: Allocator, settings: ?Settings, partition: []const u8, constraint: []const u8, why: *[]const u8) ?[]const u8 {
     if (!submitSelector(partition)) {
         why.* = "--partition needs one safe partition name";
@@ -813,30 +873,28 @@ fn submitTarget(arena: Allocator, settings: ?Settings, partition: []const u8, co
     }
     const s: Settings = settings orelse .empty;
     const part_key = arena.print("submit_target.partition.{s}", .{partition}) catch oom();
-    const target = s.get(part_key) orelse {
-        why.* = arena.print("site config has no {s} mapping", .{part_key}) catch part_key;
-        return null;
-    };
-    if (!std.mem.eql(u8, text.pyStrip(target), target) or hasUpperAscii(target)) {
-        why.* = arena.print("{s} has invalid target value {s}", .{ part_key, target }) catch part_key;
+    const target = s.get(part_key) orelse "";
+    if (target.len == 0) {
+        const hint = selectorHint(arena, s, "submit_target.partition.", partition, "partition");
+        why.* = arena.print("site config has no {s} mapping{s}", .{ part_key, hint }) catch part_key;
         return null;
     }
-    if (!text.safeRelSubdir(target)) {
-        why.* = arena.print("{s} has invalid target value {s}", .{ part_key, target }) catch part_key;
+    if (!std.mem.eql(u8, text.pyStrip(target), target) or hasUpperAscii(target) or !text.safeRelSubdir(target)) {
+        const shown = text.pyRepr(arena, target) catch target;
+        why.* = arena.print("{s} has invalid target value {s}", .{ part_key, shown }) catch part_key;
         return null;
     }
     if (constraint.len > 0) {
         const constraint_key = arena.print("submit_target.constraint.{s}", .{constraint}) catch oom();
-        const other = s.get(constraint_key) orelse {
-            why.* = arena.print("site config has no {s} mapping", .{constraint_key}) catch constraint_key;
-            return null;
-        };
-        if (!std.mem.eql(u8, text.pyStrip(other), other) or hasUpperAscii(other)) {
-            why.* = arena.print("{s} has invalid target value {s}", .{ constraint_key, other }) catch constraint_key;
+        const other = s.get(constraint_key) orelse "";
+        if (other.len == 0) {
+            const hint = selectorHint(arena, s, "submit_target.constraint.", constraint, "constraint");
+            why.* = arena.print("site config has no {s} mapping{s}", .{ constraint_key, hint }) catch constraint_key;
             return null;
         }
-        if (!text.safeRelSubdir(other)) {
-            why.* = arena.print("{s} has invalid target value {s}", .{ constraint_key, other }) catch constraint_key;
+        if (!std.mem.eql(u8, text.pyStrip(other), other) or hasUpperAscii(other) or !text.safeRelSubdir(other)) {
+            const shown = text.pyRepr(arena, other) catch other;
+            why.* = arena.print("{s} has invalid target value {s}", .{ constraint_key, shown }) catch constraint_key;
             return null;
         }
         if (!std.mem.eql(u8, target, other)) {
@@ -845,18 +903,6 @@ fn submitTarget(arena: Allocator, settings: ?Settings, partition: []const u8, co
         }
     }
     return target;
-}
-
-fn findExecutable(arena: Allocator, env: envmap.Map, selected: []const u8) ?[]const u8 {
-    if (std.mem.findScalar(u8, selected, '/') != null)
-        return if (guard.lmodInvocable(selected)) selected else null;
-    var paths = std.mem.splitScalar(u8, env.get("PATH") orelse "", ':');
-    while (paths.next()) |dir| {
-        if (dir.len == 0) continue;
-        const candidate = std.fs.path.join(arena, &.{ dir, selected }) catch return null;
-        if (guard.lmodInvocable(candidate)) return candidate;
-    }
-    return null;
 }
 
 fn submitWritableDir(p: []const u8) bool {
@@ -1147,8 +1193,19 @@ fn checkSubmit(arena: Allocator, args: Args, env: envmap.Map, settings: ?Setting
         return finishCheckSubmit(arena, args, partition, constraint, 2, null, null, &.{}, reason, &.{line});
     }
     const configured = if (settings) |s| s.get("eb_stack") orelse "" else "";
-    const selected = args.eb_stack orelse (if (configured.len > 0) configured else "eb-stack");
-    const eb_stack = findExecutable(arena, env, selected) orelse {
+    const cli_eb_stack = args.eb_stack orelse "";
+    const selected = if (cli_eb_stack.len > 0)
+        cli_eb_stack
+    else if (configured.len > 0)
+        configured
+    else
+        "eb-stack";
+    const eb_stack = (if (std.mem.findScalar(u8, selected, '/') != null)
+        (if (guard.lmodInvocable(selected)) selected else null)
+    else if (if (env.get("PATH")) |p| p.len == 0 else false)
+        null
+    else
+        guard.resolvePath(arena, selected, env)) orelse {
         const shown = text.oneLine(arena, selected, 200) catch selected;
         const reason = arena.print("eb-stack is not executable: {s}", .{shown}) catch shown;
         const line = arena.print("eessi-arch-guard: check-submit: {s}", .{reason}) catch reason;
@@ -1379,7 +1436,8 @@ fn realMain(arena: Allocator, argv0: []const u8, argv: []const []const u8, envp:
     const t = resolveTimeout(arena, args.timeout, cfg.settings);
     if (t.warning) |w| writeMessage(arena, 2, w);
     const sl = syslog.resolve(arena, args.syslog, env, cfg.settings);
-    if (sl.warning) |w| writeMessage(arena, 2, w);
+    if (sl.target_warning) |w| writeMessage(arena, 2, w);
+    if (sl.pen_warning) |w| writeMessage(arena, 2, w);
 
     if (args.dry_run) {
         const mode: []const u8 = if (args.shell) "shell" else "prolog";
@@ -1443,21 +1501,18 @@ fn realMain(arena: Allocator, argv0: []const u8, argv: []const []const u8, envp:
         return code;
     };
     const announce = !args.shell and std.mem.eql(u8, env.get("SLURM_LOCALID") orelse "0", "0");
-    const body = envmap.render(arena, outcome.changes, outcome.message, args.shell, announce) catch |err| {
-        const cls = if (err == error.OutOfMemory) "MemoryError" else "ValueError";
-        const detail = envmap.renderErrorText(err);
-        const was = env.get("EESSI_SOFTWARE_SUBDIR") orelse "";
-        const failed = guard.failureOutcome(arena, was, cls, detail, detail);
-        syslog.emitEmergency(arena, sl, env, cls, detail, args.strict);
-        const code: u8 = if (args.strict) strict_failure_exit else 0;
-        if (args.json) {
-            jsonout.emit(arena, failed, env, false, args.strict, args.shell, code);
-        } else {
+    var body: []u8 = &.{};
+    if (!args.json) {
+        body = envmap.render(arena, outcome.changes, outcome.message, args.shell, announce) catch |err| {
+            const cls = if (err == error.OutOfMemory) "MemoryError" else "ValueError";
+            const detail = envmap.renderErrorText(err);
+            syslog.emitEmergency(arena, sl, env, cls, detail, args.strict);
+            const code: u8 = if (args.strict) strict_failure_exit else 0;
             writeStdout(chain_out, "");
             emergencyWrite(cls, detail);
-        }
-        return code;
-    };
+            return code;
+        };
+    }
     syslog.emitDecision(arena, sl, outcome, env, guard.last_cached, args.strict);
     if (args.shell) if (outcome.message) |m| if (m.len > 0) writeMessage(arena, 2, m);
     if (std.mem.eql(u8, env.get("EESSI_ARCH_GUARD_VERBOSE") orelse empty, "1")) if (outcome.detail) |d| if (d.len > 0) writeMessage(arena, 2, d);
@@ -1533,6 +1588,13 @@ test "submitTarget requires agreeing site mappings" {
     try std.testing.expectEqualStrings("x86_64/amd/zen4", submitTarget(a, settings, "cpu", "zen4", &why).?);
     try std.testing.expect(submitTarget(a, settings, "cpu", "zen2", &why) == null);
     try std.testing.expect(std.mem.indexOf(u8, why, "different targets") != null);
+    try std.testing.expect(submitTarget(a, settings, "cp", "", &why) == null);
+    try std.testing.expectEqualStrings("site config has no submit_target.partition.cp mapping; nearest known partition is submit_target.partition.cpu", why);
+    try std.testing.expect(submitTarget(a, settings, "cpu", "zen", &why) == null);
+    try std.testing.expectEqualStrings("site config has no submit_target.constraint.zen mapping; nearest known constraint is submit_target.constraint.zen4", why);
+    try settings.put(a, "submit_target.partition.blank", "");
+    try std.testing.expect(submitTarget(a, settings, "blank", "", &why) == null);
+    try std.testing.expectEqualStrings("site config has no submit_target.partition.blank mapping; nearest known partition is submit_target.partition.blank", why);
 }
 
 test "renderCheckSubmitJson is schema_version 1" {
@@ -1621,6 +1683,14 @@ test "renderDryRunText and renderDryRunJson format a decision summary" {
     try std.testing.expect(std.mem.find(u8, js, "GCC/13.2.0") != null);
     try std.testing.expect(std.mem.find(u8, js, "\"exit\": 0") != null);
     try std.testing.expect(std.mem.endsWith(u8, js, "\n"));
+}
+
+test "oneLineField replaces invalid UTF-8 bytes with question marks" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const a = arena_state.allocator();
+    try std.testing.expectEqualStrings("x86_64/?/zen4", try oneLineField(a, "x86_64/\xff/zen4"));
+    try std.testing.expectEqualStrings("job??1", try oneLineField(a, "job\xe2\x821"));
 }
 
 test "localTaskZero reads the first SLURM_LOCALID" {
@@ -1748,4 +1818,16 @@ test "osErrorText uses standard strerror descriptions for any errno" {
     try std.testing.expectEqualStrings("[Errno 36] File name too long: '/long'", osErrorText(a, .NAMETOOLONG, "/long"));
     try std.testing.expectEqualStrings("[Errno 30] Read-only file system: '/ro'", osErrorText(a, .ROFS, "/ro"));
     try std.testing.expectEqualStrings("[Errno 28] No space left on device: '/full'", osErrorText(a, .NOSPC, "/full"));
+}
+
+test "formatEmergencyLine truncates long detail and replaces invalid UTF-8" {
+    var buf: [2048]u8 = undefined;
+    const long: [520]u8 = @splat('x');
+    const got = formatEmergencyLine(&buf, "OSError", &long);
+    try std.testing.expectEqual(@as(usize, 500), got.len);
+    try std.testing.expect(std.mem.startsWith(u8, got, "eessi-arch-guard: skipped, OSError: "));
+    try std.testing.expect(std.mem.endsWith(u8, got, "..."));
+
+    const bad = formatEmergencyLine(&buf, "OSError", "bad\xff\nmsg\x7f  ");
+    try std.testing.expectEqualStrings("eessi-arch-guard: skipped, OSError: bad? msg", bad);
 }

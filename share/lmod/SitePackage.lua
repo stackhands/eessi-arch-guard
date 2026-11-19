@@ -19,18 +19,31 @@ function M.path_parts(fn)
     if type(fn) ~= "string" then
         return nil, nil
     end
-    local body = fn:match("/software/linux/(.-)/modules/")
-    if body == nil then
+    local norm = fn:gsub("/+", "/")
+    local best_body = nil
+    local pos = 1
+    while true do
+        local _, e = norm:find("/software/linux/", pos, true)
+        if e == nil then
+            break
+        end
+        local candidate = norm:sub(e + 1):match("^(.-)/modules/")
+        if candidate ~= nil and candidate ~= "" and not candidate:find("/software/linux/", 1, true) then
+            best_body = candidate
+        end
+        pos = e + 1
+    end
+    if best_body == nil then
         return nil, nil
     end
-    local cpu, accel = body:match("^(.-)/(accel/nvidia/cc%d+)$")
+    local cpu, accel = best_body:match("^(.-)/(accel/nvidia/cc%d+)$")
     if cpu == nil or cpu == "" then
-        cpu, accel = body:match("^(.-)/(accel/amd/gfx[0-9a-f]+)$")
+        cpu, accel = best_body:match("^(.-)/(accel/amd/gfx[0-9a-f]+)$")
     end
     if cpu ~= nil and cpu ~= "" and accel ~= nil then
         return cpu, accel
     end
-    return body, nil
+    return best_body, nil
 end
 
 function M.software_subdir(fn)
@@ -38,20 +51,32 @@ function M.software_subdir(fn)
     return cpu
 end
 
-function M.warn_mismatch(fn, expected, fullname)
-    local got = M.software_subdir(fn)
-    if got == nil or expected == nil or expected == "" or got == expected then
+local function clean_label(value)
+    if type(value) ~= "string" then
         return nil
     end
-    local name = fullname
-    if type(name) ~= "string" or name == "" then
-        name = fn
+    local trimmed = value:match("^[%s%c]*(.-)[%s%c]*$")
+    if trimmed == nil or trimmed == "" then
+        return nil
+    end
+    return trimmed:gsub("[%c]+", " ")
+end
+
+function M.warn_mismatch(fn, expected, fullname)
+    local got = M.software_subdir(fn)
+    local exp = clean_label(expected)
+    if got == nil or exp == nil or got == exp then
+        return nil
+    end
+    local name = clean_label(fullname) or clean_label(fn)
+    if name == nil then
+        return nil
     end
     return string.format(
         "eessi-arch-guard: %s is under software/linux/%s but EESSI_SOFTWARE_SUBDIR is %s\n",
         name,
         got,
-        expected
+        exp
     )
 end
 
@@ -77,9 +102,9 @@ function M.warn_accel(fn, node_accel, fullname)
     if got == nil or node == nil or got == node then
         return nil
     end
-    local name = fullname
-    if type(name) ~= "string" or name == "" then
-        name = fn
+    local name = clean_label(fullname) or clean_label(fn)
+    if name == nil then
+        return nil
     end
     local got_cc = got:match("^accel/nvidia/(cc%d+)$")
     local node_cc = node:match("^accel/nvidia/(cc%d+)$")
@@ -375,10 +400,14 @@ function M.find_posix_syslog()
 end
 
 local function sanitize_field(value, fallback)
-    if type(value) ~= "string" or not value:match("%S") then
+    if type(value) ~= "string" then
         return fallback
     end
-    local cleaned = value:gsub("[%s%c]+", "_")
+    local trimmed = value:match("^[%s%c]*(.-)[%s%c]*$")
+    if trimmed == nil or trimmed == "" then
+        return fallback
+    end
+    local cleaned = trimmed:gsub("[%s%c]+", "_")
     if cleaned == "" then
         return fallback
     end
@@ -506,11 +535,15 @@ function M.emit_syslog(records)
         end
         return true
     end
+    local all_ok = true
     for _, line in ipairs(records) do
         local cmd = "logger -t ModuleUsageTracking -p local0.info -- " .. shell_quote(line) .. " >/dev/null 2>&1"
-        pcall(M.exec_cmd, cmd)
+        local call_ok, exec_ok = pcall(M.exec_cmd, cmd)
+        if not call_ok or not M.command_succeeded(exec_ok) then
+            all_ok = false
+        end
     end
-    return true
+    return all_ok
 end
 
 function M.flush_usage_records()
@@ -519,7 +552,9 @@ function M.flush_usage_records()
     if type(records) ~= "table" or #records == 0 then
         return 0
     end
-    M.emit_syslog(records)
+    if not M.emit_syslog(records) then
+        return 0
+    end
     return #records
 end
 
