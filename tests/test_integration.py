@@ -1811,3 +1811,50 @@ class IntegrationTests(unittest.TestCase):
         self.assertEqual(doc["config"]["status"], "ignored")
         self.assertEqual(doc["config"]["path"], conf)
         self.assertIn("is a symlink and is ignored", doc["config"]["warning"])
+
+    def test_sigint_during_chain_matches_python_skip_path(self):
+        ready = os.path.join(self.site.root, "chain-ready")
+        chain = os.path.join(self.site.root, "slow-chain.sh")
+        with open(chain, "w", encoding="utf-8") as handle:
+            handle.write("#!/bin/sh\ntouch %r\nsleep 10\n" % ready)
+        os.chmod(chain, 0o755)
+        env = {"PATH": "/usr/bin:/bin", "LC_ALL": "C", "EESSI_SOFTWARE_SUBDIR": ZEN4}
+
+        for extra, expected_code, is_json in (
+            ([], 0, False),
+            (["--strict"], guard.STRICT_FAILURE_EXIT, False),
+            (["--json"], 0, True),
+        ):
+            with self.subTest(extra=extra):
+                if os.path.exists(ready):
+                    os.unlink(ready)
+                proc = subprocess.Popen(
+                    [*harness.GUARD_ARGV, "--chain", chain, *extra],
+                    env=env,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                )
+                try:
+                    deadline = time.monotonic() + 3.0
+                    while not os.path.exists(ready) and time.monotonic() < deadline:
+                        time.sleep(0.02)
+                    self.assertTrue(os.path.exists(ready))
+                    proc.send_signal(signal.SIGINT)
+                    stdout, stderr = proc.communicate(timeout=3.0)
+                except subprocess.TimeoutExpired:
+                    proc.kill()
+                    proc.communicate()
+                    raise
+                self.assertEqual(proc.returncode, expected_code, stderr)
+                self.assertEqual(stderr, "")
+                if is_json:
+                    doc = json.loads(stdout)
+                    self.assertEqual(doc["cause"], "KeyboardInterrupt")
+                    self.assertEqual(doc["decision"], "failed")
+                    self.assertEqual(doc["was"], ZEN4)
+                    self.assertEqual(doc["exit"], expected_code)
+                else:
+                    self.assertEqual(
+                        stdout, "print eessi-arch-guard: skipped, KeyboardInterrupt:\n"
+                    )
