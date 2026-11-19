@@ -922,6 +922,45 @@ class CheckSubmitZigParityTests(unittest.TestCase):
             self.assertIn("Exec format error", proc_exec.stderr)
             self.assertIn("could not run eb-stack:", json.loads(proc_exec.stdout)["message"])
 
+    def test_empty_eb_stack_flag_falls_back_to_default(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            prefix = root / "eessi"
+            mod_dir = prefix / "software" / "linux" / ZEN4 / "modules" / "all" / "R"
+            mod_dir.mkdir(parents=True)
+            (mod_dir / "4.4.2.lua").write_text("-- R\n", encoding="utf-8")
+            bindir = root / "bin"
+            bindir.mkdir()
+            _fake_eb_stack(bindir)
+            log_path = root / "eb-stack.log"
+
+            env_ok = {
+                "PATH": f"{bindir}:/usr/bin:/bin",
+                "LC_ALL": "C",
+                "TMPDIR": tmp,
+                "EESSI_PREFIX": str(prefix),
+                "EESSI_OS_TYPE": "linux",
+                "EESSI_TEST_EB_STACK_LOG": str(log_path),
+                "LOADEDMODULES": "EESSI/2025.06:R/4.4.2",
+            }
+            for extra in (["--eb-stack="], ["--eb-stack", "--json"]):
+                with self.subTest(extra=extra):
+                    proc = harness.run_guard(
+                        env_ok, ["--check-submit", "--target", ZEN4, *extra]
+                    )
+                    self.assertEqual(proc.returncode, 0, proc.stderr)
+                    self.assertEqual(proc.stderr, "")
+
+            env_missing = dict(env_ok, PATH="/usr/bin:/bin")
+            proc_fail = harness.run_guard(
+                env_missing, ["--check-submit", "--target", ZEN4, "--eb-stack", ""]
+            )
+            self.assertEqual(proc_fail.returncode, 2, proc_fail.stderr)
+            self.assertEqual(
+                proc_fail.stderr,
+                "eessi-arch-guard: check-submit: eb-stack is not executable: eb-stack\n",
+            )
+
 
 if __name__ == "__main__":
     unittest.main()
