@@ -759,45 +759,223 @@ def _read_text(path: str, limit: int = 65536) -> Optional[str]:
     return blob.decode("utf-8", "replace")
 
 
-def cgroup_cpus_from(
-    proc_cgroup_path: str = "/proc/self/cgroup",
-    cgroup_root: str = "/sys/fs/cgroup",
-) -> Optional[frozenset]:
-    """Processors in this process's cgroup cpuset, walking up to an effective list."""
-    text = _read_text(proc_cgroup_path)
-    if not text:
+class _CgroupMount(NamedTuple):
+    root: str
+    point: str
+    v2: bool
+    cpuset: bool
+
+
+def _unescape_mountinfo(text: str) -> str:
+    """mountinfo writes space, tab, newline and backslash as \\ooo.
+
+    Mirrors ``share/sitepath.py`` ``_unescape``. The guard is one file and
+    does not import that script.
+    """
+    if "\\" not in text:
+        return text
+    out = []
+    i = 0
+    while i < len(text):
+        if text[i] == "\\" and i + 3 < len(text) and text[i + 1 : i + 4].isdigit():
+            out.append(chr(int(text[i + 1 : i + 4], 8)))
+            i += 4
+            continue
+        out.append(text[i])
+        i += 1
+    return "".join(out)
+
+
+def _abs_mount_path(path: str) -> bool:
+    return path.startswith("/") and ".." not in path.split("/")
+
+
+def _trim_mount(path: str) -> str:
+    if path == "/":
+        return path
+    return path.rstrip("/") or "/"
+
+
+def _controllers_allow(directory: str) -> bool:
+    """A readable controllers file that omits cpuset is not a cpuset."""
+    listed = _read_text(os.path.join(directory, "cgroup.controllers"))
+    if listed is None:
+        return True
+    return "cpuset" in listed.split()
+
+
+def _walk_cpuset(directory: str, stop: str) -> Optional[frozenset]:
+    """``cpuset.cpus.effective`` at ``directory`` or a parent inside ``stop``.
+
+    At most 64 parents. ``stop`` of ``/`` allows any absolute path. Any
+    other stop matches the directory itself or a child (``stop`` + ``/``).
+    """
+    for _ in range(64):
+        if stop != "/" and directory != stop and not directory.startswith(stop + "/"):
+            break
+        raw = _read_text(os.path.join(directory, "cpuset.cpus.effective"))
+        if raw is not None and raw.strip() and _controllers_allow(directory):
+            parsed = parse_cpu_spec(raw.strip())
+            if parsed is not None:
+                return parsed
+        parent = os.path.dirname(directory.rstrip("/"))
+        if parent == directory:
+            break
+        directory = parent
+    return None
+
+
+def _cgroup_mounts(mount_text: str) -> List[_CgroupMount]:
+    mounts = []
+    for line in mount_text.splitlines():
+        if " - " not in line:
+            continue
+        head, tail = line.split(" - ", 1)
+        fields = head.split()
+        if len(fields) < 6:
+            continue
+        root = _trim_mount(_unescape_mountinfo(fields[3]))
+        point = _trim_mount(_unescape_mountinfo(fields[4]))
+        tail_fields = tail.split()
+        if not tail_fields or tail_fields[0] not in ("cgroup", "cgroup2"):
+            continue
+        opts = tail_fields[2] if len(tail_fields) > 2 else ""
+        mounts.append(
+            _CgroupMount(
+                root,
+                point,
+                tail_fields[0] == "cgroup2",
+                "cpuset" in opts.split(","),
+            )
+        )
+    return mounts
+
+
+def _mount_rel(mount_root: str, cgroup_path: str) -> Optional[str]:
+    root = _trim_mount(mount_root)
+    path = cgroup_path if cgroup_path.startswith("/") else "/" + cgroup_path
+    if root == "/":
+        return "" if path == "/" else path
+    if path == root:
+        return ""
+    prefix = root + "/"
+    if path.startswith(prefix):
+        return path[len(root) :]
+    return None
+
+
+def _join_mount(point: str, rel: str) -> str:
+    base = _trim_mount(point)
+    if not rel:
+        return base
+    if base == "/":
+        return rel if rel.startswith("/") else "/" + rel
+    if rel.startswith("/"):
+        return base + rel
+    return base + "/" + rel
+
+
+def _ranked_mounts(
+    mounts: Sequence[_CgroupMount], v2: bool, cgroup_path: str
+) -> List[Tuple[_CgroupMount, str]]:
+    found = []
+    for mount in mounts:
+        if mount.v2 != v2 or (not v2 and not mount.cpuset):
+            continue
+        rel = _mount_rel(mount.root, cgroup_path)
+        if rel is None:
+            continue
+        found.append((len(mount.root), mount, rel))
+    found.sort(key=lambda item: item[0], reverse=True)
+    return [(mount, rel) for _length, mount, rel in found]
+
+
+def _cgroup_line(line: str) -> Optional[Tuple[str, str, str]]:
+    parts = line.split(":", 2)
+    if len(parts) != 3:
         return None
-    root = cgroup_root.rstrip("/") or "/"
+    hier, controllers, path = parts
+    if not path.startswith("/"):
+        path = "/" + path
+    return hier, controllers, path
+
+
+def _legacy_directories(root: str, text: str) -> List[str]:
     base = "" if root == "/" else root
     directories = []
     for line in text.splitlines():
-        parts = line.split(":", 2)
-        if len(parts) != 3:
+        parsed = _cgroup_line(line)
+        if parsed is None:
             continue
-        hier, controllers, path = parts
-        if not path.startswith("/"):
-            path = "/" + path
+        hier, controllers, path = parsed
         rel = "" if path == "/" else path
         if hier == "0" and controllers == "":
             directories.append((base + rel) or "/")
         elif "cpuset" in controllers.split(","):
             directories.append(base + "/cpuset" + rel)
             directories.append((base + rel) or "/")
-    for start in directories:
-        directory = start
-        for _ in range(64):
-            if root != "/" and directory != root and not directory.startswith(root + "/"):
-                break
-            raw = _read_text(os.path.join(directory, "cpuset.cpus.effective"))
-            if raw is not None and raw.strip():
-                parsed = parse_cpu_spec(raw.strip())
-                if parsed is not None:
-                    return parsed
-            parent = os.path.dirname(directory.rstrip("/"))
-            if parent == directory:
-                break
-            directory = parent
+    return directories
+
+
+def _cgroup_cpus_legacy(root: str, text: str) -> Optional[frozenset]:
+    for start in _legacy_directories(root, text):
+        found = _walk_cpuset(start, root)
+        if found is not None:
+            return found
     return None
+
+
+def _cgroup_cpus_mounted(root: str, text: str, mount_text: str) -> Optional[frozenset]:
+    mounts = _cgroup_mounts(mount_text)
+    dotdot = False
+    for line in text.splitlines():
+        parsed = _cgroup_line(line)
+        if parsed is None:
+            continue
+        hier, controllers, path = parsed
+        if hier == "0" and controllers == "":
+            ranked = _ranked_mounts(mounts, True, path)
+        elif "cpuset" in controllers.split(","):
+            ranked = _ranked_mounts(mounts, False, path)
+        else:
+            continue
+        usable = [
+            item
+            for item in ranked
+            if _abs_mount_path(item[0].root) and _abs_mount_path(item[0].point)
+        ]
+        if ranked and not usable:
+            dotdot = True
+            continue
+        for mount, rel in usable:
+            found = _walk_cpuset(_join_mount(mount.point, rel), _trim_mount(mount.point))
+            if found is not None:
+                return found
+    if dotdot:
+        return _cgroup_cpus_legacy(root, text)
+    return None
+
+
+def cgroup_cpus_from(
+    proc_cgroup_path: str = "/proc/self/cgroup",
+    cgroup_root: str = "/sys/fs/cgroup",
+) -> Optional[frozenset]:
+    """Processors in this process's cgroup cpuset, walking up to an effective list.
+
+    A cgroup v1 line names the cpuset controller. The directory is that
+    controller's mount in the sibling ``mountinfo`` plus the cgroup path.
+    A cgroup v2 line uses the cgroup2 mount. The walk stops at the mount.
+    A mount root containing ``..`` keeps the historical ``cgroup_root`` paths.
+    """
+    text = _read_text(proc_cgroup_path)
+    if not text:
+        return None
+    root = cgroup_root.rstrip("/") or "/"
+    mount_path = os.path.join(os.path.dirname(proc_cgroup_path) or ".", "mountinfo")
+    mount_text = _read_text(mount_path, 1 << 20)
+    if mount_text is None:
+        return _cgroup_cpus_legacy(root, text)
+    return _cgroup_cpus_mounted(root, text, mount_text)
 
 
 def cgroup_cpus() -> Optional[frozenset]:
