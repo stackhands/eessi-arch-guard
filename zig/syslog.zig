@@ -6,17 +6,10 @@ const text = @import("text.zig");
 const envmap = @import("envmap.zig");
 const guard = @import("guard.zig");
 
-const sys = common.sys;
 const Allocator = std.mem.Allocator;
-const Io = std.Io;
-const net = Io.net;
 
-pub const Scheme = enum {
-    rfc5424_unix,
-    journal_unix,
-    rfc5424_udp,
-    rfc5424_tcp,
-};
+/// The transports, as zig-common names them.
+pub const Scheme = common.syslog.Scheme;
 
 pub const Target = struct {
     scheme: Scheme,
@@ -418,179 +411,6 @@ fn formatJournald(arena: Allocator, ev: BuiltEvent) Allocator.Error![]u8 {
     return out.items;
 }
 
-fn setSockTimeout(fd: linux.fd_t) void {
-    const tv: linux.timeval = .{ .sec = 0, .usec = 500_000 };
-    _ = linux.setsockopt(fd, linux.SOL.SOCKET, linux.SO.SNDTIMEO, std.mem.asBytes(&tv), @sizeOf(linux.timeval));
-    _ = linux.setsockopt(fd, linux.SOL.SOCKET, linux.SO.RCVTIMEO, std.mem.asBytes(&tv), @sizeOf(linux.timeval));
-}
-
-fn sendAllFd(fd: linux.fd_t, data: []const u8) bool {
-    var off: usize = 0;
-    while (off < data.len) {
-        const rc = linux.sendto(fd, data[off..].ptr, data.len - off, 0, null, 0);
-        switch (linux.errno(rc)) {
-            .SUCCESS => {
-                if (rc == 0) return false;
-                off += rc;
-            },
-            .INTR => continue,
-            else => return false,
-        }
-    }
-    return true;
-}
-
-fn sendUnixOnce(path: []const u8, sock_type: u32, payload: []const u8) bool {
-    var addr: linux.sockaddr.un = .{ .family = linux.AF.UNIX, .path = @splat(0) };
-    if (path.len >= addr.path.len) return false;
-    @memcpy(addr.path[0..path.len], path);
-    const addr_len: linux.socklen_t = @intCast(@offsetOf(linux.sockaddr.un, "path") + path.len + 1);
-    const s_rc = linux.socket(linux.AF.UNIX, sock_type | linux.SOCK.CLOEXEC, 0);
-    if (linux.errno(s_rc) != .SUCCESS) return false;
-    const fd: linux.fd_t = @intCast(s_rc);
-    defer sys.close(fd);
-    setSockTimeout(fd);
-    while (true) {
-        const c_rc = linux.connect(fd, @ptrCast(&addr), addr_len);
-        switch (linux.errno(c_rc)) {
-            .SUCCESS => break,
-            .INTR => continue,
-            else => return false,
-        }
-    }
-    return sendAllFd(fd, payload);
-}
-
-fn sendUnix(arena: Allocator, path: []const u8, payload: []const u8, stream_nl: bool) void {
-    if (sendUnixOnce(path, linux.SOCK.DGRAM, payload)) return;
-    if (!stream_nl) return;
-    const framed = arena.print("{s}\n", .{payload}) catch return;
-    _ = sendUnixOnce(path, linux.SOCK.STREAM, framed);
-}
-
-fn sendUdpIp(ip: net.IpAddress, payload: []const u8) bool {
-    switch (ip) {
-        .ip4 => |ip4| {
-            const s_rc = linux.socket(linux.AF.INET, linux.SOCK.DGRAM | linux.SOCK.CLOEXEC, linux.IPPROTO.UDP);
-            if (linux.errno(s_rc) != .SUCCESS) return false;
-            const fd: linux.fd_t = @intCast(s_rc);
-            defer sys.close(fd);
-            setSockTimeout(fd);
-            var sa: linux.sockaddr.in = .{
-                .family = linux.AF.INET,
-                .port = std.mem.nativeToBig(u16, ip4.port),
-                .addr = @bitCast(ip4.bytes),
-            };
-            while (true) {
-                const rc = linux.sendto(fd, payload.ptr, payload.len, 0, @ptrCast(&sa), @sizeOf(linux.sockaddr.in));
-                switch (linux.errno(rc)) {
-                    .SUCCESS => return rc == payload.len,
-                    .INTR => continue,
-                    else => return false,
-                }
-            }
-        },
-        .ip6 => |ip6| {
-            const s_rc = linux.socket(linux.AF.INET6, linux.SOCK.DGRAM | linux.SOCK.CLOEXEC, linux.IPPROTO.UDP);
-            if (linux.errno(s_rc) != .SUCCESS) return false;
-            const fd: linux.fd_t = @intCast(s_rc);
-            defer sys.close(fd);
-            setSockTimeout(fd);
-            var sa: linux.sockaddr.in6 = .{
-                .family = linux.AF.INET6,
-                .port = std.mem.nativeToBig(u16, ip6.port),
-                .flowinfo = 0,
-                .addr = ip6.bytes,
-                .scope_id = ip6.interface.index,
-            };
-            while (true) {
-                const rc = linux.sendto(fd, payload.ptr, payload.len, 0, @ptrCast(&sa), @sizeOf(linux.sockaddr.in6));
-                switch (linux.errno(rc)) {
-                    .SUCCESS => return rc == payload.len,
-                    .INTR => continue,
-                    else => return false,
-                }
-            }
-        },
-    }
-}
-
-fn sendTcpIp(ip: net.IpAddress, frame: []const u8) bool {
-    switch (ip) {
-        .ip4 => |ip4| {
-            const s_rc = linux.socket(linux.AF.INET, linux.SOCK.STREAM | linux.SOCK.CLOEXEC, linux.IPPROTO.TCP);
-            if (linux.errno(s_rc) != .SUCCESS) return false;
-            const fd: linux.fd_t = @intCast(s_rc);
-            defer sys.close(fd);
-            setSockTimeout(fd);
-            var sa: linux.sockaddr.in = .{
-                .family = linux.AF.INET,
-                .port = std.mem.nativeToBig(u16, ip4.port),
-                .addr = @bitCast(ip4.bytes),
-            };
-            while (true) {
-                const rc = linux.connect(fd, @ptrCast(&sa), @sizeOf(linux.sockaddr.in));
-                switch (linux.errno(rc)) {
-                    .SUCCESS => break,
-                    .INTR => continue,
-                    else => return false,
-                }
-            }
-            return sendAllFd(fd, frame);
-        },
-        .ip6 => |ip6| {
-            const s_rc = linux.socket(linux.AF.INET6, linux.SOCK.STREAM | linux.SOCK.CLOEXEC, linux.IPPROTO.TCP);
-            if (linux.errno(s_rc) != .SUCCESS) return false;
-            const fd: linux.fd_t = @intCast(s_rc);
-            defer sys.close(fd);
-            setSockTimeout(fd);
-            var sa: linux.sockaddr.in6 = .{
-                .family = linux.AF.INET6,
-                .port = std.mem.nativeToBig(u16, ip6.port),
-                .flowinfo = 0,
-                .addr = ip6.bytes,
-                .scope_id = ip6.interface.index,
-            };
-            while (true) {
-                const rc = linux.connect(fd, @ptrCast(&sa), @sizeOf(linux.sockaddr.in6));
-                switch (linux.errno(rc)) {
-                    .SUCCESS => break,
-                    .INTR => continue,
-                    else => return false,
-                }
-            }
-            return sendAllFd(fd, frame);
-        },
-    }
-}
-
-fn sendInet(arena: Allocator, host: []const u8, port: u16, tcp: bool, payload: []const u8) void {
-    const data = if (tcp) (arena.print("{d} {s}", .{ payload.len, payload }) catch return) else payload;
-    if (net.IpAddress.parse(host, port)) |ip| {
-        _ = if (tcp) sendTcpIp(ip, data) else sendUdpIp(ip, data);
-        return;
-    } else |_| {}
-    const io = Io.Threaded.global_single_threaded.io();
-    net.HostName.validate(host) catch return;
-    const hn: net.HostName = .{ .bytes = host };
-    var canonical: [net.HostName.max_len]u8 = undefined;
-    var buf: [16]net.HostName.LookupResult = undefined;
-    var q: Io.Queue(net.HostName.LookupResult) = .init(&buf);
-    var fut = io.async(net.HostName.lookup, .{ hn, io, &q, .{
-        .port = port,
-        .canonical_name_buffer = &canonical,
-    } });
-    defer fut.cancel(io) catch {};
-    while (q.getOne(io)) |item| {
-        switch (item) {
-            .address => |ip| {
-                if (if (tcp) sendTcpIp(ip, data) else sendUdpIp(ip, data)) return;
-            },
-            .canonical_name => {},
-        }
-    } else |_| {}
-}
-
 pub fn emitDecision(
     arena: Allocator,
     resolved: Resolved,
@@ -602,24 +422,17 @@ pub fn emitDecision(
     const target = resolved.target orelse return;
     if ((outcome.kind == .skip or outcome.kind == .noop) and !resolved.log_all) return;
     const ev = buildEvent(arena, outcome, env, cached, strict) catch return;
-    switch (target.scheme) {
-        .journal_unix => {
-            const payload = formatJournald(arena, ev) catch return;
-            sendUnix(arena, target.host_or_path, payload, false);
-        },
-        .rfc5424_unix => {
-            const payload = formatRfc5424(arena, ev, resolved.pen) catch return;
-            sendUnix(arena, target.host_or_path, payload, true);
-        },
-        .rfc5424_udp => {
-            const payload = formatRfc5424(arena, ev, resolved.pen) catch return;
-            sendInet(arena, target.host_or_path, target.port, false, payload);
-        },
-        .rfc5424_tcp => {
-            const payload = formatRfc5424(arena, ev, resolved.pen) catch return;
-            sendInet(arena, target.host_or_path, target.port, true, payload);
-        },
-    }
+    const payload = switch (target.scheme) {
+        .journal_unix => formatJournald(arena, ev),
+        else => formatRfc5424(arena, ev, resolved.pen),
+    } catch return;
+    // The transport is zig-common's: a unix syslog socket as a datagram and
+    // then as a stream, UDP, or TCP with octet counting. Best effort.
+    _ = common.syslog.send(arena, .{
+        .scheme = target.scheme,
+        .host_or_path = target.host_or_path,
+        .port = target.port,
+    }, payload);
 }
 
 pub fn emitEmergency(
