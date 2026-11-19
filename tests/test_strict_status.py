@@ -6,8 +6,10 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 import eessi_arch_guard as guard  # noqa: E402
+import harness  # noqa: E402
 
 
 class StrictStatusTests(unittest.TestCase):
@@ -82,3 +84,48 @@ class StrictStatusTests(unittest.TestCase):
         ):
             self.assertEqual(guard.main(["--strict", "--chain", "/site/user-prolog"]), 17)
             decision.assert_not_called()
+
+
+class ArchdetectRefusalTests(unittest.TestCase):
+    def test_invalid_cpupath_and_accelpath_outputs_fail_and_honor_strict(self):
+        zen2 = "x86_64/amd/zen2"
+        zen4 = "x86_64/amd/zen4"
+        cases = (
+            (
+                "multiline-cpupath",
+                "if [ \"$2\" = cpupath ]; then "
+                "printf 'x86_64/amd/zen2\\nx86_64/generic\\n'; fi\n",
+                "cpupath output is not a single line",
+            ),
+            (
+                "unsafe-cpupath",
+                "if [ \"$2\" = cpupath ]; then echo '../bad'; fi\n",
+                "cpupath returned an unsafe candidate",
+            ),
+            (
+                "bad-accelpath",
+                "if [ \"$2\" = cpupath ]; then echo x86_64/amd/zen2; "
+                "else echo 'not/an/accel'; fi\n",
+                "accelpath output is not an accelerator subdirectory",
+            ),
+        )
+        for name, script_body, expected_reason in cases:
+            for args, expected_code in (([], 0), (["--strict"], guard.STRICT_FAILURE_EXIT)):
+                with self.subTest(case=name, args=args):
+                    site = harness.Site()
+                    try:
+                        site.add_cpu(zen2)
+                        site.add_cpu(zen4)
+                        site.write_cpuinfo("zen2")
+                        ad_path = Path(site.init) / "eessi_archdetect.sh"
+                        ad_path.write_text("#!/bin/sh\n" + script_body, encoding="utf-8")
+                        ad_path.chmod(0o755)
+                        env = harness.base_env(site, zen4, ["R/4.4.2"], gpu="none")
+                        proc = harness.run_guard(env, args)
+                        self.assertEqual(proc.returncode, expected_code, proc.stderr)
+                        self.assertEqual(proc.stderr, "")
+                        self.assertIn("->archdetect-failed", proc.stdout)
+                        self.assertIn(expected_reason, proc.stdout)
+                        self.assertIn("environment left as it was", proc.stdout)
+                    finally:
+                        site.close()

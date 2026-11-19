@@ -1,0 +1,1 @@
+Reject space-separated CPU IDs like `"0 1"` in `parse_cpu_spec` instead of concatenating them into a single CPU number, and allow spaces after commas inside `cpu[...]` hostlists to match the Zig parser.

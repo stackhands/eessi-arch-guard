@@ -1,0 +1,1 @@
+- Fall back to configured `eb_stack` or `"eb-stack"` when `--eb-stack` is empty in `checkSubmit` in `zig/main.zig`, matching Python `check_submit`.

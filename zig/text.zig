@@ -41,9 +41,7 @@ fn isAlnumU(c: u8) bool {
 
 /// ENV_NAME_RE: ^[A-Za-z_][A-Za-z0-9_]*$
 pub fn envName(s: []const u8) bool {
-    if (s.len == 0 or !(std.ascii.isAlphabetic(s[0]) or s[0] == '_')) return false;
-    for (s[1..]) |c| if (!isAlnumU(c)) return false;
-    return true;
+    return common.env.validName(s);
 }
 
 /// _MOD_SEGMENT: [A-Za-z0-9_][A-Za-z0-9._+-]*
@@ -166,105 +164,96 @@ pub fn neverCache(name: []const u8) bool {
 
 // ---- characters -------------------------------------------------------
 
-/// Length of the maximal subpart of an ill-formed sequence at `s` (Unicode
-/// "best practice", which CPython's 'replace' handler follows): the bytes
-/// that one U+FFFD stands for.
-fn maximalSubpart(s: []const u8) usize {
-    const c0 = s[0];
-    var need: usize = 0;
-    var lo: u8 = 0x80;
-    var hi: u8 = 0xBF;
-    switch (c0) {
-        0xC2...0xDF => need = 1,
-        0xE0 => {
-            need = 2;
-            lo = 0xA0;
-        },
-        0xE1...0xEC, 0xEE...0xEF => need = 2,
-        0xED => {
-            need = 2;
-            hi = 0x9F;
-        },
-        0xF0 => {
-            need = 3;
-            lo = 0x90;
-        },
-        0xF1...0xF3 => need = 3,
-        0xF4 => {
-            need = 3;
-            hi = 0x8F;
-        },
-        else => return 1,
+/// Format `parts` as a single bounded line into caller-owned `out` without
+/// allocating: controls (< 32 or 127) become spaces, leading and trailing
+/// Python whitespace is stripped, more than `limit` characters are cut to
+/// limit-3 plus "...", invalid UTF-8 bytes become '?' when `replace_invalid`
+/// is set, and the result stops at a character boundary within `max_bytes`.
+pub fn formatBoundedParts(
+    out: []u8,
+    parts: []const []const u8,
+    limit: usize,
+    replace_invalid: bool,
+    max_bytes: usize,
+) []const u8 {
+    const cap = @min(out.len, max_bytes);
+    const keep_prefix = if (limit >= 3) limit - 3 else 0;
+    var pos: usize = 0;
+    var prefix_pos: usize = 0;
+    var last_non_ws_pos: usize = 0;
+    var chars_kept: usize = 0;
+    var started = false;
+    var overflow_non_ws = false;
+    var cap_cut = false;
+
+    for (parts) |part| {
+        var i: usize = 0;
+        while (i < part.len) {
+            const ch = nextChar(part[i..]);
+            const is_ctrl = ch.cp != null and (ch.cp.? < 32 or ch.cp.? == 127);
+            const is_ws = is_ctrl or (ch.cp != null and pyWhitespace(ch.cp.?));
+            if (!started) {
+                if (is_ws) {
+                    i += ch.len;
+                    continue;
+                }
+                started = true;
+            }
+            if (chars_kept < limit) {
+                if (chars_kept == keep_prefix) prefix_pos = pos;
+                const wlen: usize = if (is_ctrl or (ch.cp == null and replace_invalid)) 1 else ch.len;
+                if (pos + wlen > cap) {
+                    cap_cut = true;
+                    break;
+                }
+                if (is_ctrl) {
+                    out[pos] = ' ';
+                } else if (ch.cp == null and replace_invalid) {
+                    out[pos] = '?';
+                } else {
+                    @memcpy(out[pos .. pos + ch.len], part[i .. i + ch.len]);
+                }
+                pos += wlen;
+                chars_kept += 1;
+                if (!is_ws) last_non_ws_pos = pos;
+            } else {
+                if (!is_ws) {
+                    overflow_non_ws = true;
+                    break;
+                }
+            }
+            i += ch.len;
+        }
+        if (overflow_non_ws or cap_cut) break;
     }
-    var i: usize = 1;
-    while (i <= need and i < s.len) : (i += 1) {
-        const b = s[i];
-        const l: u8 = if (i == 1) lo else 0x80;
-        const h: u8 = if (i == 1) hi else 0xBF;
-        if (b < l or b > h) break;
+
+    if (overflow_non_ws and !cap_cut and prefix_pos + 3 <= cap) {
+        @memcpy(out[prefix_pos .. prefix_pos + 3], "...");
+        return out[0 .. prefix_pos + 3];
     }
-    return i;
+    return out[0..last_non_ws_pos];
 }
 
 /// one_line: controls (below 32 and 127) become spaces, the result is
 /// stripped, and more than `limit` characters are cut to limit-3 plus "...".
 pub fn oneLine(gpa: Allocator, s: []const u8, limit: usize) Allocator.Error![]u8 {
-    var chars: std.ArrayList(struct { start: usize, len: usize, space: bool }) = .empty;
-    defer chars.deinit(gpa);
-    var buf: std.ArrayList(u8) = .empty;
-    defer buf.deinit(gpa);
-    var i: usize = 0;
-    while (i < s.len) {
-        const ch = nextChar(s[i..]);
-        const start = buf.items.len;
-        var space = false;
-        if (ch.cp) |cp| {
-            if (cp < 32 or cp == 127) {
-                try buf.append(gpa, ' ');
-                space = true;
-            } else {
-                try buf.appendSlice(gpa, s[i .. i + ch.len]);
-                space = pyWhitespace(cp);
-            }
-        } else try buf.append(gpa, s[i]);
-        try chars.append(gpa, .{ .start = start, .len = buf.items.len - start, .space = space });
-        i += ch.len;
+    if (limit <= 500) {
+        var buf: [2048]u8 = undefined;
+        return gpa.dupe(u8, formatBoundedParts(&buf, &.{s}, limit, false, std.math.maxInt(usize)));
     }
-    var a: usize = 0;
-    var b: usize = chars.items.len;
-    while (a < b and chars.items[a].space) a += 1;
-    while (b > a and chars.items[b - 1].space) b -= 1;
-    const kept = chars.items[a..b];
-    var out: std.ArrayList(u8) = .empty;
-    errdefer out.deinit(gpa);
-    if (kept.len > limit) {
-        const n = if (limit >= 3) limit - 3 else 0;
-        for (kept[0..n]) |c| try out.appendSlice(gpa, buf.items[c.start .. c.start + c.len]);
-        try out.appendSlice(gpa, "...");
-    } else {
-        for (kept) |c| try out.appendSlice(gpa, buf.items[c.start .. c.start + c.len]);
-    }
-    return out.toOwnedSlice(gpa);
+    const max_bytes = @min(s.len, limit *| 4) +| 3;
+    const buf = try gpa.alloc(u8, max_bytes);
+    defer gpa.free(buf);
+    return gpa.dupe(u8, formatBoundedParts(buf, &.{s}, limit, false, std.math.maxInt(usize)));
 }
 
 /// message_bytes: one_line(text, 500), encoded as UTF-8 with an invalid
 /// byte written as '?', cut at a character boundary to fit after "print "
 /// in a 4094-byte prolog line.
 pub fn messageBytes(gpa: Allocator, text: []const u8) Allocator.Error![]u8 {
-    const line = try oneLine(gpa, text, 500);
-    defer gpa.free(line);
-    var out: std.ArrayList(u8) = .empty;
-    errdefer out.deinit(gpa);
+    var buf: [2048]u8 = undefined;
     const room = prolog_line_max - "print ".len - 1;
-    var i: usize = 0;
-    while (i < line.len) {
-        const ch = nextChar(line[i..]);
-        const len: usize = if (ch.cp == null) 1 else ch.len;
-        if (out.items.len + len > room) break;
-        if (ch.cp == null) try out.append(gpa, '?') else try out.appendSlice(gpa, line[i .. i + ch.len]);
-        i += ch.len;
-    }
-    return out.toOwnedSlice(gpa);
+    return gpa.dupe(u8, formatBoundedParts(&buf, &.{text}, 500, true, room));
 }
 
 /// repr() of the str surrogateescape decodes from `s`: in single quotes, or
@@ -317,6 +306,7 @@ test "validators" {
     try std.testing.expect(safeComponent("login1.local"));
     try std.testing.expect(!safeComponent("a b"));
     try std.testing.expect(neverCache("LD_PRELOAD") and neverTouch("SLURM_JOB_ID") and !neverTouch("LD_PRELOAD"));
+    try std.testing.expect(envName("_OK_1") and !envName("") and !envName("1BAD") and !envName("A=B") and !envName("A\nB") and !envName("A\x00B"));
 }
 
 test "oneLine and messageBytes" {
@@ -333,6 +323,23 @@ test "oneLine and messageBytes" {
     const m = try messageBytes(gpa, "x\xffy\u{e9}");
     defer gpa.free(m);
     try std.testing.expectEqualStrings("x?y\u{e9}", m);
+}
+
+test "formatBoundedParts handles trailing whitespace and byte cap" {
+    var buf: [2048]u8 = undefined;
+    try std.testing.expectEqualStrings("", formatBoundedParts(&buf, &.{"  \n\t\u{3000}  "}, 5, true, 2048));
+    try std.testing.expectEqualStrings("...", formatBoundedParts(&buf, &.{"x"}, 0, true, 2048));
+    try std.testing.expectEqualStrings("abcde", formatBoundedParts(&buf, &.{"abcde   "}, 5, true, 2048));
+    try std.testing.expectEqualStrings("ab...", formatBoundedParts(&buf, &.{"abcd  x"}, 5, true, 2048));
+    try std.testing.expectEqualStrings("ab...", formatBoundedParts(&buf, &.{"ab   c"}, 5, true, 2048));
+    try std.testing.expectEqualStrings("a ...", formatBoundedParts(&buf, &.{"a c  d"}, 5, true, 2048));
+    try std.testing.expectEqualStrings("prefix:   hello world", formatBoundedParts(&buf, &.{ "prefix: ", "  hello\nworld  " }, 500, true, 2048));
+    try std.testing.expectEqualStrings("a", formatBoundedParts(&buf, &.{"a\u{e9}b"}, 500, true, 2));
+
+    var emoji: [2000]u8 = undefined;
+    for (0..500) |j| @memcpy(emoji[j * 4 .. j * 4 + 4], "\u{1f600}");
+    const fit = formatBoundedParts(&buf, &.{&emoji}, 500, true, prolog_line_max - "print ".len - 1);
+    try std.testing.expectEqual(@as(usize, 2000), fit.len);
 }
 
 fn expectPyRepr(gpa: Allocator, s: []const u8, want: []const u8) !void {
