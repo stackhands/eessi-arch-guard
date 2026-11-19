@@ -78,23 +78,26 @@ var emergency_json = false;
 var emergency_json_shell = false;
 var emergency_was: []const u8 = "unrecognized";
 
+fn formatEmergencyLine(out: []u8, kind: []const u8, detail: []const u8) []const u8 {
+    return text.formatBoundedParts(
+        out,
+        &.{ "eessi-arch-guard: skipped, ", kind, ": ", detail },
+        500,
+        true,
+        text.prolog_line_max - "print ".len - 1,
+    );
+}
+
 fn emergencyWrite(kind: []const u8, detail: []const u8) void {
-    var buf: [1024]u8 = undefined;
-    const msg = std.mem.print(&buf, "eessi-arch-guard: skipped, {s}: {s}", .{ kind, detail }) catch "eessi-arch-guard: skipped";
     // No allocation here: a crash may have come from the allocator.
-    var clean: [1024]u8 = undefined;
-    var n: usize = 0;
-    for (msg) |ch| {
-        clean[n] = if (ch < 32 or ch == 127) ' ' else ch;
-        n += 1;
-    }
-    while (n > 0 and clean[n - 1] == ' ') n -= 1;
+    var buf: [2048]u8 = undefined;
+    const line = formatEmergencyLine(&buf, kind, detail);
     if (emergency_shell) {
-        cli.put(2, clean[0..n]);
+        cli.put(2, line);
         cli.put(2, "\n");
     } else if (emergency_announce) {
         cli.put(1, "print ");
-        cli.put(1, clean[0..n]);
+        cli.put(1, line);
         cli.put(1, "\n");
     }
 }
@@ -1748,4 +1751,16 @@ test "osErrorText uses standard strerror descriptions for any errno" {
     try std.testing.expectEqualStrings("[Errno 36] File name too long: '/long'", osErrorText(a, .NAMETOOLONG, "/long"));
     try std.testing.expectEqualStrings("[Errno 30] Read-only file system: '/ro'", osErrorText(a, .ROFS, "/ro"));
     try std.testing.expectEqualStrings("[Errno 28] No space left on device: '/full'", osErrorText(a, .NOSPC, "/full"));
+}
+
+test "formatEmergencyLine truncates long detail and replaces invalid UTF-8" {
+    var buf: [2048]u8 = undefined;
+    const long: [520]u8 = @splat('x');
+    const got = formatEmergencyLine(&buf, "OSError", &long);
+    try std.testing.expectEqual(@as(usize, 500), got.len);
+    try std.testing.expect(std.mem.startsWith(u8, got, "eessi-arch-guard: skipped, OSError: "));
+    try std.testing.expect(std.mem.endsWith(u8, got, "..."));
+
+    const bad = formatEmergencyLine(&buf, "OSError", "bad\xff\nmsg\x7f  ");
+    try std.testing.expectEqualStrings("eessi-arch-guard: skipped, OSError: bad? msg", bad);
 }
