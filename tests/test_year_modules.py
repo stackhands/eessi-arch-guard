@@ -1,5 +1,6 @@
 """Numeric year frontends in the validated loaded-module list."""
 
+import json
 import os
 import shutil
 import sys
@@ -118,3 +119,32 @@ class YearModuleTests(unittest.TestCase):
             self.assertIn(ZEN2, changes["EBROOTR"])
             self.assertIn("2026", {**env, **changes}["LOADEDMODULES"].split(":"))
             self.assertNotIn("EESSI_ARCH_GUARD_FAILED", changes)
+
+
+class SyslogHostileTargetTests(unittest.TestCase):
+    def test_syslog_ignores_directory_fifo_and_oversized_socket_paths(self):
+        with tempfile.TemporaryDirectory(prefix="eessi-syslog-hostile-") as tmp:
+            root = Path(tmp)
+            sock_dir = root / "sockdir"
+            sock_dir.mkdir()
+            sock_fifo = root / "sockfifo"
+            os.mkfifo(sock_fifo)
+            overlong = "/" + "a" * 200
+            env = {
+                "PATH": "/usr/bin:/bin",
+                "LC_ALL": "C",
+                "EESSI_ARCH_GUARD_SYSLOG_ALL": "1",
+            }
+            for target in (
+                f"unix://{sock_dir}",
+                f"journal+unix://{sock_dir}",
+                f"unix://{sock_fifo}",
+                f"journal+unix://{sock_fifo}",
+                f"unix://{overlong}",
+            ):
+                with self.subTest(target=target):
+                    proc = harness.run_guard(env, ["--syslog", target, "--json"])
+                    self.assertEqual(proc.returncode, 0, proc.stderr)
+                    self.assertEqual(proc.stderr, "")
+                    doc = json.loads(proc.stdout)
+                    self.assertEqual(doc["decision"], "skip")
