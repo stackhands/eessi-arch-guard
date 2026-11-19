@@ -380,6 +380,19 @@ class SyslogTests(unittest.TestCase):
         self.assertEqual(text_proc.returncode, 0, text_proc.stderr)
         self.assertIn("syslog: tcp://[::1]:514\n", text_proc.stdout)
 
+    def test_invalid_syslog_target_and_pen_emit_separate_lines_in_order(self):
+        env = self._cpu_env(ZEN2, "zen2", {"EESSI_ARCH_GUARD_SYSLOG_PEN": "badpen"})
+        proc = harness.run_guard(env, ["--dry-run", "--json", "--syslog=bad://x"])
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertEqual(
+            proc.stderr,
+            "eessi-arch-guard: --syslog is not a valid syslog target: bad://x\n"
+            "eessi-arch-guard: EESSI_ARCH_GUARD_SYSLOG_PEN is not a positive integer: badpen\n",
+        )
+        doc = json.loads(proc.stdout)
+        self.assertIsNone(doc["syslog"]["target"])
+        self.assertEqual(doc["syslog"]["pen"], "32473")
+
     def test_non_utf8_env_bytes_are_replaced_not_raw(self):
         sock_rfc, path_rfc = self._dgram_server("utf8-rfc.sock")
         sock_jrn, path_jrn = self._dgram_server("utf8-jrn.sock")

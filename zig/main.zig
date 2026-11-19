@@ -1283,6 +1283,7 @@ fn realMain(arena: Allocator, argv0: []const u8, argv: []const []const u8, envp:
     if (t.warning) |w| writeMessage(arena, 2, w);
     const sl = syslog.resolve(arena, args.syslog, env, cfg.settings);
     if (sl.warning) |w| writeMessage(arena, 2, w);
+    if (sl.pen_warning) |w| writeMessage(arena, 2, w);
 
     if (args.dry_run) {
         const mode: []const u8 = if (args.shell) "shell" else "prolog";

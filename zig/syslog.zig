@@ -33,6 +33,7 @@ pub const Resolved = struct {
     log_all: bool = false,
     pen: []const u8 = default_pen,
     warning: ?[]const u8 = null,
+    pen_warning: ?[]const u8 = null,
 };
 
 const Param = struct {
@@ -147,7 +148,7 @@ pub fn resolve(
         }
     };
 
-    var warnings: std.ArrayList([]const u8) = .empty;
+    var pen_warnings: std.ArrayList([]const u8) = .empty;
     var pen: []const u8 = default_pen;
     if (settings) |st| if (st.get("syslog_pen")) |cv| if (cv.len > 0) {
         if (parsePen(arena, cv)) |p| {
@@ -155,7 +156,7 @@ pub fn resolve(
         } else {
             const shown = text.oneLine(arena, cv, 64) catch cv;
             if (arena.print("eessi-arch-guard: config syslog_pen is not a positive integer: {s}", .{shown}) catch null) |w| {
-                warnings.append(arena, w) catch {};
+                pen_warnings.append(arena, w) catch {};
             }
         }
     };
@@ -165,24 +166,23 @@ pub fn resolve(
         } else {
             const shown = text.oneLine(arena, ev, 64) catch ev;
             if (arena.print("eessi-arch-guard: EESSI_ARCH_GUARD_SYSLOG_PEN is not a positive integer: {s}", .{shown}) catch null) |w| {
-                warnings.append(arena, w) catch {};
+                pen_warnings.append(arena, w) catch {};
             }
         }
     };
 
+    var target_warning: ?[]const u8 = null;
     var target: ?Target = null;
     if (raw) |spec| if (spec.len > 0) {
         target = parseTarget(spec) orelse blk: {
             const shown = text.oneLine(arena, spec, 120) catch spec;
-            if (arena.print("eessi-arch-guard: {s} is not a valid syslog target: {s}", .{ source, shown }) catch null) |w| {
-                warnings.append(arena, w) catch {};
-            }
+            target_warning = arena.print("eessi-arch-guard: {s} is not a valid syslog target: {s}", .{ source, shown }) catch null;
             break :blk null;
         };
     };
 
-    const warning: ?[]const u8 = if (warnings.items.len == 0) null else (std.mem.join(arena, " ", warnings.items) catch null);
-    return .{ .target = target, .log_all = log_all, .pen = pen, .warning = warning };
+    const pen_warning: ?[]const u8 = if (pen_warnings.items.len == 0) null else (std.mem.join(arena, " ", pen_warnings.items) catch null);
+    return .{ .target = target, .log_all = log_all, .pen = pen, .warning = target_warning, .pen_warning = pen_warning };
 }
 
 fn sdEscape(arena: Allocator, value: []const u8) Allocator.Error![]u8 {
