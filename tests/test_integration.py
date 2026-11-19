@@ -634,6 +634,15 @@ class IntegrationTests(unittest.TestCase):
                 f"[Errno 8] Exec format error: {empty_exec!r}\n",
             ),
         )
+        for segs in (["a" * 150] * 4, ["b" * 200] * 5):
+            long_path = os.path.join(self.site.root, *segs[:-1], "chain.sh")
+            os.makedirs(os.path.dirname(long_path), exist_ok=True)
+            shutil.copy2(bad_shebang, long_path)
+            message = (
+                f"eessi-arch-guard: skipped, FileNotFoundError: "
+                f"[Errno 2] No such file or directory: {long_path!r}"
+            )
+            cases += ((long_path, [], 0, f"print {guard.one_line(message)}\n"),)
         for path, extra, expected_code, expected_out in cases:
             with self.subTest(path=path, extra=extra):
                 proc = harness.run_guard(env, ["--chain", path, *extra])
