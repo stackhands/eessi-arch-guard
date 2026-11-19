@@ -159,3 +159,34 @@ class SitePackageTests(unittest.TestCase):
             check=False,
         )
         self.assertEqual(proc.returncode, 0, proc.stderr + proc.stdout)
+
+    def test_blank_and_control_module_names_fall_back_to_path_and_sanitize_warnings(self):
+        sp_path = ROOT / "share" / "lmod" / "SitePackage.lua"
+        zen3 = (
+            "/cvmfs/software.eessi.io/versions/2026.06/software/linux/"
+            "x86_64/amd/zen3/modules/all/Foo/1.0.lua"
+        )
+        cc90 = (
+            "/cvmfs/software.eessi.io/versions/2026.06/software/linux/"
+            "x86_64/amd/zen4/accel/nvidia/cc90/modules/all/CUDA/12.6.0.lua"
+        )
+        script = "\n".join(
+            [
+                f'local sp = dofile("{sp_path}")',
+                f'local m1 = sp.warn_mismatch("{zen3}", "x86_64/amd/zen4", "   ")',
+                f'assert(m1 ~= nil and m1:find("{zen3}", 1, true), tostring(m1))',
+                f'assert(sp.warn_mismatch("{zen3}", "   ", "Foo/1.0") == nil)',
+                f'local m2 = sp.warn_mismatch("{zen3}", "x86_64/amd/zen4", "Foo\\n1.0")',
+                'assert(m2 ~= nil and m2:sub(1, #m2 - 1):find("\\n", 1, true) == nil, '
+                'tostring(m2))',
+                f'local a1 = sp.warn_accel("{cc90}", "accel/nvidia/cc80", "\\x01\\x02")',
+                f'assert(a1 ~= nil and a1:find("{cc90}", 1, true), tostring(a1))',
+            ]
+        )
+        proc = subprocess.run(
+            [LUA, "-e", script],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(proc.returncode, 0, proc.stderr + proc.stdout)
