@@ -620,28 +620,248 @@ fn cgroupDirectories(arena: Allocator, cgroup_text: []const u8) []const []const 
     return cgroupDirectoriesFrom(arena, cgroup_text, "/sys/fs/cgroup");
 }
 
+const CgroupLine = struct {
+    hier: []const u8,
+    controllers: []const u8,
+    path: []const u8,
+};
+
+fn parseCgroupLine(arena: Allocator, line: []const u8) ?CgroupLine {
+    var parts = std.mem.splitScalar(u8, line, ':');
+    const hier = parts.next() orelse return null;
+    const controllers = parts.next() orelse return null;
+    _ = parts.peek() orelse return null;
+    var path = parts.rest();
+    if (path.len == 0 or path[0] != '/') {
+        path = std.fmt.allocPrint(arena, "/{s}", .{path}) catch return null;
+    }
+    return .{ .hier = hier, .controllers = controllers, .path = path };
+}
+
+const CgroupMount = struct {
+    root: []const u8,
+    point: []const u8,
+    v2: bool,
+    cpuset: bool,
+};
+
+/// Mirrors share/sitepath.py _unescape. The guard is one file and does not
+/// import that script. mountinfo writes space, tab, newline and backslash
+/// as \ooo.
+fn unescapeMountinfo(arena: Allocator, raw: []const u8) ?[]const u8 {
+    if (std.mem.indexOfScalar(u8, raw, '\\') == null) return raw;
+    var out: std.ArrayList(u8) = .empty;
+    var i: usize = 0;
+    while (i < raw.len) {
+        if (raw[i] == '\\' and i + 4 <= raw.len) {
+            if (octalByte(raw[i + 1 .. i + 4])) |value| {
+                out.append(arena, value) catch return null;
+                i += 4;
+                continue;
+            }
+        }
+        out.append(arena, raw[i]) catch return null;
+        i += 1;
+    }
+    return out.items;
+}
+
+fn octalByte(digits: []const u8) ?u8 {
+    if (digits.len != 3) return null;
+    var value: u16 = 0;
+    for (digits) |ch| {
+        if (ch < '0' or ch > '7') return null;
+        value = value * 8 + (ch - '0');
+    }
+    if (value > 255) return null;
+    return @intCast(value);
+}
+
+fn absMountPath(path: []const u8) bool {
+    if (path.len == 0 or path[0] != '/') return false;
+    var it = std.mem.splitScalar(u8, path, '/');
+    while (it.next()) |part| if (std.mem.eql(u8, part, "..")) return false;
+    return true;
+}
+
+fn trimMount(path: []const u8) []const u8 {
+    if (std.mem.eql(u8, path, "/")) return path;
+    const trimmed = std.mem.trimEnd(u8, path, "/");
+    return if (trimmed.len == 0) "/" else trimmed;
+}
+
+fn controllersAllow(arena: Allocator, directory: []const u8) bool {
+    const dir = if (std.mem.eql(u8, directory, "/")) "" else directory;
+    const path = std.fmt.allocPrint(arena, "{s}/cgroup.controllers", .{dir}) catch return false;
+    const raw = readFile(arena, path, 65536) orelse return true;
+    var it = std.mem.tokenizeAny(u8, raw, " \t\r\n");
+    while (it.next()) |tok| if (std.mem.eql(u8, tok, "cpuset")) return true;
+    return false;
+}
+
+fn mountRel(mount_root: []const u8, cgroup_path: []const u8) ?[]const u8 {
+    const root = trimMount(mount_root);
+    if (std.mem.eql(u8, root, "/")) return if (std.mem.eql(u8, cgroup_path, "/")) "" else cgroup_path;
+    if (std.mem.eql(u8, cgroup_path, root)) return "";
+    if (cgroup_path.len > root.len and std.mem.startsWith(u8, cgroup_path, root) and cgroup_path[root.len] == '/') {
+        return cgroup_path[root.len..];
+    }
+    return null;
+}
+
+fn joinMount(arena: Allocator, point: []const u8, rel: []const u8) ?[]const u8 {
+    const base = trimMount(point);
+    if (rel.len == 0) return base;
+    if (std.mem.eql(u8, base, "/")) {
+        if (rel[0] == '/') return rel;
+        return std.fmt.allocPrint(arena, "/{s}", .{rel}) catch null;
+    }
+    if (rel[0] == '/') return std.fmt.allocPrint(arena, "{s}{s}", .{ base, rel }) catch null;
+    return std.fmt.allocPrint(arena, "{s}/{s}", .{ base, rel }) catch null;
+}
+
+fn parseCgroupMounts(arena: Allocator, mount_text: []const u8) ?[]const CgroupMount {
+    var mounts: std.ArrayList(CgroupMount) = .empty;
+    var it = std.mem.splitScalar(u8, mount_text, '\n');
+    while (it.next()) |raw_line| {
+        const line = std.mem.trimEnd(u8, raw_line, "\r");
+        const cut = std.mem.indexOf(u8, line, " - ") orelse continue;
+        const head = line[0..cut];
+        const tail = line[cut + 3 ..];
+        var head_it = std.mem.tokenizeScalar(u8, head, ' ');
+        var n: usize = 0;
+        var root_field: []const u8 = "";
+        var point_field: []const u8 = "";
+        while (head_it.next()) |field| {
+            if (n == 3) root_field = field;
+            if (n == 4) point_field = field;
+            n += 1;
+        }
+        if (n < 6) continue;
+        var tail_it = std.mem.tokenizeScalar(u8, tail, ' ');
+        const fstype = tail_it.next() orelse continue;
+        if (!std.mem.eql(u8, fstype, "cgroup") and !std.mem.eql(u8, fstype, "cgroup2")) continue;
+        _ = tail_it.next();
+        const opts = tail_it.next() orelse "";
+        const root = trimMount(unescapeMountinfo(arena, root_field) orelse return null);
+        const point = trimMount(unescapeMountinfo(arena, point_field) orelse return null);
+        mounts.append(arena, .{
+            .root = root,
+            .point = point,
+            .v2 = std.mem.eql(u8, fstype, "cgroup2"),
+            .cpuset = hasCgroupController(opts, "cpuset"),
+        }) catch return null;
+    }
+    return mounts.items;
+}
+
+const MountHit = struct { set: ?CpuSet = null, dotdot: bool = false };
+
+fn tryCgroupMounts(
+    arena: Allocator,
+    mounts: []const CgroupMount,
+    v2: bool,
+    cgroup_path: []const u8,
+) ?MountHit {
+    var matches: std.ArrayList(usize) = .empty;
+    for (mounts, 0..) |mount, index| {
+        if (mount.v2 != v2) continue;
+        if (!v2 and !mount.cpuset) continue;
+        if (mountRel(mount.root, cgroup_path) == null) continue;
+        matches.append(arena, index) catch return null;
+    }
+    var cursor: usize = 1;
+    while (cursor < matches.items.len) : (cursor += 1) {
+        var slot = cursor;
+        while (slot > 0 and mounts[matches.items[slot]].root.len > mounts[matches.items[slot - 1]].root.len) : (slot -= 1) {
+            const tmp = matches.items[slot - 1];
+            matches.items[slot - 1] = matches.items[slot];
+            matches.items[slot] = tmp;
+        }
+    }
+    var hit: MountHit = .{};
+    var usable = false;
+    for (matches.items) |index| {
+        const mount = mounts[index];
+        if (!absMountPath(mount.root) or !absMountPath(mount.point)) {
+            hit.dotdot = true;
+            continue;
+        }
+        usable = true;
+        const rel = mountRel(mount.root, cgroup_path) orelse continue;
+        const directory = joinMount(arena, mount.point, rel) orelse return null;
+        if (walkCpuset(arena, directory, trimMount(mount.point))) |set| {
+            hit.set = set;
+            return hit;
+        }
+    }
+    if (usable) hit.dotdot = false;
+    return hit;
+}
+
+/// The cgroup v2 boundary: at most 64 parents, and the directory stays
+/// equal to `root` or inside `root` + "/". `root` "/" allows any absolute path.
+fn walkCpuset(arena: Allocator, start: []const u8, root: []const u8) ?CpuSet {
+    var directory = start;
+    var hop: usize = 0;
+    while (hop < 64 and (std.mem.eql(u8, directory, root) or std.mem.startsWith(u8, directory, root) and (std.mem.eql(u8, root, "/") or directory[root.len] == '/'))) : (hop += 1) {
+        const eff_dir = if (std.mem.eql(u8, directory, "/")) "" else directory;
+        const eff = std.fmt.allocPrint(arena, "{s}/cpuset.cpus.effective", .{eff_dir}) catch return null;
+        if (readFile(arena, eff, 65536)) |raw| {
+            const trimmed = std.mem.trim(u8, raw, " \t\r\n");
+            if (trimmed.len > 0 and controllersAllow(arena, directory)) {
+                if (parseCpuSpec(trimmed)) |set| return set;
+            }
+        }
+        const parent = std.fs.path.dirname(directory) orelse break;
+        if (std.mem.eql(u8, parent, directory)) break;
+        directory = parent;
+    }
+    return null;
+}
+
+fn cgroupCpusLegacy(arena: Allocator, cgroup_text: []const u8, root: []const u8) ?CpuSet {
+    for (cgroupDirectoriesFrom(arena, cgroup_text, root)) |start| {
+        if (walkCpuset(arena, start, root)) |set| return set;
+    }
+    return null;
+}
+
+fn mountinfoBeside(arena: Allocator, proc_cgroup_path: []const u8) ?[]const u8 {
+    const dir = std.fs.path.dirname(proc_cgroup_path) orelse ".";
+    return std.fmt.allocPrint(arena, "{s}/mountinfo", .{dir}) catch null;
+}
+
+fn cgroupCpusMounted(
+    arena: Allocator,
+    root: []const u8,
+    cgroup_text: []const u8,
+    mount_text: []const u8,
+) ?CpuSet {
+    const mounts = parseCgroupMounts(arena, mount_text) orelse return null;
+    var dotdot = false;
+    var it = std.mem.splitScalar(u8, cgroup_text, '\n');
+    while (it.next()) |raw_line| {
+        const parsed = parseCgroupLine(arena, std.mem.trimEnd(u8, raw_line, "\r")) orelse continue;
+        const v2 = std.mem.eql(u8, parsed.hier, "0") and parsed.controllers.len == 0;
+        if (!v2 and !hasCgroupController(parsed.controllers, "cpuset")) continue;
+        const hit = tryCgroupMounts(arena, mounts, v2, parsed.path) orelse return null;
+        if (hit.set) |set| return set;
+        if (hit.dotdot) dotdot = true;
+    }
+    if (dotdot) return cgroupCpusLegacy(arena, cgroup_text, root);
+    return null;
+}
+
 fn cgroupCpusFrom(arena: Allocator, proc_cgroup_path: []const u8, cgroup_root: []const u8) ?CpuSet {
     const trimmed_root = std.mem.trimEnd(u8, cgroup_root, "/");
     const root = if (trimmed_root.len == 0) "/" else trimmed_root;
     const cgroup_text = readFile(arena, proc_cgroup_path, 1 << 20) orelse return null;
-    for (cgroupDirectoriesFrom(arena, cgroup_text, root)) |start| {
-        var directory = start;
-        var hop: usize = 0;
-        while (hop < 64 and (std.mem.eql(u8, directory, root) or std.mem.startsWith(u8, directory, root) and (std.mem.eql(u8, root, "/") or directory[root.len] == '/'))) : (hop += 1) {
-            const eff_dir = if (std.mem.eql(u8, directory, "/")) "" else directory;
-            const eff = std.fmt.allocPrint(arena, "{s}/cpuset.cpus.effective", .{eff_dir}) catch return null;
-            if (readFile(arena, eff, 65536)) |raw| {
-                const trimmed = std.mem.trim(u8, raw, " \t\r\n");
-                if (trimmed.len > 0) {
-                    if (parseCpuSpec(trimmed)) |set| return set;
-                }
-            }
-            const parent = std.fs.path.dirname(directory) orelse break;
-            if (std.mem.eql(u8, parent, directory)) break;
-            directory = parent;
-        }
-    }
-    return null;
+    const mount_path = mountinfoBeside(arena, proc_cgroup_path) orelse
+        return cgroupCpusLegacy(arena, cgroup_text, root);
+    const mount_text = readFile(arena, mount_path, 1 << 20) orelse
+        return cgroupCpusLegacy(arena, cgroup_text, root);
+    return cgroupCpusMounted(arena, root, cgroup_text, mount_text);
 }
 
 fn cgroupCpus(arena: Allocator) ?CpuSet {
@@ -2318,6 +2538,125 @@ test "cgroupCpusFrom narrows wider sched affinity on cgroup v2 layouts" {
     try std.testing.expect(std.mem.find(u8, scoped, "flags : avx2 fma\n") != null);
     try std.testing.expect(std.mem.find(u8, scoped, "waitpkg") == null);
     try std.testing.expect(std.mem.find(u8, scoped, "processor : 0\nflags :\n") == null);
+}
+
+fn makeDirs(path: []const u8) void {
+    var buf: [sys.path_max:0]u8 = undefined;
+    var i: usize = 1;
+    while (i <= path.len) : (i += 1) {
+        if (i != path.len and path[i] != '/') continue;
+        const z = sys.z(&buf, path[0..i]) catch return;
+        _ = linux.mkdirat(fsx.cwd, z.ptr, 0o755);
+    }
+}
+
+fn writeUnder(arena: Allocator, path: []const u8, data: []const u8) !void {
+    _ = arena;
+    const slash = std.mem.lastIndexOfScalar(u8, path, '/') orelse return error.TestUnexpectedResult;
+    makeDirs(path[0..slash]);
+    try std.testing.expect(writePrivateNew(path, data, 0o644));
+}
+
+fn expectCpus(set: ?CpuSet, ids: []const usize) !void {
+    const found = set orelse return error.TestExpectedEqual;
+    var cpu: usize = 0;
+    while (cpu < cpu_id_max) : (cpu += 1) {
+        var want = false;
+        for (ids) |id| {
+            if (id == cpu) want = true;
+        }
+        try std.testing.expectEqual(want, found.has(cpu));
+    }
+}
+
+fn cgroupFixture(arena: Allocator, name: []const u8) ![]const u8 {
+    var cwd_buf: [sys.path_max]u8 = undefined;
+    const here = try fsx.realpath(fsx.cwd, ".", &cwd_buf);
+    const base = try std.fmt.allocPrint(arena, "{s}/.zig-cache/eag-cgv1-{s}-{d}", .{ here, name, linux.getpid() });
+    var zb: [sys.path_max:0]u8 = undefined;
+    _ = linux.mkdirat(fsx.cwd, (try sys.z(&zb, base)).ptr, 0o700);
+    return base;
+}
+
+test "cgroup v1 cpuset mounted off the default path" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const a = arena_state.allocator();
+    const base = try cgroupFixture(a, "off");
+    defer fsx.deleteTree(a, fsx.cwd, base) catch {};
+    const proc_dir = try std.fmt.allocPrint(a, "{s}/proc/self", .{base});
+    const cg = try std.fmt.allocPrint(a, "{s}/sys/fs/cgroup", .{base});
+    const point = try std.fmt.allocPrint(a, "{s}/cgroup/cpuset", .{base});
+    const other = try std.fmt.allocPrint(a, "{s}/cgroup/notcpuset", .{base});
+    const proc_file = try std.fmt.allocPrint(a, "{s}/cgroup", .{proc_dir});
+    const mountinfo = try std.fmt.allocPrint(a, "{s}/mountinfo", .{proc_dir});
+    try writeUnder(a, proc_file, "2:cpuset:/job:42\n");
+    const mi = try std.fmt.allocPrint(a, "21 20 0:21 / {s} rw - cgroup cgroup rw,cpusetfoo\n22 20 0:22 / {s} rw - cgroup cgroup rw,cpuset\n", .{ other, point });
+    try writeUnder(a, mountinfo, mi);
+    try writeUnder(a, try std.fmt.allocPrint(a, "{s}/job:42/cpuset.cpus.effective", .{other}), "0-3\n");
+    try writeUnder(a, try std.fmt.allocPrint(a, "{s}/job:42/cpuset.cpus.effective", .{point}), "4-5\n");
+    try writeUnder(a, try std.fmt.allocPrint(a, "{s}/cpuset/job:42/cpuset.cpus.effective", .{cg}), "0\n");
+    try writeUnder(a, try std.fmt.allocPrint(a, "{s}/job:42/cpuset.cpus.effective", .{cg}), "1\n");
+    try expectCpus(cgroupCpusFrom(a, proc_file, cg), &.{ 4, 5 });
+}
+
+test "nested cgroup stops at the cpuset mount" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const a = arena_state.allocator();
+    const base = try cgroupFixture(a, "nest");
+    defer fsx.deleteTree(a, fsx.cwd, base) catch {};
+    const proc_dir = try std.fmt.allocPrint(a, "{s}/proc/self", .{base});
+    const cg = try std.fmt.allocPrint(a, "{s}/sys/fs/cgroup", .{base});
+    const point = try std.fmt.allocPrint(a, "{s}/cgroup/cpuset", .{base});
+    const proc_file = try std.fmt.allocPrint(a, "{s}/cgroup", .{proc_dir});
+    try writeUnder(a, proc_file, "2:cpuset:/a/b/c\n");
+    const mi = try std.fmt.allocPrint(a, "22 20 0:22 / {s} rw - cgroup cgroup rw,cpuset\n", .{point});
+    try writeUnder(a, try std.fmt.allocPrint(a, "{s}/mountinfo", .{proc_dir}), mi);
+    try writeUnder(a, try std.fmt.allocPrint(a, "{s}/a/cpuset.cpus.effective", .{point}), "6,7\n");
+    try writeUnder(a, try std.fmt.allocPrint(a, "{s}/cgroup/cpuset.cpus.effective", .{base}), "9\n");
+    try writeUnder(a, try std.fmt.allocPrint(a, "{s}/cpuset/a/cpuset.cpus.effective", .{cg}), "1\n");
+    try expectCpus(cgroupCpusFrom(a, proc_file, cg), &.{ 6, 7 });
+}
+
+test "missing cpuset controller is not a cpuset" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const a = arena_state.allocator();
+    const base = try cgroupFixture(a, "miss");
+    defer fsx.deleteTree(a, fsx.cwd, base) catch {};
+    const proc_dir = try std.fmt.allocPrint(a, "{s}/proc/self", .{base});
+    const cg = try std.fmt.allocPrint(a, "{s}/sys/fs/cgroup", .{base});
+    const cpu = try std.fmt.allocPrint(a, "{s}/cpu,cpuacct", .{cg});
+    const proc_file = try std.fmt.allocPrint(a, "{s}/cgroup", .{proc_dir});
+    try writeUnder(a, proc_file, "2:cpu,cpuacct:/job\n0::/job\n");
+    const mi = try std.fmt.allocPrint(a, "30 20 0:30 / {s} rw - cgroup cgroup rw,cpu,cpuacct\n31 20 0:31 / {s} rw - cgroup2 cgroup2 rw\n", .{ cpu, cg });
+    try writeUnder(a, try std.fmt.allocPrint(a, "{s}/mountinfo", .{proc_dir}), mi);
+    try writeUnder(a, try std.fmt.allocPrint(a, "{s}/job/cgroup.controllers", .{cpu}), "cpu mycpuset memory\n");
+    try writeUnder(a, try std.fmt.allocPrint(a, "{s}/job/cpuset.cpus.effective", .{cpu}), "8\n");
+    try writeUnder(a, try std.fmt.allocPrint(a, "{s}/job/cgroup.controllers", .{cg}), "cpu mycpuset memory\n");
+    try writeUnder(a, try std.fmt.allocPrint(a, "{s}/job/cpuset.cpus.effective", .{cg}), "8\n");
+    try writeUnder(a, try std.fmt.allocPrint(a, "{s}/cgroup.controllers", .{cg}), "cpu mycpuset memory\n");
+    try writeUnder(a, try std.fmt.allocPrint(a, "{s}/cpuset.cpus.effective", .{cg}), "9\n");
+    try std.testing.expect(cgroupCpusFrom(a, proc_file, cg) == null);
+}
+
+test "dotdot mount root keeps the cgroup root" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const a = arena_state.allocator();
+    const base = try cgroupFixture(a, "dot");
+    defer fsx.deleteTree(a, fsx.cwd, base) catch {};
+    const proc_dir = try std.fmt.allocPrint(a, "{s}/proc/self", .{base});
+    const cg = try std.fmt.allocPrint(a, "{s}/sys/fs/cgroup", .{base});
+    const outside = try std.fmt.allocPrint(a, "{s}/outside", .{base});
+    const proc_file = try std.fmt.allocPrint(a, "{s}/cgroup", .{proc_dir});
+    try writeUnder(a, proc_file, "0::/../job\n");
+    const mi = try std.fmt.allocPrint(a, "40 20 0:40 /.. {s} rw - cgroup2 cgroup2 rw\n", .{outside});
+    try writeUnder(a, try std.fmt.allocPrint(a, "{s}/mountinfo", .{proc_dir}), mi);
+    try writeUnder(a, try std.fmt.allocPrint(a, "{s}/job/cpuset.cpus.effective", .{outside}), "9\n");
+    try writeUnder(a, try std.fmt.allocPrint(a, "{s}/cpuset.cpus.effective", .{cg}), "0-3\n");
+    try expectCpus(cgroupCpusFrom(a, proc_file, cg), &.{ 0, 1, 2, 3 });
 }
 
 test "parseCpuSpec rejects trailing commas" {
