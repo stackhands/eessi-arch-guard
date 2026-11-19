@@ -1065,7 +1065,8 @@ fn checkSubmit(arena: Allocator, args: Args, env: envmap.Map, settings: ?Setting
         return finishCheckSubmit(arena, args, partition, constraint, 2, null, null, &.{}, reason, &.{line});
     }
     const configured = if (settings) |s| s.get("eb_stack") orelse "" else "";
-    const selected = args.eb_stack orelse (if (configured.len > 0) configured else "eb-stack");
+    const cli_eb = args.eb_stack orelse "";
+    const selected = if (cli_eb.len > 0) cli_eb else if (configured.len > 0) configured else "eb-stack";
     const eb_stack = findExecutable(arena, env, selected) orelse {
         const shown = text.oneLine(arena, selected, 200) catch selected;
         const reason = arena.print("eb-stack is not executable: {s}", .{shown}) catch shown;

@@ -941,6 +941,28 @@ class CheckSubmitZigParityTests(unittest.TestCase):
             self.assertIn("Exec format error", proc_exec.stderr)
             self.assertIn("could not run eb-stack:", json.loads(proc_exec.stdout)["message"])
 
+    def test_empty_eb_stack_flag_names_default_executable(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            prefix = root / "prefix"
+            (prefix / "software" / "linux" / ZEN4 / "modules" / "all").mkdir(parents=True)
+            env = {
+                "PATH": "/usr/bin:/bin",
+                "HOME": str(root / "home"),
+                "LANG": "C",
+                "LC_ALL": "C",
+                "EESSI_PREFIX": str(prefix),
+                "EESSI_OS_TYPE": "linux",
+                "LOADEDMODULES": "EESSI/2025.06:R/4.4.2",
+            }
+            proc = harness.run_guard(
+                env, ["--check-submit", "--json", "--target", ZEN4, "--eb-stack", ""]
+            )
+            self.assertEqual(proc.returncode, 2, proc.stderr)
+            expected = "eb-stack is not executable: eb-stack"
+            self.assertEqual(proc.stderr, f"eessi-arch-guard: check-submit: {expected}\n")
+            self.assertEqual(json.loads(proc.stdout)["message"], expected)
+
 
 if __name__ == "__main__":
     unittest.main()
