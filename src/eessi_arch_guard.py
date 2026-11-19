@@ -785,10 +785,14 @@ def _unescape_mountinfo(text: str) -> str:
     out = []
     i = 0
     while i < len(text):
-        if text[i] == "\\" and i + 3 < len(text) and text[i + 1 : i + 4].isdigit():
-            out.append(chr(int(text[i + 1 : i + 4], 8)))
-            i += 4
-            continue
+        if text[i] == "\\" and i + 3 < len(text):
+            digits = text[i + 1 : i + 4]
+            if all("0" <= digit <= "7" for digit in digits):
+                value = int(digits, 8)
+                if value <= 0xFF:
+                    out.append(chr(value))
+                    i += 4
+                    continue
         out.append(text[i])
         i += 1
     return "".join(out)

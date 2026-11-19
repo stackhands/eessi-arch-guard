@@ -2578,6 +2578,19 @@ fn cgroupFixture(arena: Allocator, name: []const u8) ![]const u8 {
     return base;
 }
 
+test "mountinfo unescape keeps invalid octal literal" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const unescaped = unescapeMountinfo(
+        arena_state.allocator(),
+        "/bad\\089/high\\777/good\\040path",
+    ).?;
+    try std.testing.expectEqualStrings(
+        "/bad\\089/high\\777/good path",
+        unescaped,
+    );
+}
+
 test "cgroup v1 cpuset mounted off the default path" {
     var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena_state.deinit();

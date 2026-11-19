@@ -29,6 +29,12 @@ class CgroupV1ProcTree(unittest.TestCase):
     def lookup(self):
         return guard.cgroup_cpus_from(str(self.proc / "cgroup"), str(self.cg))
 
+    def test_mountinfo_unescape_keeps_invalid_octal_literal(self):
+        cases = ((r"\089", r"\089"), (r"\777", r"\777"), (r"\040", " "))
+        for escaped, expected in cases:
+            with self.subTest(escaped=escaped):
+                self.assertEqual(guard._unescape_mountinfo(escaped), expected)
+
     def test_v1_cpuset_mounted_off_the_default_path(self):
         point = self.root / "cgroup" / "cpuset"
         other = self.root / "cgroup" / "notcpuset"

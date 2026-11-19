@@ -28,6 +28,10 @@ MOUNT = """\
 
 
 class SitePathTests(unittest.TestCase):
+    def test_mountinfo_unescape_keeps_out_of_range_octal_literal(self):
+        sp = load()
+        self.assertEqual(sp._unescape(r"\777"), r"\777")
+
     def test_a_cvmfs_mount_holds_the_repo_and_the_root_disk_does_not(self):
         sp = load()
         self.assertEqual(sp.client_mount(MOUNT, "/cvmfs/software.eessi.io"), "fuse.cvmfs")
