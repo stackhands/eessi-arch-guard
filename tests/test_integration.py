@@ -1372,7 +1372,10 @@ class IntegrationTests(unittest.TestCase):
         self.site.add_module(icelake, "R/4.4.2")
         self._copy_cpuinfo("emeraldrapids-kvm-no-waitpkg.cpuinfo")
         env = harness.base_env(self.site, spr, ["R/4.4.2"], gpu="none")
-        first_pair = affinity[:2]
+        fixture_visible = [cpu for cpu in affinity if 0 <= cpu <= 7]
+        if not fixture_visible:
+            self.skipTest("fixture cpuinfo has processors 0-7, none are in the live affinity mask")
+        first_pair = fixture_visible[:2]
         env["SLURM_CPU_BIND_LIST"] = (
             str(first_pair[0])
             if len(first_pair) == 1
@@ -1392,10 +1395,13 @@ class IntegrationTests(unittest.TestCase):
         Path(self.site.cpuinfo).write_text("\n\n".join(even_blocks) + "\n", encoding="ascii")
         env_gaps = harness.base_env(self.site, spr, ["R/4.4.2"], gpu="none")
         even_ids = [
-            int(block.splitlines()[0].split(":")[-1].strip()) for block in even_blocks if block.strip()
+            int(block.splitlines()[0].split(":")[-1].strip())
+            for block in even_blocks
+            if block.strip()
         ]
         gap_visible = [cpu for cpu in even_ids if cpu in affinity]
-        self.assertTrue(gap_visible, "expected an even logical CPU in the live affinity mask")
+        if not gap_visible:
+            self.skipTest("no even fixture processor is in the live affinity mask")
         env_gaps["SLURM_CPU_BIND_LIST"] = ",".join(str(cpu) for cpu in gap_visible[:2])
         proc_gaps = harness.run_guard(env_gaps)
         changes_gaps, _printed = _assert_prolog(proc_gaps)

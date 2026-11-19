@@ -2297,6 +2297,27 @@ test "cgroupCpusFrom narrows wider sched affinity on cgroup v2 layouts" {
     const narrow = taskCpuBounds(.empty, narrow_sched, cg);
     try std.testing.expect(narrow.base_cpus.?.eql(cg));
     try std.testing.expect(narrow.allowed.?.eql(narrow_sched));
+
+    const lxcfs_narrow =
+        \\processor : 0
+        \\vendor_id : GenuineIntel
+        \\flags : avx2 fma
+        \\
+        \\processor : 1
+        \\vendor_id : GenuineIntel
+        \\flags : avx2 fma avx512f waitpkg
+        \\
+    ;
+    var cgroup_4_5: CpuSet = .{};
+    cgroup_4_5.add(4);
+    cgroup_4_5.add(5);
+    var affinity_4: CpuSet = .{};
+    affinity_4.add(4);
+    const remap_bounds = taskCpuBounds(.empty, affinity_4, cgroup_4_5);
+    const scoped = scopeCpuinfoWithBase(a, lxcfs_narrow, remap_bounds.allowed.?, remap_bounds.base_cpus).?;
+    try std.testing.expect(std.mem.find(u8, scoped, "flags : avx2 fma\n") != null);
+    try std.testing.expect(std.mem.find(u8, scoped, "waitpkg") == null);
+    try std.testing.expect(std.mem.find(u8, scoped, "processor : 0\nflags :\n") == null);
 }
 
 test "parseCpuSpec rejects trailing commas" {
