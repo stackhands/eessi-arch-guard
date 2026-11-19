@@ -1319,13 +1319,27 @@ def do_restore(payload: Mapping[str, object]) -> Dict[str, object]:
     current, err = apply_lmod(module_env, lmod_cmd, ["--force", "purge"])
     if current is None:
         return {"ok": False, "missing": [], "error": one_line(err or "purge failed", 300)}
-    current, err = apply_lmod(pinned_env(current, pin), lmod_cmd, ["load", eessi])
+    had_cpuinfo = "EESSI_PROC_CPUINFO" in current
+    orig_cpuinfo = current.get("EESSI_PROC_CPUINFO")
+    _cpuinfo_path, cleanup, load_env = _prepare_cpuinfo(pinned_env(current, pin))
+    try:
+        current, err = apply_lmod(load_env, lmod_cmd, ["load", eessi])
+    finally:
+        if cleanup:
+            try:
+                os.unlink(cleanup)
+            except OSError:
+                pass
     if current is None:
         return {
             "ok": False,
             "missing": [eessi],
             "error": one_line(err or "EESSI load failed", 300),
         }
+    if had_cpuinfo and orig_cpuinfo is not None:
+        current["EESSI_PROC_CPUINFO"] = orig_cpuinfo
+    else:
+        current.pop("EESSI_PROC_CPUINFO", None)
     if modules:
         nxt, err = apply_lmod(current, lmod_cmd, ["load", *modules])
         if nxt is None:
