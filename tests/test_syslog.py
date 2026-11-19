@@ -454,6 +454,16 @@ class SyslogTests(unittest.TestCase):
         finally:
             subprocess.check_call(["sudo", "rm", "-f", str(conf)])
 
+    def test_invalid_syslog_target_and_pen_emit_separate_ordered_warnings(self):
+        env = self._cpu_env(ZEN2, "zen2", {"EESSI_ARCH_GUARD_SYSLOG_PEN": "not-int"})
+        proc = harness.run_guard(env, ["--dry-run", "--json", "--syslog=bad-target"])
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertEqual(
+            proc.stderr,
+            "eessi-arch-guard: --syslog is not a valid syslog target: bad-target\n"
+            "eessi-arch-guard: EESSI_ARCH_GUARD_SYSLOG_PEN is not a positive integer: not-int\n",
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
