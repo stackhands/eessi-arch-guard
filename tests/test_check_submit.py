@@ -782,6 +782,25 @@ with open({str(env_log)!r}, "w", encoding="utf-8") as handle:
             finally:
                 subprocess.check_call(["sudo", "rm", "-f", str(conf)])
 
+    def test_cli_quotes_invalid_configured_target_like_python(self) -> None:
+        conf = harness.PROGRAM.with_name("eessi-arch-guard.conf")
+        conf.write_text("submit_target.partition.cpu = X86_64/amd/zen4\n", encoding="utf-8")
+        subprocess.check_call(["sudo", "chown", "root:root", str(conf)])
+        subprocess.check_call(["sudo", "chmod", "644", str(conf)])
+        try:
+            proc = harness.run_guard(
+                {"PATH": "/usr/bin:/bin", "HOME": "/tmp", "LANG": "C", "LC_ALL": "C"},
+                ["--check-submit", "--partition", "cpu", "--json"],
+            )
+            self.assertEqual(proc.returncode, 2, proc.stderr)
+            expected = "submit_target.partition.cpu has invalid target value 'X86_64/amd/zen4'"
+            self.assertEqual(proc.stderr, f"eessi-arch-guard: check-submit: {expected}\n")
+            payload = json.loads(proc.stdout)
+            self.assertEqual(payload["message"], expected)
+            self.assertEqual(payload["exit_semantic"], "invalid")
+        finally:
+            subprocess.check_call(["sudo", "rm", "-f", str(conf)])
+
 
 class CheckSubmitEmptyTargetTests(unittest.TestCase):
     def test_bare_or_empty_target_is_refused_as_target_mode(self) -> None:

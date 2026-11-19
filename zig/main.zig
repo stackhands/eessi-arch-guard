@@ -821,12 +821,9 @@ fn submitTarget(arena: Allocator, settings: ?Settings, partition: []const u8, co
         why.* = arena.print("site config has no {s} mapping", .{part_key}) catch part_key;
         return null;
     };
-    if (!std.mem.eql(u8, text.pyStrip(target), target) or hasUpperAscii(target)) {
-        why.* = arena.print("{s} has invalid target value {s}", .{ part_key, target }) catch part_key;
-        return null;
-    }
-    if (!text.safeRelSubdir(target)) {
-        why.* = arena.print("{s} has invalid target value {s}", .{ part_key, target }) catch part_key;
+    if (!std.mem.eql(u8, text.pyStrip(target), target) or hasUpperAscii(target) or !text.safeRelSubdir(target)) {
+        const shown = text.pyRepr(arena, target) catch target;
+        why.* = arena.print("{s} has invalid target value {s}", .{ part_key, shown }) catch part_key;
         return null;
     }
     if (constraint.len > 0) {
@@ -835,12 +832,9 @@ fn submitTarget(arena: Allocator, settings: ?Settings, partition: []const u8, co
             why.* = arena.print("site config has no {s} mapping", .{constraint_key}) catch constraint_key;
             return null;
         };
-        if (!std.mem.eql(u8, text.pyStrip(other), other) or hasUpperAscii(other)) {
-            why.* = arena.print("{s} has invalid target value {s}", .{ constraint_key, other }) catch constraint_key;
-            return null;
-        }
-        if (!text.safeRelSubdir(other)) {
-            why.* = arena.print("{s} has invalid target value {s}", .{ constraint_key, other }) catch constraint_key;
+        if (!std.mem.eql(u8, text.pyStrip(other), other) or hasUpperAscii(other) or !text.safeRelSubdir(other)) {
+            const shown = text.pyRepr(arena, other) catch other;
+            why.* = arena.print("{s} has invalid target value {s}", .{ constraint_key, shown }) catch constraint_key;
             return null;
         }
         if (!std.mem.eql(u8, target, other)) {
