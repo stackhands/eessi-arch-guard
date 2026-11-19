@@ -650,6 +650,38 @@ class IntegrationTests(unittest.TestCase):
                 self.assertEqual(proc.stdout, expected_out)
                 self.assertEqual(proc.stderr, "")
 
+    def test_json_decision_with_oversized_subdir_matches_python(self):
+        long_was = "a" * 5000
+        env = {"PATH": "/usr/bin:/bin", "LC_ALL": "C", "EESSI_SOFTWARE_SUBDIR": long_was}
+        proc = harness.run_guard(env, ["--json"])
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertEqual(proc.stderr, "")
+        expected_msg = (
+            "eessi-arch-guard: archdetect failed "
+            "(EESSI_PREFIX, EESSI_OS_TYPE, or EESSI_INIT_PREFIX is missing or unsafe); "
+            "environment left as it was"
+        )
+        expected = {
+            "cached": False,
+            "cause": "archdetect-failed",
+            "decision": "failed",
+            "detail": None,
+            "exit": 0,
+            "exit_semantic": "ok",
+            "kind": "decision",
+            "message": expected_msg,
+            "now": None,
+            "reload_needed": True,
+            "schema_version": 1,
+            "shell": False,
+            "strict": False,
+            "was": long_was,
+        }
+        self.assertEqual(
+            proc.stdout,
+            json.dumps(expected, ensure_ascii=True, sort_keys=True) + "\n",
+        )
+
     def test_bad_config_byte_keeps_the_other_keys(self):
         conf = harness.PROGRAM.with_name("eessi-arch-guard.conf")
         ok_path = os.path.join(self.site.root, "chain-ok.sh")

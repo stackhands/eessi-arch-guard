@@ -1446,21 +1446,18 @@ fn realMain(arena: Allocator, argv0: []const u8, argv: []const []const u8, envp:
         return code;
     };
     const announce = !args.shell and std.mem.eql(u8, env.get("SLURM_LOCALID") orelse "0", "0");
-    const body = envmap.render(arena, outcome.changes, outcome.message, args.shell, announce) catch |err| {
-        const cls = if (err == error.OutOfMemory) "MemoryError" else "ValueError";
-        const detail = envmap.renderErrorText(err);
-        const was = env.get("EESSI_SOFTWARE_SUBDIR") orelse "";
-        const failed = guard.failureOutcome(arena, was, cls, detail, detail);
-        syslog.emitEmergency(arena, sl, env, cls, detail, args.strict);
-        const code: u8 = if (args.strict) strict_failure_exit else 0;
-        if (args.json) {
-            jsonout.emit(arena, failed, env, false, args.strict, args.shell, code);
-        } else {
+    var body: []u8 = &.{};
+    if (!args.json) {
+        body = envmap.render(arena, outcome.changes, outcome.message, args.shell, announce) catch |err| {
+            const cls = if (err == error.OutOfMemory) "MemoryError" else "ValueError";
+            const detail = envmap.renderErrorText(err);
+            syslog.emitEmergency(arena, sl, env, cls, detail, args.strict);
+            const code: u8 = if (args.strict) strict_failure_exit else 0;
             writeStdout(chain_out, "");
             emergencyWrite(cls, detail);
-        }
-        return code;
-    };
+            return code;
+        };
+    }
     syslog.emitDecision(arena, sl, outcome, env, guard.last_cached, args.strict);
     if (args.shell) if (outcome.message) |m| if (m.len > 0) writeMessage(arena, 2, m);
     if (std.mem.eql(u8, env.get("EESSI_ARCH_GUARD_VERBOSE") orelse empty, "1")) if (outcome.detail) |d| if (d.len > 0) writeMessage(arena, 2, d);
