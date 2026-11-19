@@ -1364,13 +1364,20 @@ class IntegrationTests(unittest.TestCase):
     def test_real_emeraldrapids_kvm_cpuinfo_and_offline_gaps_fall_back(self):
         spr = "x86_64/intel/sapphirerapids"
         icelake = "x86_64/intel/icelake"
+        affinity = sorted(os.sched_getaffinity(0))
+        self.assertTrue(affinity, "expected at least one CPU in the live affinity mask")
         self.site.add_cpu(spr)
         self.site.add_cpu(icelake)
         self.site.add_module(spr, "R/4.4.2")
         self.site.add_module(icelake, "R/4.4.2")
         self._copy_cpuinfo("emeraldrapids-kvm-no-waitpkg.cpuinfo")
         env = harness.base_env(self.site, spr, ["R/4.4.2"], gpu="none")
-        env["SLURM_CPU_BIND_LIST"] = "2-3"
+        first_pair = affinity[:2]
+        env["SLURM_CPU_BIND_LIST"] = (
+            str(first_pair[0])
+            if len(first_pair) == 1
+            else ",".join(str(cpu) for cpu in first_pair)
+        )
         proc = harness.run_guard(env)
         changes, _printed = _assert_prolog(proc)
         self.assertEqual(changes["EESSI_SOFTWARE_SUBDIR"], icelake)
@@ -1384,7 +1391,12 @@ class IntegrationTests(unittest.TestCase):
         ]
         Path(self.site.cpuinfo).write_text("\n\n".join(even_blocks) + "\n", encoding="ascii")
         env_gaps = harness.base_env(self.site, spr, ["R/4.4.2"], gpu="none")
-        env_gaps["SLURM_CPU_BIND_LIST"] = "2,4"
+        even_ids = [
+            int(block.splitlines()[0].split(":")[-1].strip()) for block in even_blocks if block.strip()
+        ]
+        gap_visible = [cpu for cpu in even_ids if cpu in affinity]
+        self.assertTrue(gap_visible, "expected an even logical CPU in the live affinity mask")
+        env_gaps["SLURM_CPU_BIND_LIST"] = ",".join(str(cpu) for cpu in gap_visible[:2])
         proc_gaps = harness.run_guard(env_gaps)
         changes_gaps, _printed = _assert_prolog(proc_gaps)
         self.assertEqual(changes_gaps["EESSI_SOFTWARE_SUBDIR"], icelake)

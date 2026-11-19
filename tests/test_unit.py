@@ -886,10 +886,13 @@ class UnitTests:
         # LXCFS renumbers constrained cpuset blocks 0..K-1 even when cpuset is {1, 3}.
         lxcfs_text = (
             spr_kvm.replace("core id         : 0", "core id         : 1", 1)
+            .replace("apicid          : 0", "apicid          : 1", 1)
+            .replace("initial apicid  : 0", "initial apicid  : 1", 1)
             + "\n"
-            + spr_real.replace("processor       : 0", "processor       : 1", 1).replace(
-                "core id         : 0", "core id         : 3", 1
-            )
+            + spr_real.replace("processor       : 0", "processor       : 1", 1)
+            .replace("core id         : 0", "core id         : 3", 1)
+            .replace("apicid          : 0", "apicid          : 3", 1)
+            .replace("initial apicid  : 0", "initial apicid  : 3", 1)
         )
         scoped_lxcfs = guard.scope_cpuinfo(
             lxcfs_text, frozenset({1, 3}), base_cpus=frozenset({1, 3})
@@ -934,14 +937,17 @@ class UnitTests:
             with open(site.cpuinfo, "w", encoding="ascii") as handle:
                 handle.write(
                     spr_kvm.replace("core id         : 0", "core id         : 4", 1)
+                    .replace("apicid          : 0", "apicid          : 4", 1)
+                    .replace("initial apicid  : 0", "initial apicid  : 4", 1)
                     + "\n"
-                    + spr_real.replace("processor       : 0", "processor       : 1", 1).replace(
-                        "core id         : 0", "core id         : 5", 1
-                    )
+                    + spr_real.replace("processor       : 0", "processor       : 1", 1)
+                    .replace("core id         : 0", "core id         : 5", 1)
+                    .replace("apicid          : 0", "apicid          : 5", 1)
+                    .replace("initial apicid  : 0", "initial apicid  : 5", 1)
                 )
             env = harness.base_env(site, spr, ["R/4.4.2"], gpu="none")
             with (
-                mock.patch.object(guard, "sched_cpus", return_value=frozenset(range(8))),
+                mock.patch.object(guard, "sched_cpus", return_value=frozenset({4})),
                 mock.patch.object(guard, "cgroup_cpus", return_value=frozenset({4, 5})),
             ):
                 probe = guard.probe_cpu(env)
@@ -980,6 +986,11 @@ class UnitTests:
             allowed, base = guard._task_cpu_bounds({}, frozenset(range(8)), cg_set)
             assert base == frozenset({2, 3})
             assert allowed == frozenset({2, 3})
+
+            narrow_sched = frozenset({2})
+            narrow_allowed, narrow_base = guard._task_cpu_bounds({}, narrow_sched, cg_set)
+            assert narrow_base == frozenset({2, 3})
+            assert narrow_allowed == frozenset({2})
 
             scoped = guard.scope_cpuinfo(emr_text, allowed, base_cpus=base)
             assert scoped is not None
