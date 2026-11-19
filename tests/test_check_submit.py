@@ -905,6 +905,48 @@ class CheckSubmitEmptyTargetTests(unittest.TestCase):
                 self.assertEqual(proc.returncode, 2, proc.stdout + proc.stderr)
                 self.assertIn(expected, proc.stderr)
 
+    def test_cli_eb_stack_lookup_matches_shutil_which_when_path_unset(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            prefix = root / "prefix"
+            mod_dir = prefix / "software" / "linux" / ZEN4 / "modules" / "all" / "R"
+            mod_dir.mkdir(parents=True)
+            (mod_dir / "4.4.2.lua").write_text("--\n", encoding="utf-8")
+            base_env = {
+                "HOME": str(root / "home"),
+                "LANG": "C",
+                "LC_ALL": "C",
+                "EESSI_PREFIX": str(prefix),
+                "EESSI_OS_TYPE": "linux",
+                "LOADEDMODULES": "EESSI/2025.06:R/4.4.2",
+            }
+            for label, extra_path, eb_arg, expected_code in (
+                ("unset", None, "true", 0),
+                ("colon", ":/bin:/usr/bin", "true", 0),
+                ("empty", "", "true", 2),
+                ("nonexec-slash", "/usr/bin:/bin", "./README.md", 2),
+            ):
+                with self.subTest(label=label):
+                    env = dict(base_env)
+                    if extra_path is not None:
+                        env["PATH"] = extra_path
+                    proc = harness.run_guard(
+                        env,
+                        ["--check-submit", "--json", "--target", ZEN4, "--eb-stack", eb_arg],
+                    )
+                    self.assertEqual(proc.returncode, expected_code, proc.stderr)
+                    payload = json.loads(proc.stdout)
+                    self.assertEqual(payload["exit"], expected_code)
+                    if expected_code == 0:
+                        self.assertEqual(proc.stderr, "")
+                        self.assertEqual(payload["exit_semantic"], "ok")
+                    else:
+                        expected_msg = f"eb-stack is not executable: {eb_arg}"
+                        self.assertEqual(
+                            proc.stderr, f"eessi-arch-guard: check-submit: {expected_msg}\n"
+                        )
+                        self.assertEqual(payload["message"], expected_msg)
+
 
 class CheckSubmitZigParityTests(unittest.TestCase):
     def test_early_invalid_input_reports_loaded_null(self) -> None:
