@@ -426,6 +426,10 @@ class UnitTests:
             assert "not owned by root" in reason
         finally:
             os.unlink(handle.name)
+        missing = "/nonexistent/it's\nconf"
+        want = "/nonexistent/it's\nconf ([Errno 2] No such file or directory: "
+        want += '"/nonexistent/it\'s\\nconf")'
+        assert guard._config_untrusted(missing) == want
 
     def test_main_uses_invoked_command_path_for_config_lookup(self):
         with tempfile.TemporaryDirectory(prefix="eag-bin-") as bindir:
