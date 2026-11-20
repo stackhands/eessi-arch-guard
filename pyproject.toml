@@ -67,3 +67,8 @@ showcontent = true
 directory = "doc"
 name = "Docs"
 showcontent = true
+
+[[tool.towncrier.type]]
+directory = "misc"
+name = "Misc"
+showcontent = true
