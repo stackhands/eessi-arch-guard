@@ -1,0 +1,1 @@
+When the chained prolog cannot be started and `--json` is on the command line, the Zig guard prints the exception text as the `message` of its failed decision, as the Python guard does, instead of an empty string.
