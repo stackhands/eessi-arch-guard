@@ -204,13 +204,18 @@ def log_lines(path: str):
         return [line.rstrip("\n") for line in handle if line.strip()]
 
 
-def run_with_timeout(argv, env=None, timeout: float = 2.0):
-    """Run ``argv`` with a bounded wall-clock timeout."""
+def run_with_timeout(argv, env=None, timeout: float = 2.0, text: bool = True):
+    """Run ``argv`` with a bounded wall-clock timeout.
+
+    The streams are decoded as text unless ``text`` is false. Then they stay
+    bytes, and ``env`` may hold bytes, so a comparison sees input and output
+    that are not valid UTF-8.
+    """
     return subprocess.run(
         list(argv),
         env=env,
         capture_output=True,
-        text=True,
+        text=text,
         timeout=timeout,
         check=False,
     )
