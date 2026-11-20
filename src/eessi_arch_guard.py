@@ -2506,7 +2506,7 @@ def _finish_check_submit(
 ) -> int:
     """Write the check result. ``--json`` replaces the text summary on stdout."""
     for line in stderr_lines:
-        sys.stderr.write(line)
+        sys.stderr.write(_SURROGATE_ESCAPES.sub("?", line))
     if as_json:
         payload = {
             "schema_version": DECISION_JSON_SCHEMA_VERSION,
@@ -2657,7 +2657,6 @@ def check_submit(
                     unsupported,
                 ],
                 capture_output=True,
-                text=True,
                 env=strip_startup(env),
                 check=False,
             )
@@ -2674,8 +2673,10 @@ def check_submit(
     if proc.returncode == 0:
         summary = "%s loaded module(s) available for %s" % (len(loaded), target)
         return finish(0, target=target, loaded=len(loaded), message=summary)
+    out_text = _child_text(proc.stdout)
+    err_text = _child_text(proc.stderr)
     missing: List[str] = []
-    for line in proc.stdout.splitlines():
+    for line in out_text.splitlines():
         filename = line.split(" is flagged on ", 1)[0]
         name = files.get(filename)
         if name and name not in missing:
@@ -2686,7 +2687,7 @@ def check_submit(
             for name in missing
         )
         return finish(1, target=target, loaded=len(loaded), missing=missing, stderr_lines=lines)
-    detail = proc.stderr.strip() or proc.stdout.strip() or "exit %s" % proc.returncode
+    detail = err_text.strip() or out_text.strip() or "exit %s" % proc.returncode
     reason = "eb-stack failed: %s" % one_line(detail, 300)
     return finish(
         2,
@@ -2695,6 +2696,18 @@ def check_submit(
         message=reason,
         stderr_lines=("eessi-arch-guard: check-submit: %s\n" % reason,),
     )
+
+
+# A byte that is not UTF-8 reaches a message as U+DC80 to U+DCFF. A stream whose
+# encoding errors are strict cannot write it, so it is written as a question mark.
+_SURROGATE_ESCAPES = re.compile("[\udc80-\udcff]")
+
+
+def _child_text(raw: bytes) -> str:
+    """A child's stream as text mode reads it, newlines translated, except that
+    a byte that is not UTF-8 stays one character (surrogateescape) and does not
+    raise."""
+    return raw.decode("utf-8", "surrogateescape").replace("\r\n", "\n").replace("\r", "\n")
 
 
 def _chain_path_ok(path: str) -> bool:
