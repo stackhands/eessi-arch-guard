@@ -87,7 +87,7 @@ pub fn parsePen(arena: Allocator, raw: []const u8) ?[]const u8 {
     const s = text.pyStrip(raw);
     if (s.len == 0 or s.len > 20) return null;
     for (s) |c| if (c < '0' or c > '9') return null;
-    const val = std.fmt.parseInt(u64, s, 10) catch return null;
+    const val = std.fmt.parseInt(u128, s, 10) catch return null;
     if (val == 0) return null;
     return arena.print("{d}", .{val}) catch null;
 }
@@ -496,6 +496,9 @@ test "formatRfc5424 escapes structured data values and uses configured PEN" {
     try std.testing.expect(parsePen(a, "0") == null);
     try std.testing.expect(parsePen(a, "abc") == null);
     try std.testing.expectEqualStrings("49152", parsePen(a, "049152").?);
+    try std.testing.expectEqualStrings("18446744073709551616", parsePen(a, "18446744073709551616").?);
+    try std.testing.expectEqualStrings("99999999999999999999", parsePen(a, "99999999999999999999").?);
+    try std.testing.expect(parsePen(a, "100000000000000000000") == null);
 }
 
 test "formatTarget preserves brackets around IPv6 hosts" {
