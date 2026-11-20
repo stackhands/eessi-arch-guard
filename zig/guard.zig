@@ -2123,10 +2123,9 @@ fn openCacheDir(c: *Ctx, dir: []const u8) error{Os}!sys.fd_t {
     return fsx.openDir(fsx.cwd, dir, true) catch |err| {
         // sys.z refuses a path too long for the kernel before any call.
         const e: linux.E = if (err == error.NameTooLong) .NAMETOOLONG else common.sys.last_errno;
-        const shown = text.pyRepr(c.arena, dir) catch main_mod.oom();
         os_failure = .{
             .class = osErrorClass(e),
-            .text = c.arena.print("{s}: {s}", .{ common.sys.describeErrno(e), shown }) catch main_mod.oom(),
+            .text = common.pytext.osErrorErrno(c.arena, e, dir) catch main_mod.oom(),
         };
         return error.Os;
     };
@@ -2142,6 +2141,17 @@ test "an unopenable cache directory is the OSError Python raises" {
     try std.testing.expectError(error.Os, openCacheDir(&c, "/proc/self/exe/x"));
     try std.testing.expectEqualStrings("NotADirectoryError", os_failure.class);
     try std.testing.expectEqualStrings("[Errno 20] Not a directory: '/proc/self/exe/x'", os_failure.text);
+    try std.testing.expectError(error.Os, openCacheDir(&c, "/nonexistent/a'b\"c"));
+    try std.testing.expectEqualStrings("FileNotFoundError", os_failure.class);
+    try std.testing.expectEqualStrings("[Errno 2] No such file or directory: '/nonexistent/a\\'b\"c'", os_failure.text);
+    try std.testing.expectError(error.Os, openCacheDir(&c, "/nonexistent/a\\b\n\xff"));
+    try std.testing.expectEqualStrings("FileNotFoundError", os_failure.class);
+    try std.testing.expectEqualStrings("[Errno 2] No such file or directory: '/nonexistent/a\\\\b\\n\\udcff'", os_failure.text);
+    var long: [sys.path_max + 8]u8 = @splat('a');
+    long[0] = '/';
+    try std.testing.expectError(error.Os, openCacheDir(&c, &long));
+    try std.testing.expectEqualStrings("OSError", os_failure.class);
+    try std.testing.expect(std.mem.startsWith(u8, os_failure.text, "[Errno 36] File name too long: '/aaaa"));
 }
 
 /// cached_decide: `decide`, once per job step, node, user, output mode and
