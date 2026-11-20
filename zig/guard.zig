@@ -2749,6 +2749,8 @@ test "root cpuset walk does not read relative to cwd" {
     try std.testing.expect(writePrivateNew(relative, "7\n", 0o600));
     defer unlinkPath(relative);
     try std.testing.expect(walkCpuset(arena_state.allocator(), "/", "/") == null);
+    // dirname("//job") is "/", so this walk must not open the relative file either.
+    try std.testing.expect(walkCpuset(arena_state.allocator(), "//job", "/") == null);
 }
 
 test "cgroup v1 cpuset mounted off the default path" {
