@@ -14,6 +14,7 @@ const json = common.json;
 const sys = common.sys;
 const fsx = common.fsx;
 const proc = common.proc;
+const pytext = common.pytext;
 const state = common.state;
 const Allocator = std.mem.Allocator;
 const empty: []const u8 = "";
@@ -230,7 +231,7 @@ fn resolve(c: *Ctx, name: []const u8, env: Map) ?[]const u8 {
 
 /// The message subprocess raises for a program that cannot be found.
 fn notFound(c: *Ctx, name: []const u8) []const u8 {
-    return c.arena.print("[Errno 2] No such file or directory: '{s}'", .{name}) catch "could not start";
+    return pytext.osErrorErrno(c.arena, .NOENT, name) catch main_mod.oom();
 }
 
 /// run_captured: under the decision limit with `new_session`, the child's
@@ -252,6 +253,7 @@ fn runCaptured(c: *Ctx, argv: []const []const u8, env: Map, input: ?[]const u8, 
         .stderr_limit = 1 << 20,
         .timeout_ms = null,
         .new_session = limited,
+        .exec_error = true,
     };
     if (limited) {
         const l = c.limit.?;
@@ -265,12 +267,8 @@ fn runCaptured(c: *Ctx, argv: []const []const u8, env: Map, input: ?[]const u8, 
     const r = proc.run(c.arena, exe, argv, envp, opts) catch |err| switch (err) {
         error.TimedOut => return error.Deadline,
         error.Canceled => return error.Terminated,
-        error.NotFound => {
-            why.* = notFound(c, argv[0]);
-            return error.CannotRun;
-        },
         else => {
-            why.* = @errorName(err);
+            why.* = pytext.osError(c.arena, err, argv[0]) catch main_mod.oom();
             return error.CannotRun;
         },
     };
