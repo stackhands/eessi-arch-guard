@@ -476,8 +476,8 @@ fn exists(path: []const u8) bool {
 
 fn configReadWarning(arena: Allocator, path: []const u8, err: anyerror) ?[]const u8 {
     if (sys.asError(err)) |se| {
-        const shown = text.pyRepr(arena, path) catch path;
-        return arena.print("eessi-arch-guard: config ignored: {s}: {s}", .{ sys.describe(se), shown }) catch null;
+        const detail = common.pytext.osError(arena, se, path) catch return null;
+        return arena.print("eessi-arch-guard: config ignored: {s}", .{detail}) catch null;
     }
     return arena.print("eessi-arch-guard: config ignored: {s}: {t}", .{ path, err }) catch null;
 }
@@ -1420,8 +1420,7 @@ fn realMain(arena: Allocator, argv0: []const u8, argv: []const []const u8, envp:
                         error.IsDir => "IsADirectoryError",
                         else => "OSError",
                     };
-                    const shown = text.pyRepr(arena, path) catch path;
-                    const msg = arena.print("{s}: {s}", .{ sys.describe(se), shown }) catch sys.describe(se);
+                    const msg = common.pytext.osError(arena, se, path) catch sys.describe(se);
                     emergencyExit(cls, msg);
                 }
                 emergencyExit("OSError", @errorName(err));
@@ -1826,6 +1825,29 @@ test "osErrorText uses standard strerror descriptions for any errno" {
     try std.testing.expectEqualStrings("[Errno 36] File name too long: '/long'", osErrorText(a, .NAMETOOLONG, "/long"));
     try std.testing.expectEqualStrings("[Errno 30] Read-only file system: '/ro'", osErrorText(a, .ROFS, "/ro"));
     try std.testing.expectEqualStrings("[Errno 28] No space left on device: '/full'", osErrorText(a, .NOSPC, "/full"));
+}
+
+test "configReadWarning formats sys.Error with Python quoting and keeps non-sys errors" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const a = arena_state.allocator();
+    const saved = sys.last_errno;
+    defer sys.last_errno = saved;
+
+    sys.last_errno = .ACCES;
+    try std.testing.expectEqualStrings(
+        "eessi-arch-guard: config ignored: [Errno 13] Permission denied: \"/etc/it's\\udcff.conf\"",
+        configReadWarning(a, "/etc/it's\xff.conf", error.AccessDenied).?,
+    );
+    sys.last_errno = .PERM;
+    try std.testing.expectEqualStrings(
+        "eessi-arch-guard: config ignored: [Errno 1] Operation not permitted: '/etc/a\\'b\"c'",
+        configReadWarning(a, "/etc/a'b\"c", error.AccessDenied).?,
+    );
+    try std.testing.expectEqualStrings(
+        "eessi-arch-guard: config ignored: /etc/it's.conf: StreamTooLong",
+        configReadWarning(a, "/etc/it's.conf", error.StreamTooLong).?,
+    );
 }
 
 test "formatEmergencyLine truncates long detail and replaces invalid UTF-8" {
