@@ -3,7 +3,7 @@
 # Refuses to replace an existing /usr/local/sbin/eessi-arch-guard.
 set -euo pipefail
 
-root=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
+root=$(CDPATH='' cd -- "$(dirname -- "$0")/../.." && pwd)
 cd "$root"
 
 dest=/usr/local/sbin/eessi-arch-guard
