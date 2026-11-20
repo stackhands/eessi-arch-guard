@@ -36,9 +36,9 @@ pub const key_fields = [_][]const u8{
 };
 
 const waitpkg_marches = [_][]const u8{
-    "alderlake",      "arrowlake",     "arrowlake_s",     "clearwaterforest", "diamondrapids",
-    "grandridge",     "graniterapids", "graniterapids_d", "novalake",         "pantherlake",
-    "sapphirerapids", "sierraforest",  "tremont",
+    "alderlake",     "arrowlake",      "arrowlake_s",   "clearwaterforest", "diamondrapids",
+    "emeraldrapids", "grandridge",     "graniterapids", "graniterapids_d",  "novalake",
+    "pantherlake",   "sapphirerapids", "sierraforest",  "tremont",
 };
 
 /// What a decision came to.

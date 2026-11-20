@@ -635,6 +635,8 @@ def _run_bash(args: Sequence[str], env: Mapping[str, str]) -> subprocess.Complet
 # umonitor). Leaves use '_' where the march spells '-'. Taken from GCC 16
 # gcc/config/i386/i386.h (branch releases/gcc-16): the set GCC 15.2.0
 # carried plus novalake; znver6, GCC 16's other new mask, has no WAITPKG.
+# emeraldrapids is not its own mask: GCC spells the Sapphire Rapids
+# mask under that name as well, so the leaf needs the same flag.
 # archdetect's x86 spec does not require the flag, so a VM that hides it
 # is still offered that directory. A binary built with the march then
 # SIGILLs.
@@ -645,6 +647,7 @@ WAITPKG_MARCHES = frozenset(
         "arrowlake_s",
         "clearwaterforest",
         "diamondrapids",
+        "emeraldrapids",
         "grandridge",
         "graniterapids",
         "graniterapids_d",
