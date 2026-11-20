@@ -444,9 +444,7 @@ fn parseConfigBytes(arena: Allocator, blob: []const u8, bad: *std.ArrayList([]co
 }
 
 fn osErrorText(arena: Allocator, e: linux.E, path: []const u8) []const u8 {
-    if (sys.errnoText(e)) |s|
-        return arena.print("[Errno {d}] {s}: '{s}'", .{ @backingInt(e), s, path }) catch s;
-    return arena.print("[Errno {d}] Unknown error {d}: '{s}'", .{ @backingInt(e), @backingInt(e), path }) catch "error";
+    return common.pytext.osErrorErrno(arena, e, path) catch (sys.errnoText(e) orelse "error");
 }
 
 fn lstatRaw(path: []const u8, x: *linux.Statx) linux.E {
@@ -1847,6 +1845,30 @@ test "configReadWarning formats sys.Error with Python quoting and keeps non-sys 
     try std.testing.expectEqualStrings(
         "eessi-arch-guard: config ignored: /etc/it's.conf: StreamTooLong",
         configReadWarning(a, "/etc/it's.conf", error.StreamTooLong).?,
+    );
+}
+
+test "osErrorText and configUntrusted match Python repr quoting" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const a = arena_state.allocator();
+    const path = "/nonexistent/it's\nconf";
+    try std.testing.expectEqualStrings(
+        "[Errno 2] No such file or directory: \"/nonexistent/it's\\nconf\"",
+        osErrorText(a, .NOENT, path),
+    );
+    try std.testing.expectEqualStrings(
+        "/nonexistent/it's\nconf ([Errno 2] No such file or directory: \"/nonexistent/it's\\nconf\")",
+        configUntrusted(a, path).?,
+    );
+    try std.testing.expectEqualStrings(
+        "[Errno 2] No such file or directory: '/nonexistent/a\\'b\"c\\nconf'",
+        osErrorText(a, .NOENT, "/nonexistent/a'b\"c\nconf"),
+    );
+    const unknown_999: linux.E = @fromBackingInt(@as(u16, 999));
+    try std.testing.expectEqualStrings(
+        "[Errno 999] Unknown error 999: \"/nonexistent/it's\\nconf\"",
+        osErrorText(a, unknown_999, path),
     );
 }
 
