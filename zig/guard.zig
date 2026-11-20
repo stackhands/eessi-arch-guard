@@ -26,7 +26,6 @@ pub const diagnose_limit = 32;
 const max_arch_stdout = 65536;
 const cpuinfo_read_max = 16 * 1024 * 1024;
 const cache_read_max = 8 * 1024 * 1024;
-const lock_poll_ms = 50;
 
 /// The variables whose values, with the task's processors and visible GPUs,
 /// make up the digest in a cache file's name.
@@ -2086,19 +2085,33 @@ fn lockExclusive(c: *Ctx, fd: sys.fd_t) Stop!void {
     };
     while (true) {
         try l.check();
-        const rc = linux.flock(fd, std.posix.LOCK.EX | std.posix.LOCK.NB);
-        switch (linux.errno(rc)) {
-            .SUCCESS => return,
-            .AGAIN, .INTR => {},
-            else => |e| {
+        const committing = l.committing.load(.seq_cst);
+        const timeout_ms: ?u32 = if (committing) null else blk: {
+            const rem = l.remainingMs();
+            if (rem <= 0) return error.Deadline;
+            break :blk @intCast(@min(rem, std.math.maxInt(u32)));
+        };
+        const cancel: ?*const std.atomic.Value(bool) = if (committing) null else &l.terminated;
+        state.lockExclusiveCancel(fd, timeout_ms, cancel) catch |err| switch (err) {
+            error.Canceled => return error.Terminated,
+            error.TimedOut => {
+                try l.check();
+                continue;
+            },
+            else => {
+                const e = common.sys.last_errno;
                 os_failure = .{ .class = osErrorClass(e), .text = common.sys.describeErrno(e) };
                 return error.Os;
             },
-        }
-        const pause = @max(@min(lock_poll_ms, l.remainingMs()), 0);
-        var ts: linux.timespec = .{ .sec = 0, .nsec = @intCast(pause * std.time.ns_per_ms) };
-        _ = linux.nanosleep(&ts, null);
+        };
+        return;
     }
+}
+
+var lock_test_usr1_hits: std.atomic.Value(usize) = .init(0);
+
+fn onLockTestUsr1(_: linux.SIG) callconv(.c) void {
+    _ = lock_test_usr1_hits.fetchAdd(1, .seq_cst);
 }
 
 test "a flock error other than would-block is an OSError, not a wait" {
@@ -2115,6 +2128,102 @@ test "a flock error other than would-block is an OSError, not a wait" {
     try std.testing.expect(nowMs() - start < 1000);
     try std.testing.expectEqualStrings("OSError", os_failure.class);
     try std.testing.expectEqualStrings("[Errno 9] Bad file descriptor", os_failure.text);
+}
+
+test "lockExclusive honors deadline, cancel, EINTR and committing" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const gpa = std.testing.allocator;
+    var cwd_buf: [sys.path_max]u8 = undefined;
+    const here = try fsx.realpath(fsx.cwd, ".", &cwd_buf);
+    const base = try std.fmt.allocPrint(gpa, "{s}/.zig-cache/eag-lock-test-{d}", .{ here, linux.getpid() });
+    defer gpa.free(base);
+    makeDirs(base);
+    defer fsx.deleteTree(gpa, fsx.cwd, base) catch {};
+
+    const dir = try fsx.openDir(fsx.cwd, base, false);
+    defer sys.close(dir);
+    const held = try sys.openat(dir, "L", .{ .ACCMODE = .RDWR, .CREAT = true }, 0o600);
+    defer sys.close(held);
+    const waiter = try sys.openat(dir, "L", .{ .ACCMODE = .RDWR }, 0);
+    defer sys.close(waiter);
+
+    var c: Ctx = .{ .arena = arena_state.allocator(), .env = .empty, .strict = false, .self_exe = "" };
+
+    // An already-expired deadline or pre-set termination stops before taking an unlocked lock.
+    var expired: Limit = .{ .deadline_ms = nowMs() - 1 };
+    c.limit = &expired;
+    try std.testing.expectError(error.Deadline, lockExclusive(&c, waiter));
+    try std.testing.expectEqual(linux.E.SUCCESS, linux.errno(linux.flock(held, std.posix.LOCK.EX | std.posix.LOCK.NB)));
+    _ = linux.flock(held, std.posix.LOCK.UN);
+
+    var pre_term: Limit = .{ .deadline_ms = nowMs() + 60_000, .terminated = .init(true) };
+    c.limit = &pre_term;
+    try std.testing.expectError(error.Terminated, lockExclusive(&c, waiter));
+    try std.testing.expectEqual(linux.E.SUCCESS, linux.errno(linux.flock(held, std.posix.LOCK.EX | std.posix.LOCK.NB)));
+
+    // Under contention, SIGUSR1 interruptions do not abort early before the deadline.
+    lock_test_usr1_hits.store(0, .seq_cst);
+    const handler: linux.Sigaction = .{ .handler = .{ .handler = &onLockTestUsr1 }, .mask = linux.sigemptyset(), .flags = 0 };
+    var prev: linux.Sigaction = undefined;
+    _ = linux.sigaction(.USR1, &handler, &prev);
+    defer _ = linux.sigaction(.USR1, &prev, null);
+
+    const pid = linux.getpid();
+    const tid = linux.gettid();
+    const Signaler = struct {
+        fn send(target_pid: i32, target_tid: i32) void {
+            var ts: linux.timespec = .{ .sec = 0, .nsec = 15 * std.time.ns_per_ms };
+            _ = linux.nanosleep(&ts, null);
+            _ = linux.tgkill(target_pid, target_tid, .USR1);
+            _ = linux.nanosleep(&ts, null);
+            _ = linux.tgkill(target_pid, target_tid, .USR1);
+        }
+    };
+    const sig_thread = try std.Thread.spawn(.{}, Signaler.send, .{ pid, tid });
+    var deadline_lim: Limit = .{ .deadline_ms = nowMs() + 90 };
+    c.limit = &deadline_lim;
+    const wait_start = nowMs();
+    try std.testing.expectError(error.Deadline, lockExclusive(&c, waiter));
+    sig_thread.join();
+    try std.testing.expect(nowMs() - wait_start >= 60);
+    try std.testing.expect(lock_test_usr1_hits.load(.seq_cst) >= 1);
+
+    // Setting terminated while waiting stops with error.Terminated before the deadline.
+    var cancel_lim: Limit = .{ .deadline_ms = nowMs() + 60_000 };
+    c.limit = &cancel_lim;
+    const Canceler = struct {
+        fn run(lim: *Limit, target_pid: i32, target_tid: i32) void {
+            var ts: linux.timespec = .{ .sec = 0, .nsec = 25 * std.time.ns_per_ms };
+            _ = linux.nanosleep(&ts, null);
+            lim.terminated.store(true, .seq_cst);
+            _ = linux.tgkill(target_pid, target_tid, .USR1);
+        }
+    };
+    const cancel_thread = try std.Thread.spawn(.{}, Canceler.run, .{ &cancel_lim, pid, tid });
+    const cancel_start = nowMs();
+    try std.testing.expectError(error.Terminated, lockExclusive(&c, waiter));
+    cancel_thread.join();
+    try std.testing.expect(nowMs() - cancel_start < 1000);
+
+    // While committing, neither an expired deadline nor terminated stops lock acquisition.
+    var commit_lim: Limit = .{
+        .deadline_ms = nowMs() - 1,
+        .terminated = .init(true),
+        .committing = .init(true),
+    };
+    c.limit = &commit_lim;
+    const Unlocker = struct {
+        fn run(h: sys.fd_t) void {
+            var ts: linux.timespec = .{ .sec = 0, .nsec = 25 * std.time.ns_per_ms };
+            _ = linux.nanosleep(&ts, null);
+            _ = linux.flock(h, std.posix.LOCK.UN);
+        }
+    };
+    const unlock_thread = try std.Thread.spawn(.{}, Unlocker.run, .{held});
+    try lockExclusive(&c, waiter);
+    unlock_thread.join();
+    _ = linux.flock(waiter, std.posix.LOCK.UN);
 }
 
 /// _read_cache's open of the cache directory, which no handler around it
