@@ -497,34 +497,66 @@ fn parseUsize(s: []const u8) ?usize {
     return n;
 }
 
+/// Bits of one hex mask, without the `0x` prefix. False when `hex` is empty,
+/// holds a non-hex digit, or names a bit at or past `cpu_id_max`.
+fn addHexMask(set: *CpuSet, hex: []const u8) bool {
+    if (hex.len == 0) return false;
+    var bit: usize = 0;
+    var i: usize = hex.len;
+    while (i > 0) {
+        i -= 1;
+        const val: u8 = switch (hex[i]) {
+            '0'...'9' => hex[i] - '0',
+            'a'...'f' => hex[i] - 'a' + 10,
+            'A'...'F' => hex[i] - 'A' + 10,
+            else => return false,
+        };
+        var b: u3 = 0;
+        while (true) : (b += 1) {
+            if (val & (@as(u8, 1) << b) != 0) {
+                if (bit >= cpu_id_max) return false;
+                set.add(bit);
+            }
+            bit += 1;
+            if (b == 3) break;
+        }
+    }
+    return true;
+}
+
 /// parse_cpu_spec: a hex mask, a 0-3,8 list, or a cpu[0-3] hostlist.
+/// A comma-separated list of hex masks is their union, which is the string
+/// Slurm stores for --cpu-bind=mask_cpu.
 fn parseCpuSpec(spec: []const u8) ?CpuSet {
     const raw = std.mem.trim(u8, spec, " \t\r\n");
     if (raw.len == 0) return null;
     if (std.mem.startsWith(u8, raw, "0x") or std.mem.startsWith(u8, raw, "0X")) {
-        const hex = raw[2..];
-        if (hex.len == 0) return null;
         var set: CpuSet = .{};
-        var bit: usize = 0;
-        var i: usize = hex.len;
-        while (i > 0) {
-            i -= 1;
-            const val: u8 = switch (hex[i]) {
-                '0'...'9' => hex[i] - '0',
-                'a'...'f' => hex[i] - 'a' + 10,
-                'A'...'F' => hex[i] - 'A' + 10,
-                else => return null,
-            };
-            var b: u3 = 0;
-            while (true) : (b += 1) {
-                if (val & (@as(u8, 1) << b) != 0) {
-                    if (bit >= cpu_id_max) return null;
-                    set.add(bit);
-                }
-                bit += 1;
-                if (b == 3) break;
+        var i: usize = 0;
+        var saw = false;
+        var trailing_comma = false;
+        while (i < raw.len) {
+            if (raw[i] == ' ') {
+                i += 1;
+                continue;
+            }
+            trailing_comma = false;
+            if (i + 2 > raw.len or raw[i] != '0' or (raw[i + 1] != 'x' and raw[i + 1] != 'X')) return null;
+            i += 2;
+            const start = i;
+            while (i < raw.len and raw[i] != ',' and raw[i] != ' ') i += 1;
+            if (!addHexMask(&set, raw[start..i])) return null;
+            saw = true;
+            if (i < raw.len and raw[i] == ' ') {
+                while (i < raw.len and raw[i] == ' ') i += 1;
+            }
+            if (i < raw.len) {
+                if (raw[i] != ',') return null;
+                trailing_comma = true;
+                i += 1;
             }
         }
+        if (!saw or trailing_comma) return null;
         return set;
     }
     var body = raw;
@@ -2690,6 +2722,27 @@ test "parseCpuSpec rejects trailing commas" {
     try std.testing.expect(parseCpuSpec("0 - 1") == null);
     try std.testing.expect(parseCpuSpec("0,1") != null);
     try std.testing.expect(parseCpuSpec("cpu[0, 1]") != null);
+}
+
+test "parseCpuSpec unions a mask_cpu list" {
+    try expectCpus(parseCpuSpec("0x2"), &.{1});
+    try expectCpus(parseCpuSpec("0x2,0x4"), &.{ 1, 2 });
+    try expectCpus(parseCpuSpec("0x2,0x2"), &.{1});
+    try expectCpus(parseCpuSpec("0X2, 0x4"), &.{ 1, 2 });
+    try expectCpus(parseCpuSpec("0x0,0x2"), &.{1});
+    try std.testing.expect(parseCpuSpec("0x1,") == null);
+    try std.testing.expect(parseCpuSpec("0x1,0x") == null);
+    try std.testing.expect(parseCpuSpec("0x1,2") == null);
+    var high: [2 + 1 + 1024]u8 = undefined;
+    high[0] = '0';
+    high[1] = 'x';
+    high[2] = '1';
+    @memset(high[3..], '0');
+    try std.testing.expect(parseCpuSpec(&high) == null);
+    var listed: [4 + high.len]u8 = undefined;
+    @memcpy(listed[0..4], "0x2,");
+    @memcpy(listed[4..], &high);
+    try std.testing.expect(parseCpuSpec(&listed) == null);
 }
 
 test "resolvePath searches default_path and empty colon entries" {

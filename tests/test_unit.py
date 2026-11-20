@@ -850,6 +850,25 @@ class UnitTests:
         masked = guard.task_cpu_ids({"SLURM_CPU_BIND": "quiet,mask_cpu:0x2"})
         assert masked == bound
 
+    def test_mask_cpu_list_is_the_union_of_the_masks(self):
+        assert guard.parse_cpu_spec("0x2,0x4") == frozenset({1, 2})
+        assert guard.parse_cpu_spec("0x2,0x2") == frozenset({1})
+        assert guard.parse_cpu_spec("0X2, 0x4") == frozenset({1, 2})
+        assert guard.parse_cpu_spec("0x0,0x2") == frozenset({1})
+        assert guard.parse_cpu_spec("0x1,") is None
+        assert guard.parse_cpu_spec("0x1,0x") is None
+        assert guard.parse_cpu_spec("0x1,2") is None
+        high = "0x1" + ("0" * 1024)
+        assert guard.parse_cpu_spec(high) is None
+        assert guard.parse_cpu_spec("0x2," + high) is None
+        bound = guard.task_cpu_ids({"SLURM_CPU_BIND_LIST": "0x2,0x4"})
+        assert bound is not None
+        assert 1 in bound
+        assert 2 in bound
+        assert 0 not in bound
+        listed = guard.task_cpu_ids({"SLURM_CPU_BIND": "quiet,mask_cpu:0x2,0x4"})
+        assert listed == bound
+
     def test_scope_cpuinfo_keeps_the_bound_processor(self):
         text = "\n".join(
             (

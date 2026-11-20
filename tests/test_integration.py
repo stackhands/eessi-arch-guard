@@ -1447,6 +1447,47 @@ class IntegrationTests(unittest.TestCase):
         self.assertEqual(proc.returncode, 0, proc.stderr)
         self.assertEqual(proc.stdout, "", proc.stdout)
 
+    def test_mask_cpu_list_keeps_the_masked_processor(self):
+        # Processor 0 is Haswell. Processor 1 is Sapphire Rapids. Slurm
+        # stores the whole --cpu-bind=mask_cpu:0x2,0x4 string in
+        # SLURM_CPU_BIND_LIST: one hex mask per task, for CPU 1 and CPU 2.
+        # CPU 0 is not in that list, so the loaded Sapphire Rapids stack
+        # must stay put.
+        spr = "x86_64/intel/sapphirerapids"
+        haswell = "x86_64/intel/haswell"
+        self.site.add_cpu(spr)
+        self.site.add_cpu(haswell)
+        self.site.add_module(spr, "R/4.4.2")
+        self.site.add_module(haswell, "R/4.4.2")
+        cpuinfo = "\n".join(
+            (
+                "processor : 0",
+                "vendor_id : GenuineIntel",
+                "cpu family : 6",
+                "model : 60",
+                "model name : Intel Haswell",
+                "flags : avx2 fma",
+                "",
+                "processor : 1",
+                "vendor_id : GenuineIntel",
+                "cpu family : 6",
+                "model : 143",
+                "model name : Intel Sapphire Rapids",
+                "flags : avx2 fma avx512f avx512bw avx512cd avx512dq avx512vl "
+                "avx512_bf16 amx_tile waitpkg",
+                "",
+            )
+        )
+        with open(self.site.cpuinfo, "w", encoding="ascii") as handle:
+            handle.write(cpuinfo)
+        env = harness.base_env(self.site, spr, ["R/4.4.2"], gpu="none")
+        env["SLURM_CPU_BIND_LIST"] = "0x2,0x4"
+        env["SLURM_CPU_BIND_TYPE"] = "mask_cpu"
+        env["SLURM_CPU_BIND"] = "quiet,mask_cpu:0x2,0x4"
+        proc = harness.run_guard(env)
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertEqual(proc.stdout, "", proc.stdout)
+
     def test_slurm_cpu_bind_reloads_using_scoped_cpuinfo(self):
         # Processor 0 is Sapphire Rapids. Processor 1 is Haswell. A task
         # bound to cpu[1] must reload to Haswell without Lmod reading

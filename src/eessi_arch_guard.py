@@ -701,24 +701,24 @@ _IDENTITY_KEYS = frozenset(
 )
 
 
-def parse_cpu_spec(text: str) -> Optional[frozenset]:
-    """CPUs in a hex mask, a ``0-3,8`` list, or a ``cpu[0-3]`` hostlist.
+def _hex_mask_cpus(text: str) -> Optional[frozenset]:
+    """Processors in one hex mask, or the union of a comma-separated list.
 
-    None means the text is not one of those forms. A mask with a bit at or
-    past ``_CPU_ID_MAX`` is None too: applying the low bits alone would hide
-    a processor the mask named.
+    Slurm stores ``--cpu-bind=mask_cpu:0x2,0x4`` in ``SLURM_CPU_BIND_LIST``
+    as ``0x2,0x4``, one mask per task. None when a piece is not a mask, or
+    when a mask names a bit at or past ``_CPU_ID_MAX``.
     """
-    raw = (text or "").strip()
-    if not raw:
-        return None
-    if raw.lower().startswith("0x"):
+    found = set()
+    for part in text.split(","):
+        piece = part.strip(" ")
+        if not piece.lower().startswith("0x"):
+            return None
         try:
-            mask = int(raw, 16)
+            mask = int(piece, 16)
         except ValueError:
             return None
         if mask < 0:
             return None
-        found = set()
         bit = 0
         while mask and bit < _CPU_ID_MAX:
             if mask & 1:
@@ -727,7 +727,22 @@ def parse_cpu_spec(text: str) -> Optional[frozenset]:
             bit += 1
         if mask:
             return None
-        return frozenset(found)
+    return frozenset(found)
+
+
+def parse_cpu_spec(text: str) -> Optional[frozenset]:
+    """CPUs in a hex mask, a ``0-3,8`` list, or a ``cpu[0-3]`` hostlist.
+
+    A comma-separated list of hex masks is their union. None means the text
+    is not one of those forms. A mask with a bit at or past ``_CPU_ID_MAX``
+    is None too: applying the low bits alone would hide a processor the
+    mask named.
+    """
+    raw = (text or "").strip()
+    if not raw:
+        return None
+    if raw.lower().startswith("0x"):
+        return _hex_mask_cpus(raw)
     if raw.endswith("]"):
         host = _CPU_HOSTLIST_RE.fullmatch(raw)
         if host is None:
