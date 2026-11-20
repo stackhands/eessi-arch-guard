@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import shutil
 import subprocess
@@ -195,6 +196,66 @@ def run_guard(env, args=()):
         check=False,
     )
     return proc
+
+
+STUB_TARGET = "x86_64/amd/zen4"
+STUB_PLANNER = """#!/usr/bin/python3
+import sys
+sys.stderr.buffer.write(%r)
+sys.stdout.buffer.write(%r)
+if %r:
+    easystack = sys.argv[sys.argv.index('--easystack') + 1]
+    with open(easystack, encoding='utf-8') as handle:
+        names = [line.strip()[2:] for line in handle if line.startswith('  - ')]
+    for name in names:
+        print(name + ' is flagged on x86_64: it has never been installed there')
+sys.exit(%d)
+"""
+
+
+def run_check_submit_stub(
+    program,
+    stderr: bytes = b"",
+    stdout: bytes = b"",
+    status: int = 3,
+    flagged: bool = False,
+    extra_env=None,
+    timeout: float = 30.0,
+):
+    """Run ``program --check-submit --json`` with a stub in place of eb-stack.
+
+    The stub is an executable script in a tree of its own, next to a prefix
+    with one module. It writes ``stderr`` and ``stdout`` as bytes and exits
+    with ``status``. With ``flagged`` set it also writes a flagged line for
+    each module of the easystack file it is given, after ``stdout``. The guard
+    runs with a clean environment plus ``extra_env``. The result is the exit
+    status, the parsed standard output (``None`` when it is empty) and the
+    standard error as bytes.
+    """
+    with tempfile.TemporaryDirectory(prefix="eag-stub-") as tmp:
+        root = Path(tmp)
+        prefix = root / "prefix"
+        modules = prefix / "software" / "linux" / STUB_TARGET / "modules" / "all" / "R"
+        modules.mkdir(parents=True)
+        (modules / "4.4.2.lua").write_text("--\n", encoding="utf-8")
+        stub = root / "eb-stack"
+        stub.write_text(STUB_PLANNER % (stderr, stdout, flagged, status), encoding="utf-8")
+        stub.chmod(0o755)
+        env = {
+            "PATH": "/usr/bin:/bin",
+            "HOME": str(root / "home"),
+            "LANG": "C",
+            "LC_ALL": "C",
+            "EESSI_PREFIX": str(prefix),
+            "EESSI_OS_TYPE": "linux",
+            "LOADEDMODULES": "R/4.4.2",
+        }
+        env.update(extra_env or {})
+        argv = [*program, "--check-submit", "--json", "--target", STUB_TARGET]
+        argv += ["--eb-stack", str(stub)]
+        proc = run_with_timeout(argv, env=env, timeout=timeout, text=False)
+        payload = json.loads(proc.stdout) if proc.stdout else None
+        return proc.returncode, payload, proc.stderr
 
 
 def log_lines(path: str):
