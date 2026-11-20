@@ -328,12 +328,21 @@ fn contains(argv: []const []const u8, word: []const u8) bool {
     return false;
 }
 
+/// float() skips ASCII whitespace and whitespace outside ASCII, but not the
+/// separators U+001C to U+001F that str.strip() removes, so one of them
+/// beside the number makes the text invalid.
+fn hasSeparatorControl(s: []const u8) bool {
+    return std.mem.findAny(u8, s, "\x1c\x1d\x1e\x1f") != null;
+}
+
 /// float(text) as Python parses it: surrounding whitespace, a sign, digits
 /// with single underscores between them, a fraction, an exponent, or
 /// inf/infinity/nan in any case.
 fn pyFloat(arena: Allocator, raw: []const u8) ?f64 {
     const s = text.pyStrip(raw);
     if (s.len == 0) return null;
+    const lead = @intFromPtr(s.ptr) - @intFromPtr(raw.ptr);
+    if (hasSeparatorControl(raw[0..lead]) or hasSeparatorControl(raw[lead + s.len ..])) return null;
     var body = s;
     var neg = false;
     if (body[0] == '+' or body[0] == '-') {
@@ -1726,6 +1735,10 @@ test "pyFloat follows Python's float()" {
     try std.testing.expect(pyFloat(a, "1e") == null);
     try std.testing.expect(pyFloat(a, ".") == null);
     try std.testing.expect(pyFloat(a, "0x10") == null);
+    try std.testing.expect(pyFloat(a, "\x1c5") == null);
+    try std.testing.expect(pyFloat(a, "5\x1f") == null);
+    try std.testing.expect(pyFloat(a, " \x1e 5") == null);
+    try std.testing.expectEqual(@as(?f64, 5.0), pyFloat(a, "\x0b5\x0c\u{a0}"));
     try std.testing.expect(parseTimeout(a, "inf") == null);
     try std.testing.expect(parseTimeout(a, "0") == null);
     try std.testing.expect(parseTimeout(a, "2147483.648") == null);
