@@ -1,0 +1,1 @@
+A table of about two hundred cases runs the Python guard and the program named by `TOOL_BIN` on the same generated tree and compares exit status, standard output, and standard error. The cases cover cpupath output, the override and switch variables, install layouts, and accelerator answers. The tests skip when `TOOL_BIN` is unset.
