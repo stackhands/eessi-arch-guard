@@ -29,6 +29,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import unicodedata
 from typing import Dict, List, Mapping, NamedTuple, Optional, Sequence, Tuple
 
 __version__ = "0.2.0"
@@ -684,6 +685,7 @@ def read_cpu_flags(path: str) -> frozenset:
 # sched_getaffinity and cpuset lists name processors in this range. A bind
 # mask with a bit past it is ignored rather than applied in part.
 _CPU_ID_MAX = 4096
+_DECIMAL_CAP = 1 << 64
 _CPU_ITEM_RE = re.compile(r"[0-9]+(?:-[0-9]+)?")
 _CPU_HOSTLIST_RE = re.compile(r"(?:cpu)?\[([^\[\]]+)\]", re.IGNORECASE)
 _PROCESSOR_LINE_RE = re.compile(r"(?i)^processor[ \t]*:[ \t]*(\d+)\s*$")
@@ -699,6 +701,22 @@ _IDENTITY_KEYS = frozenset(
         "mvendorid",
     )
 )
+
+
+def _decimal_value(digits: str) -> int:
+    """``int(digits)`` for text of decimal digits, at most ``_DECIMAL_CAP``.
+
+    ``int`` refuses more digits than ``sys.get_int_max_str_digits()``, leading
+    zeros included, and raises ValueError. A processor number is far below
+    the cap, so a long run of digits is read one digit at a time and a value
+    past the cap is the cap. The Zig guard reads such text the same way.
+    """
+    if len(digits) <= 600:
+        return int(digits)
+    value = 0
+    for char in digits:
+        value = min(value * 10 + unicodedata.decimal(char), _DECIMAL_CAP)
+    return value
 
 
 def _hex_mask_cpus(text: str) -> Optional[frozenset]:
@@ -761,12 +779,12 @@ def parse_cpu_spec(text: str) -> Optional[frozenset]:
             return None
         if "-" in part:
             left, right = part.split("-", 1)
-            start, end = int(left), int(right)
+            start, end = _decimal_value(left), _decimal_value(right)
             if end < start or end >= _CPU_ID_MAX:
                 return None
             found.update(range(start, end + 1))
         else:
-            cpu = int(part)
+            cpu = _decimal_value(part)
             if cpu >= _CPU_ID_MAX:
                 return None
             found.add(cpu)
@@ -1108,7 +1126,7 @@ def scope_cpuinfo(
         if match:
             if current is not None:
                 blocks.append(current)
-            current = {"id": int(match.group(1)), "lines": [line]}
+            current = {"id": _decimal_value(match.group(1)), "lines": [line]}
         elif current is not None:
             current["lines"].append(line)
     if current is not None:
