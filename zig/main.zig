@@ -1304,7 +1304,7 @@ fn checkSubmit(arena: Allocator, args: Args, env: envmap.Map, settings: ?Setting
         return finishCheckSubmit(arena, args, partition, constraint, 2, target, @intCast(loaded.len), &.{}, reason, &.{line});
     };
     const child_args = [_][]const u8{ eb_stack, "stack", "arch", "--arch", target, "--easystack", easystack, "--installed", installed_path, "--unsupported", unsupported };
-    const result = proc.run(arena, eb_stack, &child_args, child_env, .{
+    const result = proc.run(arena, fsx.absPath(arena, eb_stack) catch oom(), &child_args, child_env, .{
         .stdout_limit = 8 << 20,
         .stderr_limit = 8 << 20,
         .timeout_ms = null,
