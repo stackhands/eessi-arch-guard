@@ -195,6 +195,18 @@ fn emergencyExit(kind: []const u8, detail: []const u8) noreturn {
     linux.exit_group(if (emergency_strict) strict_failure_exit else 0);
 }
 
+/// An OSError from running the chained prolog reaches Python's main, which
+/// prints the failed decision when --json is on the command line, with the
+/// exception class as the cause and its text as the message, and the skip
+/// line otherwise.
+fn chainFailure(arena: Allocator, env: envmap.Map, kind: []const u8, detail: []const u8) noreturn {
+    if (!emergency_json) emergencyExit(kind, detail);
+    const failed = guard.failureOutcome(arena, env.get("EESSI_SOFTWARE_SUBDIR") orelse "", kind, detail, null);
+    const code: u8 = if (emergency_strict) strict_failure_exit else 0;
+    jsonout.emit(arena, failed, env, false, emergency_strict, emergency_json_shell, code);
+    linux.exit_group(code);
+}
+
 /// Out of memory, as a MemoryError reaching Python's main.
 pub fn oom() noreturn {
     emergencyExit("MemoryError", "out of memory");
@@ -1427,9 +1439,9 @@ fn realMain(arena: Allocator, argv0: []const u8, argv: []const []const u8, envp:
                         else => "OSError",
                     };
                     const msg = common.pytext.osError(arena, se, path) catch sys.describe(se);
-                    emergencyExit(cls, msg);
+                    chainFailure(arena, env, cls, msg);
                 }
-                emergencyExit("OSError", @errorName(err));
+                chainFailure(arena, env, "OSError", @errorName(err));
             };
             if (r.stderr.len > 0) cli.put(2, r.stderr);
             // A chain killed by a signal is 1, as a negative returncode is.
