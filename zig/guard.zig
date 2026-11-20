@@ -1062,8 +1062,8 @@ fn scopeCpuinfoWithBase(arena: Allocator, cpuinfo: []const u8, allowed: CpuSet, 
     var blocks: std.ArrayList(CpuBlock) = .empty;
     var cur_id: ?ProcessorId = null;
     var cur: std.ArrayList(CpuField) = .empty;
-    var it = std.mem.splitScalar(u8, cpuinfo, '\n');
-    while (it.next()) |line| {
+    const lines = splitLines(arena, cpuinfo) catch return null;
+    for (lines) |line| {
         if (processorId(line)) |pid| {
             if (cur_id) |prev| blocks.append(arena, .{ .id = prev.id, .fields = cur.toOwnedSlice(arena) catch return null }) catch return null;
             cur = .empty;
