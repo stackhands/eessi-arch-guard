@@ -2985,7 +2985,7 @@ def _split_host_port(addr: str) -> Optional[Tuple[str, int]]:
         if ":" not in addr:
             return None
         host, port_s = addr.rsplit(":", 1)
-    if not host or not port_s.isdigit():
+    if not host or not (port_s.isascii() and port_s.isdigit()):
         return None
     port = int(port_s)
     if port < 1 or port > 65535:
