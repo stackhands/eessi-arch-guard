@@ -7,6 +7,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -14,9 +15,24 @@ GUARD = ROOT / "src" / "eessi_arch_guard.py"
 # TOOL_BIN runs the tests that start the guard as a program against another
 # build of it; unset, they run src/eessi_arch_guard.py with this interpreter.
 # Tests that read GUARD's source or import it test the Python guard either way.
+# A test whose only job is to compare the two builds calls skip_unless_tool_bin
+# so an unset TOOL_BIN is reported as a skip.
 TOOL_BIN = os.environ.get("TOOL_BIN", "")
 PROGRAM = Path(TOOL_BIN).resolve() if TOOL_BIN else GUARD
 GUARD_ARGV = [str(PROGRAM)] if TOOL_BIN else [sys.executable, "-I", str(GUARD)]
+
+
+def skip_unless_tool_bin(case: unittest.TestCase) -> None:
+    """Skip a binary comparison when ``TOOL_BIN`` is unset.
+
+    Parity tests call this instead of returning. Unittest then counts a
+    skip with a reason. Assertions on the Python guard belong before this
+    call, and they still run when the comparison is skipped.
+    """
+    if not TOOL_BIN:
+        case.skipTest("TOOL_BIN is unset; the binary comparison was not run")
+
+
 STUBS = Path(__file__).resolve().parent / "stubs"
 FAKE_LMOD = Path(__file__).resolve().parent / "fake_lmod.py"
 

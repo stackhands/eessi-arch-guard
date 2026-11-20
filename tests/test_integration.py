@@ -1885,8 +1885,7 @@ class IntegrationTests(unittest.TestCase):
             shutil.rmtree(scratch, ignore_errors=True)
 
     def test_dry_run_python_and_zig_parity(self):
-        if not harness.TOOL_BIN:
-            return
+        harness.skip_unless_tool_bin(self)
         scratch = tempfile.mkdtemp(prefix="eag-dryrun-parity-")
         os.chmod(scratch, 0o700)
         chain_script = os.path.join(self.site.root, "parity-chain.sh")
@@ -1946,8 +1945,7 @@ class IntegrationTests(unittest.TestCase):
             shutil.rmtree(scratch, ignore_errors=True)
 
     def test_invalid_environment_values_python_and_zig_parity(self):
-        if not harness.TOOL_BIN:
-            return
+        harness.skip_unless_tool_bin(self)
         cases = [
             ("EESSI_SOFTWARE_SUBDIR_OVERRIDE", "   "),
             ("EESSI_SOFTWARE_SUBDIR_OVERRIDE", "x86_64/amd/zen4/"),
@@ -1977,8 +1975,7 @@ class IntegrationTests(unittest.TestCase):
             self.assertIn(b"invalid-environment", zig_proc.stdout, (key, value))
 
     def test_usage_error_python_and_zig_parity(self):
-        if not harness.TOOL_BIN:
-            return
+        harness.skip_unless_tool_bin(self)
         cases = [
             ["--unknown-option"],
             ["--"],
