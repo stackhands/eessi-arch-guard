@@ -204,8 +204,8 @@ def log_lines(path: str):
         return [line.rstrip("\n") for line in handle if line.strip()]
 
 
-def run_with_timeout(argv, env=None, timeout: float = 2.0, text: bool = True):
-    """Run ``argv`` with a bounded wall-clock timeout.
+def run_with_timeout(argv, env=None, timeout: float = 2.0, text: bool = True, cwd=None):
+    """Run ``argv`` with a bounded wall-clock timeout, in ``cwd`` if given.
 
     The streams are decoded as text unless ``text`` is false. Then they stay
     bytes, and ``env`` may hold bytes, so a comparison sees input and output
@@ -214,6 +214,7 @@ def run_with_timeout(argv, env=None, timeout: float = 2.0, text: bool = True):
     return subprocess.run(
         list(argv),
         env=env,
+        cwd=cwd,
         capture_output=True,
         text=text,
         timeout=timeout,

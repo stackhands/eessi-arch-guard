@@ -8,6 +8,7 @@ const linux = std.os.linux;
 const build_options = @import("build_options");
 const common = @import("zig_common");
 const text = @import("text.zig");
+const pytext = common.pytext;
 const envmap = @import("envmap.zig");
 const guard = @import("guard.zig");
 const jsonout = @import("jsonout.zig");
@@ -1199,6 +1200,14 @@ fn finishCheckSubmit(
     return code;
 }
 
+/// The name Python shows for the eb-stack program in an exec error: the
+/// path as `shutil.which` returned it, which keeps a relative PATH entry
+/// relative, or the name as given when it holds a slash.
+fn ebStackShown(arena: Allocator, selected: []const u8, resolved: []const u8, env: envmap.Map) []const u8 {
+    if (std.mem.findScalar(u8, selected, '/') != null) return selected;
+    return (proc.whichShutil(arena, selected, env.get("PATH")) catch null) orelse resolved;
+}
+
 fn checkSubmit(arena: Allocator, args: Args, env: envmap.Map, settings: ?Settings) u8 {
     const partition = args.partition orelse "";
     const constraint = args.constraint orelse "";
@@ -1302,7 +1311,7 @@ fn checkSubmit(arena: Allocator, args: Args, env: envmap.Map, settings: ?Setting
         .new_session = false,
         .exec_error = true,
     }) catch |err| {
-        const detail = if (sys.asError(err)) |e| sys.describe(e) else @errorName(err);
+        const detail = pytext.osError(arena, err, ebStackShown(arena, selected, eb_stack, env)) catch oom();
         const shown = text.oneLine(arena, detail, 200) catch detail;
         const reason = arena.print("could not run eb-stack: {s}", .{shown}) catch "could not run eb-stack";
         const line = arena.print("eessi-arch-guard: check-submit: {s}", .{reason}) catch reason;
