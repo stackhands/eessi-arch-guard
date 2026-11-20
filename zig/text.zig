@@ -26,6 +26,12 @@ pub const pySplit = pytext.pySplit;
 /// shlex.quote: the value as it is when a shell reads it as one word,
 /// single-quoted otherwise.
 pub const shellQuote = pytext.shellQuote;
+/// repr() of the str surrogateescape decodes from `s`: in single quotes, or
+/// double ones when `s` holds a ' and no ", with a backslash, that quote,
+/// the characters Python does not print up to U+00FF and an invalid byte
+/// escaped. Past U+00FF every character is kept, where repr() also escapes
+/// the ones Python does not print, such as U+2028.
+pub const pyRepr = pytext.reprStrAlloc;
 
 /// MAX_MODULE_NAME: the longest module name the guard loads, in bytes.
 pub const max_module_name = 256;
@@ -254,36 +260,6 @@ pub fn messageBytes(gpa: Allocator, text: []const u8) Allocator.Error![]u8 {
     var buf: [2048]u8 = undefined;
     const room = prolog_line_max - "print ".len - 1;
     return gpa.dupe(u8, formatBoundedParts(&buf, &.{text}, 500, true, room));
-}
-
-/// repr() of the str surrogateescape decodes from `s`: in single quotes, or
-/// double ones when `s` holds a ' and no ", with a backslash, that quote,
-/// the characters Python does not print up to U+00FF and an invalid byte
-/// escaped. Past U+00FF every character is kept, where repr() also escapes
-/// the ones Python does not print, such as U+2028.
-pub fn pyRepr(gpa: Allocator, s: []const u8) Allocator.Error![]u8 {
-    const quote: u8 = if (std.mem.findScalar(u8, s, '\'') != null and std.mem.findScalar(u8, s, '"') == null) '"' else '\'';
-    var out: std.ArrayList(u8) = .empty;
-    errdefer out.deinit(gpa);
-    try out.append(gpa, quote);
-    var i: usize = 0;
-    while (i < s.len) {
-        const ch = nextChar(s[i..]);
-        if (ch.cp) |cp| switch (cp) {
-            '\\' => try out.appendSlice(gpa, "\\\\"),
-            '\t' => try out.appendSlice(gpa, "\\t"),
-            '\n' => try out.appendSlice(gpa, "\\n"),
-            '\r' => try out.appendSlice(gpa, "\\r"),
-            0...8, 0x0b, 0x0c, 0x0e...0x1f, 0x7f...0xa0, 0xad => try out.print(gpa, "\\x{x:0>2}", .{cp}),
-            else => {
-                if (cp == quote) try out.append(gpa, '\\');
-                try out.appendSlice(gpa, s[i .. i + ch.len]);
-            },
-        } else try out.print(gpa, "\\udc{x:0>2}", .{s[i]});
-        i += ch.len;
-    }
-    try out.append(gpa, quote);
-    return out.toOwnedSlice(gpa);
 }
 
 test "validators" {
