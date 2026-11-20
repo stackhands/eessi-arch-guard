@@ -725,8 +725,9 @@ fn controllersAllow(arena: Allocator, directory: []const u8) bool {
     const dir = if (std.mem.eql(u8, directory, "/")) "" else directory;
     const path = std.fmt.allocPrint(arena, "{s}/cgroup.controllers", .{dir}) catch return false;
     const raw = readFile(arena, path, 65536) orelse return true;
-    var it = std.mem.tokenizeAny(u8, raw, " \t\r\n");
-    while (it.next()) |tok| if (std.mem.eql(u8, tok, "cpuset")) return true;
+    const decoded = text.decodeReplace(arena, raw) catch return false;
+    const words = text.pySplit(arena, decoded) catch return false;
+    for (words) |word| if (std.mem.eql(u8, word, "cpuset")) return true;
     return false;
 }
 
@@ -2771,6 +2772,27 @@ test "cgroup v1 cpuset mounted off the default path" {
     try writeUnder(a, try std.fmt.allocPrint(a, "{s}/cpuset/job:42/cpuset.cpus.effective", .{cg}), "0\n");
     try writeUnder(a, try std.fmt.allocPrint(a, "{s}/job:42/cpuset.cpus.effective", .{cg}), "1\n");
     try expectCpus(cgroupCpusFrom(a, proc_file, cg), &.{ 4, 5 });
+}
+
+test "controllers are split as Python splits them" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const a = arena_state.allocator();
+    const base = try cgroupFixture(a, "ctl");
+    defer fsx.deleteTree(a, fsx.cwd, base) catch {};
+    const joined = try std.fmt.allocPrint(a, "{s}/joined", .{base});
+    const padded = try std.fmt.allocPrint(a, "{s}/padded", .{base});
+    const glued = try std.fmt.allocPrint(a, "{s}/glued", .{base});
+    const bad = try std.fmt.allocPrint(a, "{s}/bad", .{base});
+    try writeUnder(a, try std.fmt.allocPrint(a, "{s}/cgroup.controllers", .{joined}), "cpu\u{a0}cpuset\u{2003}memory\n");
+    try writeUnder(a, try std.fmt.allocPrint(a, "{s}/cgroup.controllers", .{padded}), "\u{3000}cpuset\u{1680}\x1f\n");
+    try writeUnder(a, try std.fmt.allocPrint(a, "{s}/cgroup.controllers", .{glued}), "cpuset\u{200b}memory cpu\n");
+    try writeUnder(a, try std.fmt.allocPrint(a, "{s}/cgroup.controllers", .{bad}), "cpu cpuset\xff memory\n");
+    try std.testing.expect(controllersAllow(a, joined));
+    try std.testing.expect(controllersAllow(a, padded));
+    try std.testing.expect(!controllersAllow(a, glued));
+    try std.testing.expect(!controllersAllow(a, bad));
+    try std.testing.expect(controllersAllow(a, try std.fmt.allocPrint(a, "{s}/missing", .{base})));
 }
 
 test "nested cgroup stops at the cpuset mount" {
