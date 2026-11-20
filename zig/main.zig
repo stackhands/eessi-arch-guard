@@ -1108,9 +1108,8 @@ fn extendModuleRoots(arena: Allocator, env: envmap.Map, os_type: []const u8, tar
 }
 
 fn moduleTreeAvailable(root: []const u8) bool {
-    const dir = fsx.openDir(fsx.cwd, root, true) catch return false;
-    sys.close(dir);
-    return true;
+    const st = fsx.statAt(fsx.cwd, root, true) catch return false;
+    return st.isDir();
 }
 
 fn writeSubmitFile(path: []const u8, data: []const u8) bool {
