@@ -2435,7 +2435,7 @@ pub fn dryRunDecide(c: *Ctx, env: Map) Stop!DryRunDecision {
         .eessi = loaded.eessi,
         .modules = loaded.others,
         .marker = fmt(c, "{s}->{s}", .{ side(was_label), side(now_label) }),
-        .message = fmt(c, "eessi-arch-guard: would reload modules for {s} (loaded for {s})", .{ now_label, was_label }),
+        .message = line1(c, fmt(c, "eessi-arch-guard: would reload modules for {s} (loaded for {s})", .{ now_label, was_label }), 500),
     };
 }
 
