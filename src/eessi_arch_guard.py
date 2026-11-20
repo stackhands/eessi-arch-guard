@@ -1141,10 +1141,18 @@ def scope_cpuinfo(
         return values[0]
 
     def intersection(norm: str) -> str:
+        # A kept record can repeat flags, features, or isa. value_map keeps
+        # only the first line, which is enough to decide whether two whole
+        # records match. The emitted line has to drop a token any of those
+        # lines lacks, or a richer first line puts waitpkg back.
         common: Optional[set] = None
-        for item in maps:
-            tokens = set(item.get(norm, "").split())
-            common = tokens if common is None else common & tokens
+        for fields in parsed:
+            values = [value for key, _raw, value in fields if key == norm]
+            if not values:
+                values = [""]
+            for value in values:
+                tokens = set(value.split())
+                common = tokens if common is None else common & tokens
         if not common:
             return ""
         return " ".join(sorted(common))

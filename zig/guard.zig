@@ -999,6 +999,26 @@ fn tokenSet(arena: Allocator, value: []const u8) std.BufSet {
     return set;
 }
 
+fn flagTokens(arena: Allocator, fields: []const CpuField, norm: []const u8) std.BufSet {
+    // fieldValue keeps the first line. A rewritten record has to intersect
+    // every flags, features, or isa line in the block, then across blocks.
+    var shared: ?std.BufSet = null;
+    var saw = false;
+    for (fields) |f| {
+        if (!std.mem.eql(u8, f.norm, norm)) continue;
+        saw = true;
+        var tokens = tokenSet(arena, f.value);
+        if (shared) |*got| {
+            var next = std.BufSet.init(arena);
+            var kit = got.iterator();
+            while (kit.next()) |tok| if (tokens.contains(tok.*)) next.insert(tok.*) catch {};
+            shared = next;
+        } else shared = tokens;
+    }
+    if (!saw) return std.BufSet.init(arena);
+    return shared orelse std.BufSet.init(arena);
+}
+
 const CpuBlock = struct { id: ?usize, fields: []const CpuField };
 
 fn resolveLxcfsLogicalIds(arena: Allocator, blocks: []const CpuBlock, base_cpus: ?CpuSet) ?[]?usize {
@@ -1069,8 +1089,7 @@ fn scopeCpuinfoWithBase(arena: Allocator, cpuinfo: []const u8, allowed: CpuSet, 
         if (isFlagKey(f.norm)) {
             var shared: ?std.BufSet = null;
             for (kept.items) |b| {
-                const value = fieldValue(b.fields, f.norm) orelse "";
-                var tokens = tokenSet(arena, value);
+                var tokens = flagTokens(arena, b.fields, f.norm);
                 if (shared) |*got| {
                     var next = std.BufSet.init(arena);
                     var kit = got.iterator();
@@ -2461,6 +2480,36 @@ test "scopeCpuinfoWithBase maps LXCFS renumbered blocks and keeps gapped logical
     try std.testing.expect(std.mem.find(u8, gapped, "processor : 2\n") != null);
     try std.testing.expect(std.mem.find(u8, gapped, "avx512f") != null);
     try std.testing.expect(std.mem.find(u8, gapped, "waitpkg") == null);
+}
+
+test "scopeCpuinfoWithBase intersects repeated flags lines on a kept processor" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const a = arena_state.allocator();
+    const cpuinfo =
+        \\processor : 0
+        \\vendor_id : GenuineIntel
+        \\flags : avx2 fma avx512f waitpkg
+        \\flags : avx2 fma
+        \\features : sve sve2
+        \\features : sve
+        \\
+        \\processor : 1
+        \\vendor_id : GenuineIntel
+        \\flags : avx2 fma avx512f waitpkg
+        \\features : sve sve2
+        \\
+    ;
+    var only_0: CpuSet = .{};
+    only_0.add(0);
+    const scoped = scopeCpuinfoWithBase(a, cpuinfo, only_0, null).?;
+    try std.testing.expect(std.mem.indexOf(u8, scoped, "processor : 0\n") != null);
+    try std.testing.expect(std.mem.indexOf(u8, scoped, "processor : 1\n") == null);
+    try std.testing.expect(std.mem.indexOf(u8, scoped, "flags : avx2 fma\n") != null);
+    try std.testing.expect(std.mem.indexOf(u8, scoped, "features : sve\n") != null);
+    try std.testing.expect(std.mem.indexOf(u8, scoped, "waitpkg") == null);
+    try std.testing.expect(std.mem.indexOf(u8, scoped, "avx512f") == null);
+    try std.testing.expect(std.mem.indexOf(u8, scoped, "sve2") == null);
 }
 
 test "cgroupCpusFrom narrows wider sched affinity on cgroup v2 layouts" {
