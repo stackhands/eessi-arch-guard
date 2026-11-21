@@ -1551,7 +1551,7 @@ fn realMain(arena: Allocator, argv0: []const u8, argv: []const []const u8, envp:
             was,
             guard.os_failure.class,
             guard.os_failure.text,
-            guard.os_failure.text,
+            null,
         );
         syslog.emitEmergency(arena, sl, env, guard.os_failure.class, guard.os_failure.text, args.strict);
         const code: u8 = if (args.strict) strict_failure_exit else 0;
