@@ -8,6 +8,7 @@ const linux = std.os.linux;
 const common = @import("zig_common");
 const main_mod = @import("main.zig");
 const text = @import("text.zig");
+const pydecode = @import("pydecode.zig");
 const envmap = @import("envmap.zig");
 const json = common.json;
 
@@ -1695,19 +1696,14 @@ pub fn restoreMain(c: *Ctx) u8 {
         writeErr("eessi-arch-guard: restore failed: could not read the request\n");
         return 1;
     };
-    // json.loads(bytes.decode("utf-8")): the request must be UTF-8 text.
-    if (!std.unicode.utf8ValidateSlice(input)) {
-        writeErr("eessi-arch-guard: restore failed: the request is not UTF-8\n");
-        return 1;
-    }
-    const payload = json.parse(a, input) catch {
-        writeErr("eessi-arch-guard: restore failed: the request is not JSON\n");
-        return 1;
+    const loaded = pydecode.load(a, input) catch main_mod.oom();
+    const payload = switch (loaded) {
+        .failure => |msg| {
+            writeErr(msg);
+            return 1;
+        },
+        .object => |value| value,
     };
-    if (payload != .object) {
-        writeErr("eessi-arch-guard: restore failed: the request is not a JSON object\n");
-        return 1;
-    }
     var raised: []const u8 = "";
     const reply = doRestore(c, payload, &raised) catch {
         const msg = a.print("eessi-arch-guard: restore failed: {s}\n", .{line1(c, raised, 300)}) catch "eessi-arch-guard: restore failed\n";

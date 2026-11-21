@@ -335,8 +335,6 @@ The rows above describe the Python guard at 0.2.0. The Zig build in `zig/` keeps
 |---|---|---|
 | `--version` | the version | the same version, then the build: `VERSION (TARGET, MODE, zig ZIG_VERSION, COMMIT)`; COMMIT comes from `-Dcommit`, `unknown` without it |
 | restore helper | `python3 -I -X utf8 eessi_arch_guard.py --restore` | the same binary with `--restore`; the request and reply keep their JSON shape |
-| a request to `--restore` that is not UTF-8, not JSON or not an object | exit 1 with the Python exception text | exit 1 with a fixed text naming which of the three it was |
-| a request to `--restore` nesting arrays or objects deeper than 32, where the guard's own requests nest two deep | read | refused as not JSON, exit 1 |
 | the chained prolog's stdin | inherited | `/dev/null` |
 | the config file | checked with `lstat`, then read by path | the same checks with `lstat`, then opened without following a link and checked again on the open file; a file swapped in between is ignored; at most 1 MiB is read |
 | a config read error | the `OSError` text | `PATH: ErrorName` |
