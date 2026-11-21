@@ -1,0 +1,1 @@
+Make check-submit of the Python guard report an eb-stack failure whose output has bytes that are not UTF-8, with exit status 2 and the text of the failure, as the Zig guard does. Before, the Python guard stopped with a UnicodeDecodeError and exit status 0.
