@@ -1371,8 +1371,8 @@ fn checkSubmit(arena: Allocator, args: Args, env: envmap.Map, settings: ?Setting
     if (code == 1 and missing.items.len > 0) {
         return finishCheckSubmit(arena, args, partition, constraint, 1, target, @intCast(loaded.len), missing.items, null, lines_out.items);
     }
-    const err_trim = std.mem.trim(u8, result.stderr, " \t\r\n");
-    const out_trim = std.mem.trim(u8, result.stdout, " \t\r\n");
+    const err_trim = text.pyStrip(result.stderr);
+    const out_trim = text.pyStrip(result.stdout);
     const raw = if (err_trim.len > 0)
         err_trim
     else if (out_trim.len > 0)
