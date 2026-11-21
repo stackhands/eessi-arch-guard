@@ -15,6 +15,7 @@ import signal
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import unittest
 from pathlib import Path
@@ -1052,25 +1053,51 @@ class IntegrationTests(unittest.TestCase):
                 except OSError:
                     pass
 
-    def test_killed_helper_leaves_no_tmp_directory(self):
-        before = set(Path("/tmp").glob("eessi-arch-guard-*"))
+    def _killed_helper_run(self, foreign=None):
+        """Kill the helper by timeout and list its private temporary directory.
+
+        The directory belongs to this test alone, so the listing cannot see a
+        temporary directory made by a test that runs at the same time. A
+        ``foreign`` callable runs in a thread while the guard runs, standing
+        for such a test.
+        """
+        private = os.path.join(self.site.root, "tmp")
+        os.mkdir(private)
         env = self._cpu_env(ZEN4, "zen2")
-        env["TMPDIR"] = self.site.root
+        env["TMPDIR"] = private
         env["SLURM_JOB_ID"] = "6363"
         env["EESSI_TEST_APPLY_HANG"] = "30"
+        before = set(Path(private).glob("eessi-arch-guard-*"))
+        worker = threading.Thread(target=foreign) if foreign else None
+        if worker:
+            worker.start()
         started = time.monotonic()
         proc = harness.run_guard(env, ["--timeout", "1"])
         elapsed = time.monotonic() - started
+        if worker:
+            worker.join()
+        changes, _printed = _assert_prolog(proc)
+        self.assertLess(elapsed, _stop_limit(1))
+        self.assertTrue(changes["EESSI_ARCH_GUARD_FAILED"].endswith("->timeout"))
+        return before, set(Path(private).glob("eessi-arch-guard-*"))
+
+    def test_killed_helper_leaves_no_tmp_directory(self):
+        before, after = self._killed_helper_run()
+        self.assertEqual(before, after)
+
+    def test_tmp_leak_check_ignores_directories_of_other_tests(self):
+        made = []
+
+        def foreign():
+            made.append(tempfile.mkdtemp(prefix="eessi-arch-guard-foreign-"))
+
         try:
-            changes, _printed = _assert_prolog(proc)
-            self.assertLess(elapsed, _stop_limit(1))
-            self.assertTrue(changes["EESSI_ARCH_GUARD_FAILED"].endswith("->timeout"))
-            after = set(Path("/tmp").glob("eessi-arch-guard-*"))
+            before, after = self._killed_helper_run(foreign)
+            self.assertEqual(len(made), 1)
             self.assertEqual(before, after)
         finally:
-            for path in Path("/tmp").glob("eessi-arch-guard-*"):
-                if path not in before:
-                    shutil.rmtree(path, ignore_errors=True)
+            for path in made:
+                shutil.rmtree(path, ignore_errors=True)
 
     def test_config_timeout_bounds_the_decision(self):
         conf = harness.PROGRAM.with_name("eessi-arch-guard.conf")
