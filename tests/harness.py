@@ -186,11 +186,12 @@ def base_env(
     return env
 
 
-def run_guard(env, args=()):
+def run_guard(env, args=(), input=None):
     proc = subprocess.run(
         [*GUARD_ARGV, *args],
+        input=input,
         capture_output=True,
-        text=True,
+        text=not isinstance(input, bytes),
         env=env,
         check=False,
     )
