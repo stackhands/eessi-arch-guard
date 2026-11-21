@@ -14,6 +14,7 @@ const json = common.json;
 const sys = common.sys;
 const fsx = common.fsx;
 const proc = common.proc;
+const pytext = common.pytext;
 const state = common.state;
 const Allocator = std.mem.Allocator;
 const empty: []const u8 = "";
@@ -215,35 +216,56 @@ pub fn resolvePath(arena: Allocator, name: []const u8, env: Map) ?[]const u8 {
     return proc.which(arena, name, path) catch null;
 }
 
-/// The executable `name` would run as from an environment with `env`'s PATH
-/// (os.defpath when it has none), as subprocess does; a name with '/' is a
-/// path joined against cwd unchecked.
-fn resolve(c: *Ctx, name: []const u8, env: Map) ?[]const u8 {
-    if (std.mem.findScalar(u8, name, '/') != null) {
-        if (name[0] == '/') return name;
-        var rb: [sys.path_max]u8 = undefined;
-        const cwd = fsx.realpath(fsx.cwd, ".", &rb) catch return null;
-        return std.fs.path.join(c.arena, &.{ cwd, name }) catch null;
-    }
-    return resolvePath(c.arena, name, env);
-}
-
 /// The message subprocess raises for a program that cannot be found.
 fn notFound(c: *Ctx, name: []const u8) []const u8 {
-    return c.arena.print("[Errno 2] No such file or directory: '{s}'", .{name}) catch "could not start";
+    return pytext.osErrorErrno(c.arena, .NOENT, name) catch main_mod.oom();
 }
 
 /// run_captured: under the decision limit with `new_session`, the child's
-/// session is killed at the deadline or on SIGTERM.
+/// session is killed at the deadline or on SIGTERM. A name without a slash
+/// is tried along PATH the way subprocess tries it: each entry in turn, on
+/// to the next after a failed exec, and when none runs the first error
+/// other than ENOENT and ENOTDIR is the one reported, else the last
+/// entry's error.
 fn runCaptured(c: *Ctx, argv: []const []const u8, env: Map, input: ?[]const u8, new_session: bool, why: *[]const u8) RunError!Ran {
-    const exe = resolve(c, argv[0], env) orelse {
-        why.* = notFound(c, argv[0]);
-        return error.CannotRun;
-    };
     const envp = envmap.toEnvp(c.arena, env) catch {
         why.* = "embedded null byte";
         return error.CannotRun;
     };
+    // The process library wants an absolute path where Python hands a
+    // relative one to exec. fsx.absPath leaves the path relative when the
+    // current directory cannot be read, and then exec finds no file.
+    var absent = false;
+    if (std.mem.findScalar(u8, argv[0], '/') != null) {
+        const exe = fsx.absPath(c.arena, argv[0]) catch main_mod.oom();
+        if (!std.fs.path.isAbsolute(exe)) {
+            why.* = notFound(c, argv[0]);
+            return error.CannotRun;
+        }
+        return runExe(c, exe, argv, envp, input, new_session, why, &absent);
+    }
+    var saved: ?[]const u8 = null;
+    var last: ?[]const u8 = null;
+    var entries = std.mem.splitScalar(u8, env.get("PATH") orelse default_path, ':');
+    while (entries.next()) |dir| {
+        const joined = std.fs.path.join(c.arena, &.{ dir, argv[0] }) catch main_mod.oom();
+        const exe = fsx.absPath(c.arena, joined) catch main_mod.oom();
+        if (!std.fs.path.isAbsolute(exe)) continue;
+        return runExe(c, exe, argv, envp, input, new_session, why, &absent) catch |err| switch (err) {
+            error.CannotRun => {
+                if (absent) last = why.* else if (saved == null) saved = why.*;
+                continue;
+            },
+            else => return err,
+        };
+    }
+    why.* = saved orelse last orelse notFound(c, argv[0]);
+    return error.CannotRun;
+}
+
+/// One exec of `exe`. A failed exec is `CannotRun` with the error text in
+/// `why`, and `absent` tells whether it was ENOENT or ENOTDIR.
+fn runExe(c: *Ctx, exe: []const u8, argv: []const []const u8, envp: proc.Envp, input: ?[]const u8, new_session: bool, why: *[]const u8, absent: *bool) RunError!Ran {
     const limited = c.limit != null and new_session;
     if (limited) try c.limit.?.check();
     var opts: proc.Options = .{
@@ -252,6 +274,7 @@ fn runCaptured(c: *Ctx, argv: []const []const u8, env: Map, input: ?[]const u8, 
         .stderr_limit = 1 << 20,
         .timeout_ms = null,
         .new_session = limited,
+        .exec_error = true,
     };
     if (limited) {
         const l = c.limit.?;
@@ -265,12 +288,9 @@ fn runCaptured(c: *Ctx, argv: []const []const u8, env: Map, input: ?[]const u8, 
     const r = proc.run(c.arena, exe, argv, envp, opts) catch |err| switch (err) {
         error.TimedOut => return error.Deadline,
         error.Canceled => return error.Terminated,
-        error.NotFound => {
-            why.* = notFound(c, argv[0]);
-            return error.CannotRun;
-        },
         else => {
-            why.* = @errorName(err);
+            absent.* = err == error.NotFound or err == error.NotDir;
+            why.* = pytext.osError(c.arena, err, argv[0]) catch main_mod.oom();
             return error.CannotRun;
         },
     };
@@ -2874,8 +2894,4 @@ test "resolvePath searches default_path and empty colon entries" {
     var colon_env: Map = .empty;
     try colon_env.put(a, "PATH", ":/bin");
     try std.testing.expect(resolvePath(a, "sh", colon_env) != null);
-
-    var c: Ctx = .{ .arena = a, .env = empty_env, .strict = false, .self_exe = "" };
-    const rel = resolve(&c, "rel/tool", empty_env).?;
-    try std.testing.expect(std.mem.endsWith(u8, rel, "/rel/tool"));
 }
