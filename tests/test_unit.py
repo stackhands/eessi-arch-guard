@@ -904,6 +904,41 @@ class UnitTests:
         assert guard.scope_cpuinfo(single, frozenset({0, 1, 2})) is None
         assert guard.scope_cpuinfo("eessi_arch_matches: x86_64/generic\n", frozenset({0})) is None
 
+    def test_scope_cpuinfo_intersects_repeated_flags_on_a_kept_processor(self):
+        text = "\n".join(
+            (
+                "processor : 0",
+                "vendor_id : GenuineIntel",
+                "cpu family : 6",
+                "model : 143",
+                "flags : avx2 fma avx512f waitpkg",
+                "flags : avx2 fma",
+                "features : sve sve2",
+                "features : sve",
+                "",
+                "processor : 1",
+                "vendor_id : GenuineIntel",
+                "cpu family : 6",
+                "model : 143",
+                "flags : avx2 fma avx512f waitpkg",
+                "features : sve sve2",
+                "",
+            )
+        )
+        scoped = guard.scope_cpuinfo(text, frozenset({0}))
+        assert scoped is not None, scoped
+
+        def tokens(key: str) -> set:
+            prefix = key + " :"
+            for line in scoped.splitlines():
+                if line.startswith(prefix):
+                    return set(line.split()[2:])
+            return set()
+
+        assert tokens("flags") == {"avx2", "fma"}, scoped
+        assert tokens("features") == {"sve"}, scoped
+        assert "processor : 1" not in scoped
+
     def test_scope_cpuinfo_maps_lxcfs_renumbered_blocks_and_keeps_gapped_ids(self):
         root = Path(__file__).resolve().parents[1] / "tests" / "fixtures" / "cpuinfo"
         spr_real = (root / "sapphirerapids-8488C.cpuinfo").read_text(encoding="ascii")

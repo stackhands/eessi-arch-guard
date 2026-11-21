@@ -1388,6 +1388,61 @@ class IntegrationTests(unittest.TestCase):
         self.assertEqual(changes["EESSI_SOFTWARE_SUBDIR"], icelake)
         self.assertEqual(changes["EESSI_SOFTWARE_SUBDIR_OVERRIDE"], icelake)
 
+    def test_scoped_processor_intersects_repeated_flags_lines(self):
+        # Processor `target` lists a Sapphire Rapids flags line and then an
+        # Ice Lake line. A second processor is outside the bind list, so the
+        # file is rewritten. The rewritten record must keep the flags both
+        # lines share. The first line alone still names Sapphire Rapids.
+        spr = "x86_64/intel/sapphirerapids"
+        icelake = "x86_64/intel/icelake"
+        sched = guard.sched_cpus()
+        if not sched:
+            self.skipTest("sched_getaffinity returned no CPUs")
+        pool = set(sched)
+        cgroup = guard.cgroup_cpus()
+        if cgroup is not None:
+            pool &= set(cgroup)
+        if not pool:
+            self.skipTest("no processor is in both the affinity mask and the cgroup cpuset")
+        target = min(pool)
+        other = 4095 if target != 4095 else 4094
+        rich = (
+            "avx2 fma avx512f avx512bw avx512cd avx512dq avx512vl "
+            "avx512_vnni avx512_vbmi2 avx512_bf16 amx_tile waitpkg"
+        )
+        shared = (
+            "avx2 fma avx512f avx512bw avx512cd avx512dq avx512vl "
+            "avx512_vnni avx512_vbmi2"
+        )
+        self.site.add_cpu(spr)
+        self.site.add_cpu(icelake)
+        self.site.add_module(spr, "R/4.4.2")
+        self.site.add_module(icelake, "R/4.4.2")
+        cpuinfo = "\n".join(
+            (
+                "processor : %d" % target,
+                "vendor_id : GenuineIntel",
+                "cpu family : 6",
+                "model : 143",
+                "flags : " + rich,
+                "flags : " + shared,
+                "",
+                "processor : %d" % other,
+                "vendor_id : GenuineIntel",
+                "cpu family : 6",
+                "model : 143",
+                "flags : " + rich,
+                "",
+            )
+        )
+        with open(self.site.cpuinfo, "w", encoding="ascii") as handle:
+            handle.write(cpuinfo)
+        env = harness.base_env(self.site, spr, ["R/4.4.2"], gpu="none")
+        env["SLURM_CPU_BIND_LIST"] = str(target)
+        proc = harness.run_guard(env)
+        changes, _printed = _assert_prolog(proc)
+        self.assertEqual(changes.get("EESSI_SOFTWARE_SUBDIR"), icelake, proc.stdout)
+
     def test_real_emeraldrapids_kvm_cpuinfo_and_offline_gaps_fall_back(self):
         spr = "x86_64/intel/sapphirerapids"
         icelake = "x86_64/intel/icelake"
