@@ -1214,6 +1214,35 @@ class IntegrationTests(unittest.TestCase):
         source = harness.GUARD.read_text(encoding="utf-8")
         self.assertNotIn(icelake, source)
 
+    def test_alderlake_aliases_without_waitpkg_fall_back(self):
+        aliases = ("raptorlake", "meteorlake", "gracemont", "lunarlake")
+        icelake = "x86_64/intel/icelake"
+        self.site.add_cpu(icelake)
+        self.site.add_module(icelake, "R/4.4.2")
+        for march in aliases:
+            cpu = "x86_64/intel/" + march
+            self.site.add_cpu(cpu)
+            self.site.add_module(cpu, "R/4.4.2")
+
+        self._copy_cpuinfo("alderlake-alias-kvm-no-waitpkg.cpuinfo")
+        script = Path(self.site.init) / "eessi_archdetect.sh"
+        for march in aliases:
+            cpu = "x86_64/intel/" + march
+            script.write_text(
+                "#!/bin/sh\n"
+                'if [ "$2" = "cpupath" ]; then\n'
+                f'    printf "%s\\n" "{cpu}:{icelake}"\n'
+                "fi\n",
+                encoding="utf-8",
+            )
+            script.chmod(0o755)
+            with self.subTest(march=march):
+                env = harness.base_env(self.site, cpu, ["R/4.4.2"], gpu="none")
+                proc = harness.run_guard(env)
+                changes, _printed = _assert_prolog(proc)
+                self.assertEqual(changes["EESSI_SOFTWARE_SUBDIR"], icelake)
+                self.assertEqual(changes["EESSI_SOFTWARE_SUBDIR_OVERRIDE"], icelake)
+
     def test_pinned_reload_drops_the_loaded_module_paths(self):
         # The EESSI module unloads the tree it computes from
         # EESSI_ARCHDETECT_OPTIONS, so the purge has to see the task's value
@@ -1325,6 +1354,34 @@ class IntegrationTests(unittest.TestCase):
         proc = harness.run_guard(env)
         _assert_prolog(proc)
         self.assertEqual(proc.stdout, "")
+
+    def test_emeraldrapids_without_waitpkg_falls_back(self):
+        # GCC's emeraldrapids march is the Sapphire Rapids mask, including
+        # waitpkg. A candidate with that leaf has to be dropped when the
+        # shared flags omit it, the same way sapphirerapids is dropped.
+        emr = "x86_64/intel/emeraldrapids"
+        icelake = "x86_64/intel/icelake"
+        self.site.add_cpu(emr)
+        self.site.add_cpu(icelake)
+        self.site.add_module(emr, "R/4.4.2")
+        self.site.add_module(icelake, "R/4.4.2")
+        self._copy_cpuinfo("sapphirerapids-kvm-no-waitpkg.cpuinfo")
+        script = Path(self.site.init) / "eessi_archdetect.sh"
+        script.write_text(
+            "#!/bin/sh\n"
+            'if [ "$2" = cpupath ]; then\n'
+            "  printf '%%s\\n' '%s:%s'\n"
+            "fi\n" % (emr, icelake),
+            encoding="utf-8",
+        )
+        script.chmod(0o755)
+        env = harness.base_env(self.site, emr, ["R/4.4.2"], gpu="none")
+        proc = harness.run_guard(env)
+        changes, _printed = _assert_prolog(proc)
+        self.assertEqual(changes.get("EESSI_SOFTWARE_SUBDIR"), icelake, proc.stdout)
+        self.assertEqual(
+            changes.get("EESSI_SOFTWARE_SUBDIR_OVERRIDE"), icelake, proc.stdout
+        )
 
     def test_graniterapids_without_waitpkg_falls_back(self):
         spr = "x86_64/intel/sapphirerapids"
