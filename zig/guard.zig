@@ -1372,9 +1372,17 @@ pub fn restoreWorkBase(c: *Ctx, env: Map, why: *[]const u8) WorkError![]const u8
 }
 
 /// tempfile.mkdtemp(prefix="eessi-arch-guard-", dir=base): a new 0700
-/// directory with a random suffix.
-fn mkdtemp(c: *Ctx, base: []const u8) ?[]const u8 {
-    return fsx.mkdtemp(c.arena, base, "eessi-arch-guard-") catch null;
+/// directory with a random suffix. When it cannot be made, `why` is the
+/// OSError text Python gives, with the path that was tried.
+fn mkdtemp(c: *Ctx, base: []const u8, why: *[]const u8) ?[]const u8 {
+    var report: common.atomic.Why = .{};
+    return fsx.mkdtempReport(c.arena, base, "eessi-arch-guard-", &report) catch |err| {
+        why.* = switch (err) {
+            error.OutOfMemory => main_mod.oom(),
+            else => |e| if (report.msg.len > 0) report.msg else sys.describe(e),
+        };
+        return null;
+    };
 }
 
 fn rmtree(c: *Ctx, p: []const u8) void {
@@ -1422,7 +1430,8 @@ fn callRestore(c: *Ctx, env: Map, eessi: []const u8, modules: []const []const u8
     var why: []const u8 = "";
     const base = restoreWorkBase(c, env, &why) catch
         return notRun(a.print("restore workspace unavailable: {s}", .{why}) catch "restore workspace unavailable");
-    const work = mkdtemp(c, base) orelse return notRun("restore workspace unavailable: could not create a directory");
+    const work = mkdtemp(c, base, &why) orelse
+        return notRun(a.print("restore workspace unavailable: {s}", .{why}) catch "restore workspace unavailable");
     defer rmtree(c, work);
     var clean: Map = .empty;
     clean.put(a, "PATH", "/usr/bin:/bin") catch main_mod.oom();
@@ -1517,8 +1526,8 @@ fn sourceExports(c: *Ctx, module_env: Map, script: []const u8, raised: *[]const 
         raised.* = why;
         return error.Raise;
     };
-    const tmp = mkdtemp(c, base) orelse {
-        raised.* = "could not create a temporary directory";
+    const tmp = mkdtemp(c, base, &why) orelse {
+        raised.* = why;
         return error.Raise;
     };
     defer rmtree(c, tmp);
@@ -2521,7 +2530,7 @@ test "dryRunDecide handles skip and missing EESSI without writing" {
     try std.testing.expectEqualStrings("EESSI_ARCH_GUARD=0", d2.detail.?);
 }
 
-test "mkdtemp delegates to fsx.mkdtemp with the guard prefix" {
+test "mkdtemp delegates to fsx.mkdtempReport with the guard prefix" {
     var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena_state.deinit();
     const a = arena_state.allocator();
@@ -2533,7 +2542,8 @@ test "mkdtemp delegates to fsx.mkdtemp with the guard prefix" {
     defer fsx.deleteTree(a, fsx.cwd, base) catch {};
 
     var c: Ctx = .{ .arena = a, .env = .empty, .strict = false, .self_exe = "" };
-    const created = mkdtemp(&c, base).?;
+    var why: []const u8 = "";
+    const created = mkdtemp(&c, base, &why).?;
     const expected_prefix = try std.fmt.allocPrint(a, "{s}/eessi-arch-guard-", .{base});
     try std.testing.expect(std.mem.startsWith(u8, created, expected_prefix));
     try std.testing.expectEqual(expected_prefix.len + 8, created.len);
@@ -2542,7 +2552,11 @@ test "mkdtemp delegates to fsx.mkdtemp with the guard prefix" {
     try std.testing.expectEqual(@as(u32, 0), st.perm() & 0o077);
 
     const missing = try std.fmt.allocPrint(a, "{s}/missing", .{base});
-    try std.testing.expect(mkdtemp(&c, missing) == null);
+    try std.testing.expect(mkdtemp(&c, missing, &why) == null);
+    const prefix = try std.fmt.allocPrint(a, "[Errno 2] No such file or directory: '{s}/eessi-arch-guard-", .{missing});
+    try std.testing.expect(std.mem.startsWith(u8, why, prefix));
+    try std.testing.expectEqual(prefix.len + 9, why.len);
+    try std.testing.expect(why[why.len - 1] == '\'');
 }
 
 test "prepareCpuinfo writes scoped cpuinfo under TMPDIR" {
