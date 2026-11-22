@@ -998,30 +998,45 @@ fn taskCpuIds(arena: Allocator, env: Map) ?CpuSet {
     return taskCpuBounds(env, schedCpus(), cgroupCpus(arena)).allowed;
 }
 
+/// "_".join(key.split()).lower() for the ASCII part of lower().
 fn normKey(arena: Allocator, key: []const u8) []const u8 {
-    const buf = arena.alloc(u8, key.len) catch return key;
-    var n: usize = 0;
-    var pending = false;
-    for (key) |ch| {
-        if (ch == ' ' or ch == '\t') {
-            pending = n > 0;
-            continue;
-        }
-        if (pending) {
-            buf[n] = '_';
-            n += 1;
-            pending = false;
-        }
-        buf[n] = std.ascii.toLower(ch);
-        n += 1;
+    const words = text.pySplit(arena, key) catch return key;
+    var out: std.ArrayList(u8) = .empty;
+    for (words, 0..) |word, idx| {
+        if (idx > 0) out.append(arena, '_') catch return key;
+        for (word) |ch| out.append(arena, std.ascii.toLower(ch)) catch return key;
     }
-    return buf[0..n];
+    return out.items;
 }
 
 const ProcessorId = struct { id: ?usize };
 
+/// The value of a run of decimal digits of any script, null when it does not
+/// fit in a usize.
+fn decimalRun(digits: []const u8) ??usize {
+    var value: usize = 0;
+    var overflow = false;
+    var i: usize = 0;
+    if (digits.len == 0) return null;
+    while (i < digits.len) {
+        const ch = text.nextChar(digits[i..]);
+        const digit = text.decimalDigit(ch.cp orelse return null) orelse return null;
+        i += ch.len;
+        if (overflow) continue;
+        const scaled = std.math.mul(usize, value, 10) catch {
+            overflow = true;
+            continue;
+        };
+        value = std.math.add(usize, scaled, digit) catch {
+            overflow = true;
+            continue;
+        };
+    }
+    return if (overflow) @as(?usize, null) else value;
+}
+
 fn processorId(line: []const u8) ?ProcessorId {
-    const t = std.mem.trim(u8, line, " \t\r");
+    const t = text.pyStrip(line);
     const prefix = "processor";
     if (t.len < prefix.len or !std.ascii.eqlIgnoreCase(t[0..prefix.len], prefix)) return null;
     var i: usize = prefix.len;
@@ -1029,22 +1044,21 @@ fn processorId(line: []const u8) ?ProcessorId {
     if (i >= t.len or t[i] != ':') return null;
     i += 1;
     while (i < t.len and (t[i] == ' ' or t[i] == '\t')) i += 1;
-    if (i >= t.len) return null;
-    for (t[i..]) |c| if (c < '0' or c > '9') return null;
-    return .{ .id = parseUsize(t[i..]) };
+    const id = decimalRun(t[i..]) orelse return null;
+    return .{ .id = id };
 }
 
 const CpuField = struct { norm: []const u8, raw: []const u8, value: []const u8 };
 
 fn cpuField(arena: Allocator, line: []const u8) ?CpuField {
-    const trimmed = std.mem.trim(u8, line, " \t\r");
+    const trimmed = text.pyStrip(line);
     const colon = std.mem.indexOfScalar(u8, trimmed, ':') orelse return null;
-    const raw = std.mem.trim(u8, trimmed[0..colon], " \t");
+    const raw = text.pyStrip(trimmed[0..colon]);
     if (raw.len == 0) return null;
     return .{
         .norm = normKey(arena, raw),
         .raw = raw,
-        .value = std.mem.trim(u8, trimmed[colon + 1 ..], " \t"),
+        .value = text.pyStrip(trimmed[colon + 1 ..]),
     };
 }
 
@@ -1072,8 +1086,8 @@ fn sameFields(a: []const CpuField, b: []const CpuField) bool {
 
 fn tokenSet(arena: Allocator, value: []const u8) std.BufSet {
     var set = std.BufSet.init(arena);
-    var it = std.mem.tokenizeAny(u8, value, " \t");
-    while (it.next()) |tok| set.insert(tok) catch {};
+    const tokens = text.pySplit(arena, value) catch return set;
+    for (tokens) |tok| set.insert(tok) catch {};
     return set;
 }
 
@@ -2656,6 +2670,41 @@ test "privateFailure names the file for an open and not for a write" {
     );
     const exists_err = if (writePrivate("/dev/null", "x", 0o600, &step)) |_| return error.TestUnexpectedResult else |e| e;
     try std.testing.expectEqualStrings("[Errno 17] File exists: '/dev/null'", privateFailure(&c, exists_err, "/dev/null", step));
+}
+
+test "cpuinfo lines are read as Python strips, splits and counts digits" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const a = arena_state.allocator();
+
+    try std.testing.expectEqual(@as(?usize, 1), processorId("\u{a0}processor\t: 1\u{3000}").?.id);
+    try std.testing.expectEqual(@as(?usize, 1), processorId("processor : \u{661}").?.id);
+    try std.testing.expectEqual(@as(?usize, 12), processorId("PROCESSOR: \u{ff11}\u{ff12}").?.id);
+    try std.testing.expectEqual(@as(?usize, 7), processorId("processor : 0007\x1f").?.id);
+    try std.testing.expectEqual(@as(?usize, null), processorId("processor : 99999999999999999999999").?.id);
+    try std.testing.expect(processorId("processor :") == null);
+    try std.testing.expect(processorId("processor : 1x") == null);
+    try std.testing.expect(processorId("processor\u{a0}: 1") == null);
+    try std.testing.expect(processorId("processor : \u{a0}1") == null);
+
+    const field = cpuField(a, "\u{2003}model\u{a0}name\u{205f}:\u{1680}Xeon\u{202f}").?;
+    try std.testing.expectEqualStrings("model_name", field.norm);
+    try std.testing.expectEqualStrings("model\u{a0}name", field.raw);
+    try std.testing.expectEqualStrings("Xeon", field.value);
+    try std.testing.expectEqualStrings("cache_size", normKey(a, "Cache\u{3000}\u{a0}Size"));
+
+    const flags = cpuField(a, "flags\u{a0}: fpu\u{a0}avx2\u{3000}fma").?;
+    try std.testing.expectEqualStrings("flags", flags.norm);
+    var tokens = tokenSet(a, flags.value);
+    try std.testing.expect(tokens.contains("avx2"));
+    try std.testing.expect(tokens.contains("fma"));
+    try std.testing.expect(!tokens.contains("fpu\u{a0}avx2"));
+
+    var both: CpuSet = .{};
+    both.add(0);
+    both.add(1);
+    const shared = scopeCpuinfo(a, "processor : 0\nflags : avx2\u{a0}fma\n\nprocessor : \u{661}\nflags\u{a0}: avx2 fma waitpkg\n", both).?;
+    try std.testing.expectEqualStrings("processor : 0\nflags : avx2 fma\n", shared);
 }
 
 test "prepareCpuinfo writes scoped cpuinfo under TMPDIR" {
