@@ -1614,6 +1614,7 @@ test {
     _ = envmap;
     _ = guard;
     _ = syslog;
+    _ = @import("pydecode.zig");
 }
 
 test "parseArgs" {
