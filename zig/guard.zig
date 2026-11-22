@@ -427,8 +427,7 @@ fn readCpuFlags(arena: Allocator, path: []const u8) []const []const u8 {
     var common_set: ?std.StringArrayHashMapUnmanaged(void) = null;
     var it = std.mem.splitScalar(u8, data.items, '\n');
     while (it.next()) |line| {
-        if (line.len < 5 or !std.ascii.eqlIgnoreCase(line[0..5], "flags")) continue;
-        var i: usize = 5;
+        var i: usize = foldedWord(line, "flags") orelse continue;
         while (i < line.len and (line[i] == ' ' or line[i] == '\t')) i += 1;
         if (i >= line.len or line[i] != ':') continue;
         i += 1;
@@ -1011,6 +1010,24 @@ fn normKey(arena: Allocator, key: []const u8) []const u8 {
 
 const ProcessorId = struct { id: ?usize };
 
+/// The bytes at the start of `line` that spell the lower case ASCII `word`,
+/// as a case-insensitive Python regular expression matches it: a letter
+/// matches its other case, and U+017F, the long s, matches an s. Null when
+/// the line does not start with the word.
+fn foldedWord(line: []const u8, word: []const u8) ?usize {
+    var at: usize = 0;
+    for (word) |want| {
+        if (at >= line.len) return null;
+        if (want == 's' and line.len - at >= 2 and line[at] == 0xc5 and line[at + 1] == 0xbf) {
+            at += 2;
+            continue;
+        }
+        if (std.ascii.toLower(line[at]) != want) return null;
+        at += 1;
+    }
+    return at;
+}
+
 /// The value of a run of decimal digits of any script, null when it does not
 /// fit in a usize.
 fn decimalRun(digits: []const u8) ??usize {
@@ -1037,9 +1054,7 @@ fn decimalRun(digits: []const u8) ??usize {
 
 fn processorId(line: []const u8) ?ProcessorId {
     const t = text.pyStrip(line);
-    const prefix = "processor";
-    if (t.len < prefix.len or !std.ascii.eqlIgnoreCase(t[0..prefix.len], prefix)) return null;
-    var i: usize = prefix.len;
+    var i: usize = foldedWord(t, "processor") orelse return null;
     while (i < t.len and (t[i] == ' ' or t[i] == '\t')) i += 1;
     if (i >= t.len or t[i] != ':') return null;
     i += 1;
@@ -1145,11 +1160,13 @@ fn scopeCpuinfoWithBase(arena: Allocator, cpuinfo: []const u8, allowed: CpuSet, 
     var cur: std.ArrayList(CpuField) = .empty;
     const lines = splitLines(arena, cpuinfo) catch return null;
     for (lines) |line| {
+        // The header line is read as a field too, as Python reads it: a
+        // header spelled with a long s keeps that letter in its field name,
+        // so the field is not dropped as the processor one.
         if (processorId(line)) |pid| {
             if (cur_id) |prev| blocks.append(arena, .{ .id = prev.id, .fields = cur.toOwnedSlice(arena) catch return null }) catch return null;
             cur = .empty;
             cur_id = pid;
-            continue;
         }
         if (cur_id == null) continue;
         if (cpuField(arena, line)) |f| {
@@ -2707,6 +2724,16 @@ test "cpuinfo lines are read as Python strips, splits and counts digits" {
     try std.testing.expectEqualStrings("processor : 0\nflags : avx2 fma\n", shared);
 }
 
+test "cpuinfo words fold the long s to an s as a Python regular expression does" {
+    try std.testing.expectEqual(@as(?usize, 11), foldedWord("proce\u{17f}\u{17f}or: 1", "processor"));
+    try std.testing.expectEqual(@as(?usize, 9), foldedWord("PROCESSOR: 1", "processor"));
+    try std.testing.expectEqual(@as(?usize, null), foldedWord("proces", "processor"));
+    try std.testing.expectEqual(@as(?usize, null), foldedWord("proce\xc5ssor", "processor"));
+    try std.testing.expectEqual(@as(?usize, 6), foldedWord("flag\u{17f}: x", "flags"));
+    try std.testing.expectEqual(@as(?usize, 1), processorId("proce\u{17f}\u{17f}or\t: 1").?.id);
+    try std.testing.expectEqual(@as(?usize, 3), processorId("PROCE\u{17f}sor: 3").?.id);
+}
+
 test "prepareCpuinfo writes scoped cpuinfo under TMPDIR" {
     var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena_state.deinit();
@@ -2860,6 +2887,38 @@ test "scopeCpuinfoWithBase intersects repeated flags lines on a kept processor" 
     try std.testing.expect(std.mem.indexOf(u8, scoped, "waitpkg") == null);
     try std.testing.expect(std.mem.indexOf(u8, scoped, "avx512f") == null);
     try std.testing.expect(std.mem.indexOf(u8, scoped, "sve2") == null);
+}
+
+test "scopeCpuinfoWithBase reads a header with a long s as a field, as Python does" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const a = arena_state.allocator();
+    var both: CpuSet = .{};
+    both.add(0);
+    both.add(1);
+    const plain =
+        \\processor : 0
+        \\vendor_id : GenuineIntel
+        \\flags : avx2 fma
+        \\
+        \\processor : 1
+        \\vendor_id : GenuineIntel
+        \\flags : avx2 fma
+        \\
+    ;
+    try std.testing.expectEqual(@as(?[]const u8, null), scopeCpuinfoWithBase(a, plain, both, null));
+    const long_s =
+        \\processor : 0
+        \\vendor_id : GenuineIntel
+        \\flags : avx2 fma
+        \\
+        \\proceſſor : 1
+        \\vendor_id : GenuineIntel
+        \\flags : avx2 fma
+        \\
+    ;
+    const scoped = scopeCpuinfoWithBase(a, long_s, both, null).?;
+    try std.testing.expectEqualStrings("processor : 0\nvendor_id : GenuineIntel\nflags : avx2 fma\n", scoped);
 }
 
 test "cgroupCpusFrom narrows wider sched affinity on cgroup v2 layouts" {
