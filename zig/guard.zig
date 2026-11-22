@@ -1500,11 +1500,35 @@ const apply_sh = "source \"$1\" >/dev/null || exit 4\nexec env -0\n";
 
 const Applied = struct { env: ?Map, err: []const u8 };
 
-fn writePrivateNew(path: []const u8, data: []const u8, mode: u32) bool {
-    const fd = sys.openat(fsx.cwd, path, .{ .ACCMODE = .WRONLY, .CREAT = true, .EXCL = true, .NOFOLLOW = true }, 0o600) catch return false;
+/// Which call of `writePrivate` failed.
+const PrivateStep = enum { open, write, chmod };
+
+/// `_write_private` and the chmod after it: a new private file at `path`,
+/// made with `mode`. On a failure `step` says which call it was.
+fn writePrivate(path: []const u8, data: []const u8, mode: u32, step: *PrivateStep) sys.Error!void {
+    step.* = .open;
+    const fd = try sys.openat(fsx.cwd, path, .{ .ACCMODE = .WRONLY, .CREAT = true, .EXCL = true, .NOFOLLOW = true }, 0o600);
     defer sys.close(fd);
-    sys.writeAll(fd, data) catch return false;
-    if (mode != 0o600) sys.fchmod(fd, mode) catch return false;
+    step.* = .write;
+    try sys.writeAll(fd, data);
+    step.* = .chmod;
+    if (mode != 0o600) try sys.fchmod(fd, mode);
+}
+
+/// The OSError text Python gives for the failed `step` of a private write.
+/// The open and the chmod name the file, and the write does not, because
+/// Python's os.write raises without one. Call it straight after the failure,
+/// while the errno that `sys.describe` reads is still that of the call.
+fn privateFailure(c: *Ctx, err: sys.Error, path: []const u8, step: PrivateStep) []const u8 {
+    return switch (step) {
+        .write => sys.describe(err),
+        .open, .chmod => pytext.osError(c.arena, err, path) catch main_mod.oom(),
+    };
+}
+
+fn writePrivateNew(path: []const u8, data: []const u8, mode: u32) bool {
+    var step: PrivateStep = .open;
+    writePrivate(path, data, mode, &step) catch return false;
     return true;
 }
 
@@ -1533,10 +1557,15 @@ fn sourceExports(c: *Ctx, module_env: Map, script: []const u8, raised: *[]const 
     defer rmtree(c, tmp);
     const fragment = std.fs.path.join(c.arena, &.{ tmp, "fragment.sh" }) catch return error.Raise;
     const apply = std.fs.path.join(c.arena, &.{ tmp, "apply.sh" }) catch return error.Raise;
-    if (!writePrivateNew(fragment, script, 0o600) or !writePrivateNew(apply, apply_sh, 0o700)) {
-        raised.* = "could not write the restore scripts";
+    var step: PrivateStep = .open;
+    writePrivate(fragment, script, 0o600, &step) catch |err| {
+        raised.* = privateFailure(c, err, fragment, step);
         return error.Raise;
-    }
+    };
+    writePrivate(apply, apply_sh, 0o700, &step) catch |err| {
+        raised.* = privateFailure(c, err, apply, step);
+        return error.Raise;
+    };
     const stripped = envmap.stripStartup(c.arena, module_env) catch return error.Raise;
     const r = runCaptured(c, &.{ "bash", "--noprofile", "--norc", "--", apply, fragment }, stripped, null, false, &why) catch {
         raised.* = why;
@@ -2557,6 +2586,23 @@ test "mkdtemp delegates to fsx.mkdtempReport with the guard prefix" {
     try std.testing.expect(std.mem.startsWith(u8, why, prefix));
     try std.testing.expectEqual(prefix.len + 9, why.len);
     try std.testing.expect(why[why.len - 1] == '\'');
+}
+
+test "privateFailure names the file for an open and not for a write" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const a = arena_state.allocator();
+    var c: Ctx = .{ .arena = a, .env = .empty, .strict = false, .self_exe = "" };
+    var step: PrivateStep = .open;
+    const missing = "/nonexistent-eessi-arch-guard-dir/it's";
+    const open_err = if (writePrivate(missing, "x", 0o600, &step)) |_| return error.TestUnexpectedResult else |e| e;
+    try std.testing.expectEqual(PrivateStep.open, step);
+    try std.testing.expectEqualStrings(
+        "[Errno 2] No such file or directory: \"" ++ missing ++ "\"",
+        privateFailure(&c, open_err, missing, step),
+    );
+    const exists_err = if (writePrivate("/dev/null", "x", 0o600, &step)) |_| return error.TestUnexpectedResult else |e| e;
+    try std.testing.expectEqualStrings("[Errno 17] File exists: '/dev/null'", privateFailure(&c, exists_err, "/dev/null", step));
 }
 
 test "prepareCpuinfo writes scoped cpuinfo under TMPDIR" {

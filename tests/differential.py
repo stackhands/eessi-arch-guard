@@ -38,6 +38,7 @@ SIZE_LIMITER = (
 _RANDOM_NAME = re.compile(r"eessi-arch-guard-(?:cpu-)?[a-z0-9_]{8}")
 
 Build = Callable[[harness.Site], Mapping[str, str]]
+InputFor = Callable[[Mapping[str, str]], str]
 
 
 class Result(NamedTuple):
@@ -72,13 +73,16 @@ def run_fresh(
     build: Build,
     args: Sequence[str] = (),
     fsize: Optional[int] = None,
+    input_for: Optional[InputFor] = None,
 ) -> Result:
     """Run ``program`` once on a site made by ``build``, and remove the site.
 
     ``build`` receives the new site, adds what the case needs, and returns
     the environment of the run. It is called once per program and must not
     depend on state outside the site. ``fsize`` caps the size of any file the
-    program writes, in bytes.
+    program writes, in bytes. ``input_for`` receives that environment and
+    returns the text fed to the program, such as a restore request that names
+    paths of the site.
     """
     site = harness.Site()
     try:
@@ -86,7 +90,8 @@ def run_fresh(
         argv = [*program, *args]
         if fsize is not None:
             argv = [sys.executable, "-c", SIZE_LIMITER, str(fsize), *argv]
-        proc = harness.run_with_timeout(argv, env=env, timeout=RUN_TIMEOUT)
+        stdin = input_for(env) if input_for is not None else None
+        proc = harness.run_with_timeout(argv, env=env, timeout=RUN_TIMEOUT, input=stdin)
         log_bytes = os.path.getsize(site.log) if os.path.exists(site.log) else 0
         return Result(
             proc.returncode,
@@ -103,10 +108,11 @@ def run_pair(
     build: Build,
     args: Sequence[str] = (),
     fsize: Optional[int] = None,
+    input_for: Optional[InputFor] = None,
 ) -> Tuple[Result, Result]:
     """The Python guard and the ``TOOL_BIN`` program, each on a fresh site."""
-    python = run_fresh(python_guard(), build, args, fsize)
-    zig = run_fresh(zig_program(), build, args, fsize)
+    python = run_fresh(python_guard(), build, args, fsize, input_for)
+    zig = run_fresh(zig_program(), build, args, fsize, input_for)
     return python, zig
 
 
@@ -115,9 +121,10 @@ def assert_agree(
     build: Build,
     args: Sequence[str] = (),
     fsize: Optional[int] = None,
+    input_for: Optional[InputFor] = None,
 ) -> Tuple[Result, Result]:
     """Fail unless both programs exit and print alike. Returns both results."""
-    python, zig = run_pair(build, args, fsize)
+    python, zig = run_pair(build, args, fsize, input_for)
     case.assertEqual(zig.returncode, python.returncode, zig.stderr)
     case.assertEqual(zig.stderr, python.stderr)
     case.assertEqual(zig.stdout, python.stdout)
