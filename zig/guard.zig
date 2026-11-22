@@ -185,6 +185,8 @@ pub const Ctx = struct {
     /// The deadline while `limitedDecide` runs; null otherwise, as in the
     /// restore helper, which its parent's deadline covers.
     limit: ?*Limit = null,
+    /// The temporary directory `tempfile.gettempdir` settles on, chosen once.
+    temp_dir: fsx.TempDir = .{},
 };
 
 // ---- running programs ----------------------------------------------------
@@ -1193,7 +1195,10 @@ fn unlinkPath(path: []const u8) void {
 }
 
 fn tempCpuFile(c: *Ctx, env: Map, data: []const u8) ?[]const u8 {
-    const base = pyTempDir(c, env);
+    const base = c.temp_dir.get(c.arena, env) catch |err| switch (err) {
+        error.OutOfMemory => main_mod.oom(),
+        error.NoTempDir => return null,
+    };
     const alphabet = "abcdefghijklmnopqrstuvwxyz0123456789_";
     var tries: usize = 0;
     while (tries < 100) : (tries += 1) {
@@ -1357,32 +1362,13 @@ pub fn restoreWorkBase(c: *Ctx, env: Map, why: *[]const u8) WorkError![]const u8
         return error.Unavailable;
     }
     if (text.safeAbsolute(temporary) and isDir(temporary)) return temporary;
-    return pyTempDir(c, env);
-}
-
-/// tempfile.gettempdir(): TMPDIR, TEMP, TMP, then /tmp, /var/tmp, /usr/tmp,
-/// then the current directory; the first that is a writable directory.
-fn pyTempDir(c: *Ctx, env: Map) []const u8 {
-    for ([_][]const u8{ "TMPDIR", "TEMP", "TMP" }) |k| {
-        const v = env.get(k) orelse continue;
-        if (v.len > 0 and writableDir(v)) return absolutize(c, v);
-    }
-    for ([_][]const u8{ "/tmp", "/var/tmp", "/usr/tmp" }) |d| if (writableDir(d)) return d;
-    return absolutize(c, ".");
-}
-
-fn absolutize(c: *Ctx, p: []const u8) []const u8 {
-    if (p.len > 0 and p[0] == '/') return p;
-    var rb: [sys.path_max]u8 = undefined;
-    const cwd = fsx.realpath(fsx.cwd, ".", &rb) catch return p;
-    return std.fs.path.join(c.arena, &.{ cwd, p }) catch p;
-}
-
-fn writableDir(p: []const u8) bool {
-    if (!isDir(p)) return false;
-    var zb: [sys.path_max:0]u8 = undefined;
-    const z = sys.z(&zb, p) catch return false;
-    return linux.errno(linux.faccessat(linux.AT.FDCWD, z.ptr, linux.W_OK | linux.X_OK, 0)) == .SUCCESS;
+    return c.temp_dir.get(c.arena, env) catch |err| switch (err) {
+        error.OutOfMemory => main_mod.oom(),
+        error.NoTempDir => {
+            why.* = c.temp_dir.message;
+            return error.Unavailable;
+        },
+    };
 }
 
 /// tempfile.mkdtemp(prefix="eessi-arch-guard-", dir=base): a new 0700
