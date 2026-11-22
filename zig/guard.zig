@@ -1504,13 +1504,15 @@ const Applied = struct { env: ?Map, err: []const u8 };
 const PrivateStep = enum { open, write, chmod };
 
 /// `_write_private` and the chmod after it: a new private file at `path`,
-/// made with `mode`. On a failure `step` says which call it was.
+/// made with `mode`. On a failure `step` says which call it was. The data
+/// goes out in one write(2), as Python's os.write does it: a short write is
+/// not an error and leaves a short file.
 fn writePrivate(path: []const u8, data: []const u8, mode: u32, step: *PrivateStep) sys.Error!void {
     step.* = .open;
     const fd = try sys.openat(fsx.cwd, path, .{ .ACCMODE = .WRONLY, .CREAT = true, .EXCL = true, .NOFOLLOW = true }, 0o600);
     defer sys.close(fd);
     step.* = .write;
-    try sys.writeAll(fd, data);
+    _ = try sys.call(linux.write, .{ fd, data.ptr, data.len });
     step.* = .chmod;
     if (mode != 0o600) try sys.fchmod(fd, mode);
 }
