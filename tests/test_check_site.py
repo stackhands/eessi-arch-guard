@@ -7,6 +7,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
+import private_tmp  # noqa: F401
+
 ROOT = Path(__file__).resolve().parent.parent
 
 

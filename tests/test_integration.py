@@ -212,7 +212,8 @@ class IntegrationTests(unittest.TestCase):
         self.site.write_cpuinfo("zen2")
         env = self._cpu_env(ZEN4, "zen2")
         env["TMPDIR"] = os.path.join(self.site.root, "not-created-yet")
-        env["SLURM_JOB_ID"] = "424242"
+        # The cache lands in the shared /tmp, so the job is this process alone.
+        env["SLURM_JOB_ID"] = "4242%d" % os.getpid()
         env["SLURM_STEP_ID"] = "batch"
         path = guard.cache_file_path(env)
         self.assertIsNotNone(path)

@@ -61,6 +61,7 @@ class EbStackRelativeParityTests(unittest.TestCase):
     def _env(self) -> Dict[str, str]:
         return {
             "PATH": "/usr/bin:/bin",
+            "TMPDIR": self.site.tmpdir,
             "EESSI_PREFIX": self.prefix,
             "EESSI_OS_TYPE": "linux",
             "LOADEDMODULES": "EESSI/2025.06:R/4.4.2",

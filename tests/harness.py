@@ -10,6 +10,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
+import private_tmp  # noqa: F401
+
 ROOT = Path(__file__).resolve().parents[1]
 GUARD = ROOT / "src" / "eessi_arch_guard.py"
 # TOOL_BIN runs the tests that start the guard as a program against another
@@ -58,6 +60,9 @@ class Site:
         self.arch_log = os.path.join(self.root, "arch.log")
         self.cpuinfo = os.path.join(self.root, "cpuinfo")
         self.bash_env_log = os.path.join(self.root, "bash-env.log")
+        # The TMPDIR of the guard runs base_env sets up, private to the site.
+        self.tmpdir = os.path.join(self.root, "temp")
+        os.mkdir(self.tmpdir, 0o700)
         os.makedirs(self.init)
         os.makedirs(self.bindir)
         shutil.copy(STUBS / "eessi_archdetect.sh", os.path.join(self.init, "eessi_archdetect.sh"))
@@ -147,6 +152,7 @@ def base_env(
     env = {
         "PATH": ":".join(bins),
         "HOME": "/tmp",
+        "TMPDIR": site.tmpdir,
         "USER": "tester",
         "LANG": "C",
         "LC_ALL": "C",
