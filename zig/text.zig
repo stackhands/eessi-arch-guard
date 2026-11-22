@@ -23,6 +23,9 @@ pub const pyWhitespace = pytext.pyWhitespace;
 pub const pyStrip = pytext.pyStrip;
 /// str.split() with no separator: the runs between Unicode whitespace.
 pub const pySplit = pytext.pySplit;
+/// The bytes with each decimal digit of any script written as the ASCII
+/// digit of its value, as float() and int() read their text.
+pub const decimalToAscii = pytext.decimalToAscii;
 /// shlex.quote: the value as it is when a shell reads it as one word,
 /// single-quoted otherwise.
 pub const shellQuote = pytext.shellQuote;

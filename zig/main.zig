@@ -349,9 +349,10 @@ fn hasSeparatorControl(s: []const u8) bool {
 }
 
 /// float(text) as Python parses it: surrounding whitespace, a sign, digits
-/// with single underscores between them, a fraction, an exponent, or
-/// inf/infinity/nan in any case.
-fn pyFloat(arena: Allocator, raw: []const u8) ?f64 {
+/// of any script with single underscores between them, a fraction, an
+/// exponent, or inf/infinity/nan in any case.
+fn pyFloat(arena: Allocator, input: []const u8) ?f64 {
+    const raw = text.decimalToAscii(arena, input) catch return null;
     const s = text.pyStrip(raw);
     if (s.len == 0) return null;
     const lead = @intFromPtr(s.ptr) - @intFromPtr(raw.ptr);
@@ -1798,6 +1799,11 @@ test "pyFloat follows Python's float()" {
     try std.testing.expectEqual(@as(?f64, 5.0), pyFloat(a, "5."));
     try std.testing.expectEqual(@as(?f64, 2e3), pyFloat(a, "+2E3"));
     try std.testing.expect(std.math.isInf(pyFloat(a, "-Infinity").?));
+    try std.testing.expectEqual(@as(?f64, 3.0), pyFloat(a, "\xd9\xa3"));
+    try std.testing.expectEqual(@as(?f64, 10.5), pyFloat(a, "\xef\xbc\x91\xef\xbc\x90.\xe0\xa5\xab"));
+    try std.testing.expectEqual(@as(?f64, 100.0), pyFloat(a, " 1_\xd9\xa0\xd9\xa0\xc2\xa0"));
+    try std.testing.expect(pyFloat(a, "\xc2\xb2") == null);
+    try std.testing.expect(pyFloat(a, "\xd9\xa3\xff") == null);
     try std.testing.expect(pyFloat(a, "1__0") == null);
     try std.testing.expect(pyFloat(a, "_1") == null);
     try std.testing.expect(pyFloat(a, "1e") == null);
