@@ -2131,7 +2131,7 @@ fn lockExclusive(c: *Ctx, fd: sys.fd_t) Stop!void {
             break :blk @intCast(@min(rem, std.math.maxInt(u32)));
         };
         const cancel: ?*const std.atomic.Value(bool) = if (committing) null else &l.terminated;
-        state.lockExclusiveCancel(fd, timeout_ms, cancel) catch |err| switch (err) {
+        state.lockExclusiveCancel(fd, if (timeout_ms) |ms| ms else null, cancel) catch |err| switch (err) {
             error.Canceled => return error.Terminated,
             error.TimedOut => {
                 try l.check();
