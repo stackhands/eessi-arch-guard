@@ -23,6 +23,9 @@ pub const pyWhitespace = pytext.pyWhitespace;
 pub const pyStrip = pytext.pyStrip;
 /// str.split() with no separator: the runs between Unicode whitespace.
 pub const pySplit = pytext.pySplit;
+/// The value of a code point that has a decimal value, as unicodedata.decimal
+/// gives it, or null.
+pub const decimalDigit = pytext.decimalDigit;
 /// The bytes with each decimal digit of any script written as the ASCII
 /// digit of its value, as float() and int() read their text.
 pub const decimalToAscii = pytext.decimalToAscii;
