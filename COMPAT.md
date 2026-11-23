@@ -344,3 +344,5 @@ The rows above describe the Python guard at 0.2.0. The Zig build in `zig/` keeps
 | a path in the skip line for an `OSError` that holds a character past U+00FF Python does not print, such as U+2028 | escaped, as `repr()` escapes it | kept as it is |
 | archdetect or Lmod output past 64 MiB, stderr past 1 MiB | read whole | refused as a failed run; stderr is cut |
 | a cache file with a leading-zero number, NaN, Infinity, or nesting deeper than 32 | `NaN` and `Infinity` accepted, the rest refused | all refused, and the decision is made again |
+| a cpuinfo field name with a capital that Unicode 13.0.0 does not assign, such as U+10570 | lower-cased on Python 3.11 and later, whose Unicode is newer | left as it is, as Python 3.9 and 3.10 leave it |
+| a capital sigma in a cpuinfo field name after a letter and U+1734, the Hanunoo sign pamudpod | medial `σ` on Python 3.11 and later, whose Unicode no longer counts U+1734 as case-ignorable | final `ς`, as Unicode 13.0.0 and Python 3.9 and 3.10 have it |

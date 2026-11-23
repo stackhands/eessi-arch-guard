@@ -1,11 +1,13 @@
 //! str.lower() for the bytes of a string, as Python lower-cases a cpuinfo
 //! field name. ASCII letters map by arithmetic. Past ASCII the mapping is the
-//! table in pylower_table.zig, which tools/gen_pylower.py reads off Python:
-//! a code point may lower-case to another letter (U+212A, the Kelvin sign, to
-//! `k`) or to two code points (U+0130 to `i` and U+0307), and the capital
-//! sigma gives U+03C2 at the end of a word and U+03C3 elsewhere. U+017F, the
-//! long s, is already lower case and stays as it is; only a case-insensitive
-//! regular expression reads it as an s.
+//! table in pylower_table.zig, which tools/gen_pylower.py reads off Python
+//! 3.9. Its Unicode 13.0.0 is the one every supported Python shares, so a
+//! code point that a later Unicode adds is left as it is, as Python 3.9
+//! leaves it. In the table a code point may lower-case to another letter
+//! (U+212A, the Kelvin sign, to `k`) or to two code points (U+0130 to `i`
+//! and U+0307), and the capital sigma gives U+03C2 at the end of a word and
+//! U+03C3 elsewhere. U+017F, the long s, is already lower case and stays as
+//! it is; only a case-insensitive regular expression reads it as an s.
 const std = @import("std");
 const common = @import("zig_common");
 const table = @import("pylower_table.zig");
@@ -155,6 +157,16 @@ test "lower maps letters of other scripts" {
     try expectLower("\u{10D0}", "\u{1C90}");
     try expectLower("\u{10428}", "\u{10400}");
     try expectLower("\u{1c6}", "\u{1C5}");
+}
+
+test "lower follows Unicode 13.0.0 where a later version differs, as Python 3.9 does" {
+    // U+10570, a Vithkuqi capital, and U+2C2F, a Glagolitic one, came in
+    // Unicode 14.0.0 and lower-case only on Python 3.11 and later.
+    try expectLower("\u{10570}", "\u{10570}");
+    try expectLower("\u{2C2F}", "\u{2C2F}");
+    // U+1734 is case-ignorable in Unicode 13.0.0 and not from 14.0.0 on, so
+    // the sigma after it is final here and on Python 3.9.
+    try expectLower("a\u{1734}\u{3C2}", "A\u{1734}\u{3A3}");
 }
 
 test "lower writes a capital sigma as final or medial as Python does" {
