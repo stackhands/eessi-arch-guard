@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -123,6 +124,32 @@ class Site:
             lines.append("eessi_arch_fail: 1")
         with open(self.cpuinfo, "w", encoding="utf-8") as handle:
             handle.write("\n".join(lines) + "\n")
+
+
+def on_task_cpus(cpuinfo: str, visible: int):
+    """``cpuinfo`` renumbered so that its first ``visible`` processors are ones
+    this process may run on, with those IDs.
+
+    A fixture numbers its processors from 0, and a host may give a test only
+    processors with higher IDs, so a test that binds the task to fixture
+    processors renumbers them first. The first blocks take the lowest IDs of
+    the affinity mask in order, and the blocks past the mask take the IDs
+    after its highest one. On a host that may use processors 0 to 7 the
+    fixture keeps its numbers. Skips when the mask has fewer than
+    ``visible`` processors.
+    """
+    allowed = sorted(os.sched_getaffinity(0))
+    if len(allowed) < visible:
+        raise unittest.SkipTest(
+            "the test needs %d processors and may run on %d" % (visible, len(allowed))
+        )
+    pattern = re.compile(r"^(processor[ \t]*:[ \t]*)[0-9]+", re.M)
+    blocks = len(pattern.findall(cpuinfo))
+    ids = allowed[:blocks]
+    ids += range(allowed[-1] + 1, allowed[-1] + 1 + blocks - len(ids))
+    numbers = iter(ids)
+    text = pattern.sub(lambda m: m.group(1) + str(next(numbers)), cpuinfo)
+    return text, ids[:visible]
 
 
 def base_env(

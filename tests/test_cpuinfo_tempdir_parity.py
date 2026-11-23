@@ -18,12 +18,12 @@ comparison skips when TOOL_BIN is unset.
 
 from __future__ import annotations
 
-import os
-import shutil
+import re
 import sys
 import unittest
 from pathlib import Path
 from typing import Dict, Sequence
+from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
@@ -49,9 +49,10 @@ def build(site: harness.Site) -> Dict[str, str]:
     for cpu in (CPU, FALLBACK):
         site.add_cpu(cpu)
         site.add_module(cpu, "R/4.4.2")
-    shutil.copy(FIXTURE / "emeraldrapids-kvm-no-waitpkg.cpuinfo", site.cpuinfo)
+    text = (FIXTURE / "emeraldrapids-kvm-no-waitpkg.cpuinfo").read_text(encoding="utf-8")
+    text, visible = harness.on_task_cpus(text, 2)
+    Path(site.cpuinfo).write_text(text, encoding="utf-8")
     env = harness.base_env(site, CPU, ["R/4.4.2"], gpu="none")
-    visible = sorted(c for c in os.sched_getaffinity(0) if c <= 7)[:2]
     env["SLURM_CPU_BIND_LIST"] = ",".join(str(c) for c in visible)
     return env
 
@@ -78,6 +79,36 @@ class CpuinfoTempdirParityTests(unittest.TestCase):
         harness.skip_unless_tool_bin(self)
         self._compare(4)
         self._compare(300)
+
+
+class OnTaskCpusTests(unittest.TestCase):
+    """harness.on_task_cpus, under affinity masks the host may not have."""
+
+    def _renumber(self, mask, visible: int):
+        text = (FIXTURE / "emeraldrapids-kvm-no-waitpkg.cpuinfo").read_text(encoding="utf-8")
+        with mock.patch.object(harness.os, "sched_getaffinity", return_value=set(mask)):
+            got, bound = harness.on_task_cpus(text, visible)
+        ids = [int(n) for n in re.findall(r"^processor[ \t]*:[ \t]*([0-9]+)", got, re.M)]
+        return ids, bound
+
+    def test_a_mask_of_only_high_ids_binds_processors_the_fixture_has(self) -> None:
+        ids, bound = self._renumber({8, 9}, 2)
+        self.assertEqual(bound, [8, 9])
+        self.assertEqual(ids, [8, 9, 10, 11, 12, 13, 14, 15])
+
+    def test_a_mask_with_a_gap_keeps_its_ids_in_order(self) -> None:
+        ids, bound = self._renumber({3, 17, 40}, 2)
+        self.assertEqual(bound, [3, 17])
+        self.assertEqual(ids, [3, 17, 40, 41, 42, 43, 44, 45])
+
+    def test_a_mask_of_zero_to_seven_keeps_the_fixture_numbers(self) -> None:
+        ids, bound = self._renumber(range(64), 2)
+        self.assertEqual(bound, [0, 1])
+        self.assertEqual(ids, list(range(8)))
+
+    def test_a_mask_too_small_for_the_bind_list_skips(self) -> None:
+        with self.assertRaises(unittest.SkipTest):
+            self._renumber({12}, 2)
 
 
 if __name__ == "__main__":
