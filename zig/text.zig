@@ -4,6 +4,7 @@
 //! surrogateescape, so an invalid byte counts as one character here too.
 const std = @import("std");
 const common = @import("zig_common");
+const pylower = @import("pylower.zig");
 
 const Allocator = std.mem.Allocator;
 
@@ -23,6 +24,10 @@ pub const pyWhitespace = pytext.pyWhitespace;
 pub const pyStrip = pytext.pyStrip;
 /// str.split() with no separator: the runs between Unicode whitespace.
 pub const pySplit = pytext.pySplit;
+/// str.lower() of the bytes decoded with 'replace', as bytes: the Kelvin sign
+/// gives `k`, U+0130 gives `i` and U+0307, a capital sigma at the end of a
+/// word gives U+03C2. The long s stays as it is.
+pub const pyLower = pylower.lower;
 /// The value of a code point that has a decimal value, as unicodedata.decimal
 /// gives it, or null.
 pub const decimalDigit = pytext.decimalDigit;

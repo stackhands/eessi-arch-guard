@@ -16,6 +16,14 @@ one processor has, or that holds another value, needs one. The programs are
 compared on exit status and on both output streams, and the Python guard is
 checked for the cause each case should give. The comparison skips when
 TOOL_BIN is unset.
+
+The names are lower-cased by str.lower(), which is not only for ASCII. U+212A,
+the Kelvin sign, has the lower case ``k``, so a processor that spells the name
+with it and one that spells it ``key`` have the same field. U+0130 gives ``i``
+and U+0307; a capital letter of any other script gives its small letter; and a
+capital sigma gives U+03C2 at the end of a word and U+03C3 elsewhere. U+017F,
+the long s, is a small letter already and stays as it is, so it is not an s
+here, whatever a case-insensitive regular expression makes of it.
 """
 
 from __future__ import annotations
@@ -55,7 +63,7 @@ def builder(
                 "processor\t: %d\nvendor_id\t: GenuineIntel\n%s\t: %s\nflags\t\t: avx2 fma\n"
                 % (cpu_id, name, value(index))
             )
-        Path(site.cpuinfo).write_text("\n".join(blocks), encoding="utf-8")
+        Path(site.cpuinfo).write_text("\n".join(blocks), encoding="utf-8", errors="surrogateescape")
         env = harness.base_env(site, CPU, ["R/4.4.2"], gpu="none")
         env["SLURM_CPU_BIND_LIST"] = ",".join(str(cpu_id) for cpu_id in visible)
         return env
@@ -71,6 +79,26 @@ CASES: Sequence[Case] = (
     ("three spellings", ("key", "Key", "KEY"), NO_COPY),
     ("padded name", ("key", "  Key  "), NO_COPY),
     ("other name", ("key", "Kez"), COPY_FAILED),
+    ("kelvin sign and lower", ("key", "\u212aey"), NO_COPY),
+    ("kelvin sign and title", ("\u212aey", "Key"), NO_COPY),
+    ("kelvin sign and upper", ("KEY", "\u212aey"), NO_COPY),
+    ("kelvin sign beside spaces", ("\u212aey", " \u212a E Y "), COPY_FAILED),
+    ("kelvin sign beside another letter", ("\u212aez", "key"), COPY_FAILED),
+    ("dotted capital i and its lower case", ("\u0130d", "i\u0307d"), NO_COPY),
+    ("dotted capital i and a plain i", ("\u0130d", "id"), COPY_FAILED),
+    ("long s is not an s", ("\u017fize", "size"), COPY_FAILED),
+    ("long s and a capital s", ("\u017fize", "SIZE"), COPY_FAILED),
+    ("accented capital", ("\u00c9cole", "\u00e9cole"), NO_COPY),
+    ("cherokee capital", ("\u13a0x", "\uab70x"), NO_COPY),
+    ("georgian mtavruli", ("\u1c90x", "\u10d0x"), NO_COPY),
+    ("deseret capital", ("\U00010400x", "\U00010428x"), NO_COPY),
+    ("titlecase digraph", ("\u01c5x", "\u01c6x"), NO_COPY),
+    ("final sigma", ("\u0391\u03a3", "\u03b1\u03c2"), NO_COPY),
+    ("final sigma written as a medial one", ("\u0391\u03a3", "\u03b1\u03c3"), COPY_FAILED),
+    ("medial sigma", ("\u0391\u03a3\u0391", "\u03b1\u03c3\u03b1"), NO_COPY),
+    ("sigma after a full stop", ("\u0391.\u03a3", "\u03b1.\u03c2"), NO_COPY),
+    ("sigma after an underscore", ("\u0391_\u03a3", "\u03b1_\u03c3"), NO_COPY),
+    ("ill-formed byte", ("a\udcffb", "a\ufffdb"), NO_COPY),
 )
 
 

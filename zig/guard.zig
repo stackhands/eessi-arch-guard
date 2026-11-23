@@ -997,15 +997,11 @@ fn taskCpuIds(arena: Allocator, env: Map) ?CpuSet {
     return taskCpuBounds(env, schedCpus(), cgroupCpus(arena)).allowed;
 }
 
-/// "_".join(key.split()).lower() for the ASCII part of lower().
+/// `"_".join(key.split()).lower()`.
 fn normKey(arena: Allocator, key: []const u8) []const u8 {
     const words = text.pySplit(arena, key) catch return key;
-    var out: std.ArrayList(u8) = .empty;
-    for (words, 0..) |word, idx| {
-        if (idx > 0) out.append(arena, '_') catch return key;
-        for (word) |ch| out.append(arena, std.ascii.toLower(ch)) catch return key;
-    }
-    return out.items;
+    const joined = std.mem.join(arena, "_", words) catch return key;
+    return text.pyLower(arena, joined) catch key;
 }
 
 const ProcessorId = struct { id: ?usize };
@@ -2857,6 +2853,20 @@ test "scopeCpuinfoWithBase maps LXCFS renumbered blocks and keeps gapped logical
     try std.testing.expect(std.mem.find(u8, gapped, "processor : 2\n") != null);
     try std.testing.expect(std.mem.find(u8, gapped, "avx512f") != null);
     try std.testing.expect(std.mem.find(u8, gapped, "waitpkg") == null);
+}
+
+test "a field name is lower-cased as Python lower-cases it" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const a = arena_state.allocator();
+    try std.testing.expectEqualStrings("key", normKey(a, "\u{212A}ey"));
+    try std.testing.expectEqualStrings("i\u{307}sa", normKey(a, "\u{130}SA"));
+    try std.testing.expectEqualStrings("\u{17f}ize", normKey(a, "\u{17f}IZE"));
+    try std.testing.expectEqualStrings("\u{3b1}\u{3c2}_\u{3c3}", normKey(a, "\u{391}\u{3a3}\u{2003}\u{3a3}"));
+    const first = cpuField(a, "\u{212A}ey : v").?;
+    const second = cpuField(a, "Key : v").?;
+    try std.testing.expectEqualStrings(first.norm, second.norm);
+    try std.testing.expectEqualStrings("\u{212A}ey", first.raw);
 }
 
 test "scopeCpuinfoWithBase intersects repeated flags lines on a kept processor" {
