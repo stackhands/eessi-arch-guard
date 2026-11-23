@@ -343,6 +343,4 @@ The rows above describe the Python guard at 0.2.0. The Zig build in `zig/` keeps
 | the skip line after an unexpected failure | `skipped, ExceptionName: text` | `skipped, panic: text`, `skipped, signal: SIGSEGV` and the like; a crash signal still exits 0 (78 with `--strict`) |
 | a path in the skip line for an `OSError` that holds a character past U+00FF Python does not print, such as U+2028 | escaped, as `repr()` escapes it | kept as it is |
 | archdetect or Lmod output past 64 MiB, stderr past 1 MiB | read whole | refused as a failed run; stderr is cut |
-| a timeout written with non-ASCII digits, such as `５` | accepted, as `float()` takes any Unicode decimal digit | refused with the timeout warning; the default is kept |
 | a cache file with a leading-zero number, NaN, Infinity, or nesting deeper than 32 | `NaN` and `Infinity` accepted, the rest refused | all refused, and the decision is made again |
-| a cpuinfo line whose name is `flags` only under Unicode case folding (`flagſ`) | a flags line | not a flags line |
