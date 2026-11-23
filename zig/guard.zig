@@ -1194,35 +1194,54 @@ fn unlinkPath(path: []const u8) void {
     _ = linux.unlinkat(linux.AT.FDCWD, z.ptr, 0);
 }
 
-fn tempCpuFile(c: *Ctx, env: Map, data: []const u8) ?[]const u8 {
+/// Why `tempCpuFile` gave up: the Python exception class and its text.
+const TempFailure = struct { class: []const u8 = "OSError", text: []const u8 = "" };
+
+/// tempfile.mkstemp(prefix="eessi-arch-guard-cpu-") followed by one
+/// os.write; a short write is not an error there, nor here.
+fn tempCpuFile(c: *Ctx, env: Map, data: []const u8, failure: *TempFailure) error{TempFile}![]const u8 {
     const base = c.temp_dir.get(c.arena, env) catch |err| switch (err) {
         error.OutOfMemory => main_mod.oom(),
-        error.NoTempDir => return null,
+        error.NoTempDir => {
+            failure.* = .{ .class = "FileNotFoundError", .text = c.temp_dir.message };
+            return error.TempFile;
+        },
     };
-    const alphabet = "abcdefghijklmnopqrstuvwxyz0123456789_";
-    var tries: usize = 0;
-    while (tries < 100) : (tries += 1) {
-        var rnd: [8]u8 = undefined;
-        _ = sys.call(linux.getrandom, .{ &rnd, rnd.len, 0 }) catch return null;
-        var suffix: [8]u8 = undefined;
-        for (rnd, 0..) |b, i| suffix[i] = alphabet[b % alphabet.len];
-        const name = c.arena.print("eessi-arch-guard-cpu-{s}", .{suffix}) catch return null;
-        const p = std.fs.path.join(c.arena, &.{ base, name }) catch return null;
-        if (writePrivateNew(p, data, 0o600)) return p;
-    }
-    return null;
+    var refused: ?[]u8 = null;
+    const made = fsx.mkstemp(c.arena, base, "eessi-arch-guard-cpu-", &refused) catch |err| switch (err) {
+        error.OutOfMemory => main_mod.oom(),
+        else => |e| {
+            const errno = sys.last_errno;
+            if (refused) |path| {
+                failure.* = .{ .class = osErrorClass(errno), .text = common.pytext.osError(c.arena, e, path) catch main_mod.oom() };
+            } else if (e == error.Exists) {
+                failure.* = .{ .class = "FileExistsError", .text = "[Errno 17] No usable temporary file name found" };
+            } else {
+                failure.* = .{ .class = osErrorClass(errno), .text = sys.describe(e) };
+            }
+            return error.TempFile;
+        },
+    };
+    defer _ = linux.close(made.fd);
+    _ = sys.call(linux.write, .{ made.fd, data.ptr, data.len }) catch |err| {
+        const errno = sys.last_errno;
+        failure.* = .{ .class = osErrorClass(errno), .text = sys.describe(err) };
+        unlinkPath(made.path);
+        return error.TempFile;
+    };
+    return made.path;
 }
 
 const PreparedCpu = struct { path: []const u8, cleanup: ?[]const u8 = null, child: Map };
 
-fn prepareCpuinfoWithTemp(c: *Ctx, env: Map, temp_env: Map) PreparedCpu {
+fn prepareCpuinfoWithTemp(c: *Ctx, env: Map, temp_env: Map, failure: *TempFailure) error{TempFile}!PreparedCpu {
     const explicit = env.get("EESSI_PROC_CPUINFO") orelse "";
     const path: []const u8 = if (explicit.len > 0) explicit else "/proc/cpuinfo";
     const bounds = taskCpuBounds(env, schedCpus(), cgroupCpus(c.arena));
     const allowed = bounds.allowed orelse return .{ .path = path, .child = env };
     const blob = readFile(c.arena, path, cpuinfo_read_max) orelse return .{ .path = path, .child = env };
     const scoped = scopeCpuinfoWithBase(c.arena, blob, allowed, bounds.base_cpus) orelse return .{ .path = path, .child = env };
-    const tmp = tempCpuFile(c, temp_env, scoped) orelse return .{ .path = path, .child = env };
+    const tmp = try tempCpuFile(c, temp_env, scoped, failure);
     var child = envmap.clone(c.arena, env) catch {
         unlinkPath(tmp);
         return .{ .path = path, .child = env };
@@ -1234,8 +1253,8 @@ fn prepareCpuinfoWithTemp(c: *Ctx, env: Map, temp_env: Map) PreparedCpu {
     return .{ .path = tmp, .cleanup = tmp, .child = child };
 }
 
-fn prepareCpuinfo(c: *Ctx, env: Map) PreparedCpu {
-    return prepareCpuinfoWithTemp(c, env, env);
+fn prepareCpuinfo(c: *Ctx, env: Map, failure: *TempFailure) error{TempFile}!PreparedCpu {
+    return prepareCpuinfoWithTemp(c, env, env, failure);
 }
 
 /// probe_cpu: this node's CPU target. Runs `eessi_archdetect.sh -a cpupath`
@@ -1251,7 +1270,11 @@ pub fn probeCpu(c: *Ctx, env: Map) Stop!CpuProbe {
         return .{ .status = .@"error", .err = "EESSI_PREFIX, EESSI_OS_TYPE, or EESSI_INIT_PREFIX is missing or unsafe" };
     const script = std.fs.path.join(c.arena, &.{ init, "eessi_archdetect.sh" }) catch return .{ .status = .@"error", .err = "out of memory" };
     if (!isFile(script)) return .{ .status = .@"error", .err = "eessi_archdetect.sh is not available" };
-    const prepared = prepareCpuinfo(c, env);
+    var temp_failure: TempFailure = .{};
+    const prepared = prepareCpuinfo(c, env, &temp_failure) catch {
+        os_failure = .{ .class = temp_failure.class, .text = temp_failure.text };
+        return error.Os;
+    };
     defer if (prepared.cleanup) |p| unlinkPath(p);
     var why: []const u8 = "";
     const r = runBash(c, &.{ script, "-a", "cpupath" }, prepared.child, &why) catch |err| switch (err) {
@@ -1683,7 +1706,11 @@ fn doRestore(c: *Ctx, payload: json.Value, raised: *[]const u8) HelperError!Repl
     const p = try applyLmod(c, module_env, lmod, &.{ "--force", "purge" }, raised);
     var current = p.env orelse return .{ .ok = false, .err = line1(c, if (p.err.len > 0) p.err else "purge failed", 300) };
     const orig_cpuinfo = current.get("EESSI_PROC_CPUINFO");
-    const prepared = prepareCpuinfoWithTemp(c, pinnedEnv(c, current, pin), c.env);
+    var temp_failure: TempFailure = .{};
+    const prepared = prepareCpuinfoWithTemp(c, pinnedEnv(c, current, pin), c.env, &temp_failure) catch {
+        raised.* = temp_failure.text;
+        return error.Raise;
+    };
     const e = applyLmod(c, prepared.child, lmod, &.{ "load", eessi }, raised) catch |err| {
         if (prepared.cleanup) |cp| unlinkPath(cp);
         return err;
@@ -2639,10 +2666,45 @@ test "prepareCpuinfo writes scoped cpuinfo under TMPDIR" {
     try env.put(a, "SLURM_CPU_BIND_LIST", "1");
 
     var c: Ctx = .{ .arena = a, .env = env, .strict = false, .self_exe = "" };
-    const prepared = prepareCpuinfo(&c, env);
+    var failure: TempFailure = .{};
+    const prepared = try prepareCpuinfo(&c, env, &failure);
     defer if (prepared.cleanup) |p| unlinkPath(p);
     const expected_prefix = try std.fmt.allocPrint(a, "{s}/eessi-arch-guard-cpu-", .{tmp_dir});
     try std.testing.expect(std.mem.startsWith(u8, prepared.path, expected_prefix));
+}
+
+test "tempCpuFile names the refused path as Python's mkstemp error does" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const a = arena_state.allocator();
+    var c: Ctx = .{ .arena = a, .env = .empty, .strict = false, .self_exe = "" };
+    c.temp_dir = .{ .path = "/nonexistent-eag-dir" };
+    var failure: TempFailure = .{};
+    try std.testing.expectError(error.TempFile, tempCpuFile(&c, .empty, "x", &failure));
+    try std.testing.expectEqualStrings("FileNotFoundError", failure.class);
+    const prefix = "[Errno 2] No such file or directory: '/nonexistent-eag-dir/eessi-arch-guard-cpu-";
+    try std.testing.expect(std.mem.startsWith(u8, failure.text, prefix));
+    try std.testing.expectEqual(prefix.len + 8 + 1, failure.text.len);
+    try std.testing.expect(std.mem.endsWith(u8, failure.text, "'"));
+}
+
+test "tempCpuFile writes a private file once and a short write is not an error" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const a = arena_state.allocator();
+    var cwd_buf: [sys.path_max]u8 = undefined;
+    const here = try fsx.realpath(fsx.cwd, ".", &cwd_buf);
+    const base = try std.fmt.allocPrint(a, "{s}/.zig-cache/eag-tempcpu-{d}", .{ here, linux.getpid() });
+    var zb: [sys.path_max:0]u8 = undefined;
+    _ = linux.mkdirat(fsx.cwd, (try sys.z(&zb, base)).ptr, 0o700);
+    defer fsx.deleteTree(a, fsx.cwd, base) catch {};
+    var c: Ctx = .{ .arena = a, .env = .empty, .strict = false, .self_exe = "" };
+    c.temp_dir = .{ .path = base };
+    var failure: TempFailure = .{};
+    const path = try tempCpuFile(&c, .empty, "processor : 0\n", &failure);
+    defer unlinkPath(path);
+    const back = readFile(a, path, 100) orelse return error.TestUnexpectedResult;
+    try std.testing.expectEqualStrings("processor : 0\n", back);
 }
 
 test "scopeCpuinfoWithBase maps LXCFS renumbered blocks and keeps gapped logical IDs" {
