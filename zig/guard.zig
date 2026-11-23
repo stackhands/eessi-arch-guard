@@ -427,8 +427,7 @@ fn readCpuFlags(arena: Allocator, path: []const u8) []const []const u8 {
     var common_set: ?std.StringArrayHashMapUnmanaged(void) = null;
     var it = std.mem.splitScalar(u8, data.items, '\n');
     while (it.next()) |line| {
-        if (line.len < 5 or !std.ascii.eqlIgnoreCase(line[0..5], "flags")) continue;
-        var i: usize = 5;
+        var i: usize = foldedWord(line, "flags") orelse continue;
         while (i < line.len and (line[i] == ' ' or line[i] == '\t')) i += 1;
         if (i >= line.len or line[i] != ':') continue;
         i += 1;
@@ -519,28 +518,71 @@ fn parseUsize(s: []const u8) ?usize {
     return n;
 }
 
-/// Bits of one hex mask, without the `0x` prefix. False when `hex` is empty,
-/// holds a non-hex digit, or names a bit at or past `cpu_id_max`.
-fn addHexMask(set: *CpuSet, hex: []const u8) bool {
-    if (hex.len == 0) return false;
-    var bit: usize = 0;
-    var i: usize = hex.len;
-    while (i > 0) {
-        i -= 1;
-        const val: u8 = switch (hex[i]) {
-            '0'...'9' => hex[i] - '0',
-            'a'...'f' => hex[i] - 'a' + 10,
-            'A'...'F' => hex[i] - 'A' + 10,
-            else => return false,
-        };
-        var b: u3 = 0;
-        while (true) : (b += 1) {
-            if (val & (@as(u8, 1) << b) != 0) {
-                if (bit >= cpu_id_max) return false;
-                set.add(bit);
+/// The characters int() skips around its text: ASCII whitespace and the
+/// whitespace outside ASCII. It does not skip U+001C to U+001F, which
+/// str.strip() removes.
+fn intSpace(cp: u21) bool {
+    return switch (cp) {
+        ' ', '\t', '\n', 0x0b, 0x0c, '\r' => true,
+        0x1c...0x1f => false,
+        else => cp >= 0x80 and text.pyWhitespace(cp),
+    };
+}
+
+fn hexDigitValue(cp: u21) ?u4 {
+    return switch (cp) {
+        'a'...'f' => @intCast(cp - 'a' + 10),
+        'A'...'F' => @intCast(cp - 'A' + 10),
+        else => text.decimalDigit(cp),
+    };
+}
+
+/// Bits of one hex mask, the text after the `0x` prefix, read as int(text,
+/// 16) reads it: a decimal digit of any script is that digit, one underscore
+/// may follow the prefix and sit between digits, and whitespace may follow
+/// the digits. False when the text is not such a number, or names a bit at
+/// or past `cpu_id_max`.
+fn addHexMask(set: *CpuSet, tail: []const u8) bool {
+    var end: usize = 0;
+    var i: usize = 0;
+    while (i < tail.len) {
+        const ch = text.nextChar(tail[i..]);
+        const cp = ch.cp orelse return false;
+        i += ch.len;
+        if (!intSpace(cp)) end = i;
+    }
+    var body = tail[0..end];
+    if (body.len > 0 and body[0] == '_') body = body[1..];
+    var count: usize = 0;
+    var after_digit = false;
+    i = 0;
+    while (i < body.len) {
+        const ch = text.nextChar(body[i..]);
+        const cp = ch.cp orelse return false;
+        i += ch.len;
+        if (cp == '_') {
+            if (!after_digit) return false;
+            after_digit = false;
+            continue;
+        }
+        if (hexDigitValue(cp) == null) return false;
+        count += 1;
+        after_digit = true;
+    }
+    if (!after_digit) return false;
+    var seen: usize = 0;
+    i = 0;
+    while (i < body.len) {
+        const ch = text.nextChar(body[i..]);
+        i += ch.len;
+        const val = hexDigitValue(ch.cp orelse return false) orelse continue;
+        const first_bit = (count - 1 - seen) * 4;
+        seen += 1;
+        for (0..4) |b| {
+            if (val & (@as(u4, 1) << @intCast(b)) != 0) {
+                if (first_bit + b >= cpu_id_max) return false;
+                set.add(first_bit + b);
             }
-            bit += 1;
-            if (b == 3) break;
         }
     }
     return true;
@@ -550,35 +592,16 @@ fn addHexMask(set: *CpuSet, hex: []const u8) bool {
 /// A comma-separated list of hex masks is their union, which is the string
 /// Slurm stores for --cpu-bind=mask_cpu.
 fn parseCpuSpec(spec: []const u8) ?CpuSet {
-    const raw = std.mem.trim(u8, spec, " \t\r\n");
+    const raw = text.pyStrip(spec);
     if (raw.len == 0) return null;
     if (std.mem.startsWith(u8, raw, "0x") or std.mem.startsWith(u8, raw, "0X")) {
         var set: CpuSet = .{};
-        var i: usize = 0;
-        var saw = false;
-        var trailing_comma = false;
-        while (i < raw.len) {
-            if (raw[i] == ' ') {
-                i += 1;
-                continue;
-            }
-            trailing_comma = false;
-            if (i + 2 > raw.len or raw[i] != '0' or (raw[i + 1] != 'x' and raw[i + 1] != 'X')) return null;
-            i += 2;
-            const start = i;
-            while (i < raw.len and raw[i] != ',' and raw[i] != ' ') i += 1;
-            if (!addHexMask(&set, raw[start..i])) return null;
-            saw = true;
-            if (i < raw.len and raw[i] == ' ') {
-                while (i < raw.len and raw[i] == ' ') i += 1;
-            }
-            if (i < raw.len) {
-                if (raw[i] != ',') return null;
-                trailing_comma = true;
-                i += 1;
-            }
+        var parts = std.mem.splitScalar(u8, raw, ',');
+        while (parts.next()) |part| {
+            const piece = std.mem.trim(u8, part, " ");
+            if (!std.mem.startsWith(u8, piece, "0x") and !std.mem.startsWith(u8, piece, "0X")) return null;
+            if (!addHexMask(&set, piece[2..])) return null;
         }
-        if (!saw or trailing_comma) return null;
         return set;
     }
     var body = raw;
@@ -862,7 +885,7 @@ fn walkCpuset(arena: Allocator, start: []const u8, root: []const u8) ?CpuSet {
         const eff_dir = if (std.mem.eql(u8, directory, "/")) "" else directory;
         const eff = std.fmt.allocPrint(arena, "{s}/cpuset.cpus.effective", .{eff_dir}) catch return null;
         if (readFile(arena, eff, 65536)) |raw| {
-            const trimmed = std.mem.trim(u8, raw, " \t\r\n");
+            const trimmed = text.pyStrip(raw);
             if (trimmed.len > 0 and controllersAllow(arena, directory)) {
                 if (parseCpuSpec(trimmed)) |set| return set;
             }
@@ -950,11 +973,11 @@ fn schedCpus() ?CpuSet {
 }
 
 fn bindCpus(env: Map) ?CpuSet {
-    const listed = std.mem.trim(u8, env.get("SLURM_CPU_BIND_LIST") orelse "", " \t\r\n");
+    const listed = text.pyStrip(env.get("SLURM_CPU_BIND_LIST") orelse "");
     if (listed.len > 0) return parseCpuSpec(listed);
-    const verbose = std.mem.trim(u8, env.get("SLURM_CPU_BIND") orelse "", " \t\r\n");
+    const verbose = text.pyStrip(env.get("SLURM_CPU_BIND") orelse "");
     const colon = std.mem.lastIndexOfScalar(u8, verbose, ':') orelse return null;
-    return parseCpuSpec(std.mem.trim(u8, verbose[colon + 1 ..], " \t\r\n"));
+    return parseCpuSpec(text.pyStrip(verbose[colon + 1 ..]));
 }
 
 const TaskCpuBounds = struct { allowed: ?CpuSet, base_cpus: ?CpuSet };
@@ -974,53 +997,79 @@ fn taskCpuIds(arena: Allocator, env: Map) ?CpuSet {
     return taskCpuBounds(env, schedCpus(), cgroupCpus(arena)).allowed;
 }
 
+/// `"_".join(key.split()).lower()`.
 fn normKey(arena: Allocator, key: []const u8) []const u8 {
-    const buf = arena.alloc(u8, key.len) catch return key;
-    var n: usize = 0;
-    var pending = false;
-    for (key) |ch| {
-        if (ch == ' ' or ch == '\t') {
-            pending = n > 0;
-            continue;
-        }
-        if (pending) {
-            buf[n] = '_';
-            n += 1;
-            pending = false;
-        }
-        buf[n] = std.ascii.toLower(ch);
-        n += 1;
-    }
-    return buf[0..n];
+    const words = text.pySplit(arena, key) catch return key;
+    const joined = std.mem.join(arena, "_", words) catch return key;
+    return text.pyLower(arena, joined) catch key;
 }
 
 const ProcessorId = struct { id: ?usize };
 
+/// The bytes at the start of `line` that spell the lower case ASCII `word`,
+/// as a case-insensitive Python regular expression matches it: a letter
+/// matches its other case, and U+017F, the long s, matches an s. Null when
+/// the line does not start with the word.
+fn foldedWord(line: []const u8, word: []const u8) ?usize {
+    var at: usize = 0;
+    for (word) |want| {
+        if (at >= line.len) return null;
+        if (want == 's' and line.len - at >= 2 and line[at] == 0xc5 and line[at + 1] == 0xbf) {
+            at += 2;
+            continue;
+        }
+        if (std.ascii.toLower(line[at]) != want) return null;
+        at += 1;
+    }
+    return at;
+}
+
+/// The value of a run of decimal digits of any script, null when it does not
+/// fit in a usize.
+fn decimalRun(digits: []const u8) ??usize {
+    var value: usize = 0;
+    var overflow = false;
+    var i: usize = 0;
+    if (digits.len == 0) return null;
+    while (i < digits.len) {
+        const ch = text.nextChar(digits[i..]);
+        const digit = text.decimalDigit(ch.cp orelse return null) orelse return null;
+        i += ch.len;
+        if (overflow) continue;
+        const scaled = std.math.mul(usize, value, 10) catch {
+            overflow = true;
+            continue;
+        };
+        value = std.math.add(usize, scaled, digit) catch {
+            overflow = true;
+            continue;
+        };
+    }
+    return if (overflow) @as(?usize, null) else value;
+}
+
 fn processorId(line: []const u8) ?ProcessorId {
-    const t = std.mem.trim(u8, line, " \t\r");
-    const prefix = "processor";
-    if (t.len < prefix.len or !std.ascii.eqlIgnoreCase(t[0..prefix.len], prefix)) return null;
-    var i: usize = prefix.len;
+    const t = text.pyStrip(line);
+    var i: usize = foldedWord(t, "processor") orelse return null;
     while (i < t.len and (t[i] == ' ' or t[i] == '\t')) i += 1;
     if (i >= t.len or t[i] != ':') return null;
     i += 1;
     while (i < t.len and (t[i] == ' ' or t[i] == '\t')) i += 1;
-    if (i >= t.len) return null;
-    for (t[i..]) |c| if (c < '0' or c > '9') return null;
-    return .{ .id = parseUsize(t[i..]) };
+    const id = decimalRun(t[i..]) orelse return null;
+    return .{ .id = id };
 }
 
 const CpuField = struct { norm: []const u8, raw: []const u8, value: []const u8 };
 
 fn cpuField(arena: Allocator, line: []const u8) ?CpuField {
-    const trimmed = std.mem.trim(u8, line, " \t\r");
+    const trimmed = text.pyStrip(line);
     const colon = std.mem.indexOfScalar(u8, trimmed, ':') orelse return null;
-    const raw = std.mem.trim(u8, trimmed[0..colon], " \t");
+    const raw = text.pyStrip(trimmed[0..colon]);
     if (raw.len == 0) return null;
     return .{
         .norm = normKey(arena, raw),
         .raw = raw,
-        .value = std.mem.trim(u8, trimmed[colon + 1 ..], " \t"),
+        .value = text.pyStrip(trimmed[colon + 1 ..]),
     };
 }
 
@@ -1048,8 +1097,8 @@ fn sameFields(a: []const CpuField, b: []const CpuField) bool {
 
 fn tokenSet(arena: Allocator, value: []const u8) std.BufSet {
     var set = std.BufSet.init(arena);
-    var it = std.mem.tokenizeAny(u8, value, " \t");
-    while (it.next()) |tok| set.insert(tok) catch {};
+    const tokens = text.pySplit(arena, value) catch return set;
+    for (tokens) |tok| set.insert(tok) catch {};
     return set;
 }
 
@@ -1107,11 +1156,13 @@ fn scopeCpuinfoWithBase(arena: Allocator, cpuinfo: []const u8, allowed: CpuSet, 
     var cur: std.ArrayList(CpuField) = .empty;
     const lines = splitLines(arena, cpuinfo) catch return null;
     for (lines) |line| {
+        // The header line is read as a field too, as Python reads it: a
+        // header spelled with a long s keeps that letter in its field name,
+        // so the field is not dropped as the processor one.
         if (processorId(line)) |pid| {
             if (cur_id) |prev| blocks.append(arena, .{ .id = prev.id, .fields = cur.toOwnedSlice(arena) catch return null }) catch return null;
             cur = .empty;
             cur_id = pid;
-            continue;
         }
         if (cur_id == null) continue;
         if (cpuField(arena, line)) |f| {
@@ -2634,6 +2685,51 @@ test "privateFailure names the file for an open and not for a write" {
     try std.testing.expectEqualStrings("[Errno 17] File exists: '/dev/null'", privateFailure(&c, exists_err, "/dev/null", step));
 }
 
+test "cpuinfo lines are read as Python strips, splits and counts digits" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const a = arena_state.allocator();
+
+    try std.testing.expectEqual(@as(?usize, 1), processorId("\u{a0}processor\t: 1\u{3000}").?.id);
+    try std.testing.expectEqual(@as(?usize, 1), processorId("processor : \u{661}").?.id);
+    try std.testing.expectEqual(@as(?usize, 12), processorId("PROCESSOR: \u{ff11}\u{ff12}").?.id);
+    try std.testing.expectEqual(@as(?usize, 7), processorId("processor : 0007\x1f").?.id);
+    try std.testing.expectEqual(@as(?usize, null), processorId("processor : 99999999999999999999999").?.id);
+    try std.testing.expect(processorId("processor :") == null);
+    try std.testing.expect(processorId("processor : 1x") == null);
+    try std.testing.expect(processorId("processor\u{a0}: 1") == null);
+    try std.testing.expect(processorId("processor : \u{a0}1") == null);
+
+    const field = cpuField(a, "\u{2003}model\u{a0}name\u{205f}:\u{1680}Xeon\u{202f}").?;
+    try std.testing.expectEqualStrings("model_name", field.norm);
+    try std.testing.expectEqualStrings("model\u{a0}name", field.raw);
+    try std.testing.expectEqualStrings("Xeon", field.value);
+    try std.testing.expectEqualStrings("cache_size", normKey(a, "Cache\u{3000}\u{a0}Size"));
+
+    const flags = cpuField(a, "flags\u{a0}: fpu\u{a0}avx2\u{3000}fma").?;
+    try std.testing.expectEqualStrings("flags", flags.norm);
+    var tokens = tokenSet(a, flags.value);
+    try std.testing.expect(tokens.contains("avx2"));
+    try std.testing.expect(tokens.contains("fma"));
+    try std.testing.expect(!tokens.contains("fpu\u{a0}avx2"));
+
+    var both: CpuSet = .{};
+    both.add(0);
+    both.add(1);
+    const shared = scopeCpuinfo(a, "processor : 0\nflags : avx2\u{a0}fma\n\nprocessor : \u{661}\nflags\u{a0}: avx2 fma waitpkg\n", both).?;
+    try std.testing.expectEqualStrings("processor : 0\nflags : avx2 fma\n", shared);
+}
+
+test "cpuinfo words fold the long s to an s as a Python regular expression does" {
+    try std.testing.expectEqual(@as(?usize, 11), foldedWord("proce\u{17f}\u{17f}or: 1", "processor"));
+    try std.testing.expectEqual(@as(?usize, 9), foldedWord("PROCESSOR: 1", "processor"));
+    try std.testing.expectEqual(@as(?usize, null), foldedWord("proces", "processor"));
+    try std.testing.expectEqual(@as(?usize, null), foldedWord("proce\xc5ssor", "processor"));
+    try std.testing.expectEqual(@as(?usize, 6), foldedWord("flag\u{17f}: x", "flags"));
+    try std.testing.expectEqual(@as(?usize, 1), processorId("proce\u{17f}\u{17f}or\t: 1").?.id);
+    try std.testing.expectEqual(@as(?usize, 3), processorId("PROCE\u{17f}sor: 3").?.id);
+}
+
 test "prepareCpuinfo writes scoped cpuinfo under TMPDIR" {
     var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena_state.deinit();
@@ -2759,6 +2855,20 @@ test "scopeCpuinfoWithBase maps LXCFS renumbered blocks and keeps gapped logical
     try std.testing.expect(std.mem.find(u8, gapped, "waitpkg") == null);
 }
 
+test "a field name is lower-cased as Python lower-cases it" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const a = arena_state.allocator();
+    try std.testing.expectEqualStrings("key", normKey(a, "\u{212A}ey"));
+    try std.testing.expectEqualStrings("i\u{307}sa", normKey(a, "\u{130}SA"));
+    try std.testing.expectEqualStrings("\u{17f}ize", normKey(a, "\u{17f}IZE"));
+    try std.testing.expectEqualStrings("\u{3b1}\u{3c2}_\u{3c3}", normKey(a, "\u{391}\u{3a3}\u{2003}\u{3a3}"));
+    const first = cpuField(a, "\u{212A}ey : v").?;
+    const second = cpuField(a, "Key : v").?;
+    try std.testing.expectEqualStrings(first.norm, second.norm);
+    try std.testing.expectEqualStrings("\u{212A}ey", first.raw);
+}
+
 test "scopeCpuinfoWithBase intersects repeated flags lines on a kept processor" {
     var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena_state.deinit();
@@ -2787,6 +2897,38 @@ test "scopeCpuinfoWithBase intersects repeated flags lines on a kept processor" 
     try std.testing.expect(std.mem.indexOf(u8, scoped, "waitpkg") == null);
     try std.testing.expect(std.mem.indexOf(u8, scoped, "avx512f") == null);
     try std.testing.expect(std.mem.indexOf(u8, scoped, "sve2") == null);
+}
+
+test "scopeCpuinfoWithBase reads a header with a long s as a field, as Python does" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const a = arena_state.allocator();
+    var both: CpuSet = .{};
+    both.add(0);
+    both.add(1);
+    const plain =
+        \\processor : 0
+        \\vendor_id : GenuineIntel
+        \\flags : avx2 fma
+        \\
+        \\processor : 1
+        \\vendor_id : GenuineIntel
+        \\flags : avx2 fma
+        \\
+    ;
+    try std.testing.expectEqual(@as(?[]const u8, null), scopeCpuinfoWithBase(a, plain, both, null));
+    const long_s =
+        \\processor : 0
+        \\vendor_id : GenuineIntel
+        \\flags : avx2 fma
+        \\
+        \\proceſſor : 1
+        \\vendor_id : GenuineIntel
+        \\flags : avx2 fma
+        \\
+    ;
+    const scoped = scopeCpuinfoWithBase(a, long_s, both, null).?;
+    try std.testing.expectEqualStrings("processor : 0\nvendor_id : GenuineIntel\nflags : avx2 fma\n", scoped);
 }
 
 test "cgroupCpusFrom narrows wider sched affinity on cgroup v2 layouts" {
@@ -2926,6 +3068,21 @@ test "root cpuset walk does not read relative to cwd" {
     try std.testing.expect(walkCpuset(arena_state.allocator(), "/", "/") == null);
 }
 
+test "cpuset file is read as Python strips and parses it" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const a = arena_state.allocator();
+    const base = try cgroupFixture(a, "pad");
+    defer fsx.deleteTree(a, fsx.cwd, base) catch {};
+    const inner = try std.fmt.allocPrint(a, "{s}/job", .{base});
+    try writeUnder(a, try std.fmt.allocPrint(a, "{s}/cpuset.cpus.effective", .{base}), "6\n");
+    try writeUnder(a, try std.fmt.allocPrint(a, "{s}/cpuset.cpus.effective", .{inner}), "\u{a0}1\u{2003}\n\u{3000}");
+    try expectCpus(walkCpuset(a, inner, base), &.{1});
+    const blank = try std.fmt.allocPrint(a, "{s}/blank", .{base});
+    try writeUnder(a, try std.fmt.allocPrint(a, "{s}/cpuset.cpus.effective", .{blank}), "\u{a0}\n\u{3000}");
+    try expectCpus(walkCpuset(a, blank, base), &.{6});
+}
+
 test "cgroup v1 cpuset mounted off the default path" {
     var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena_state.deinit();
@@ -3037,6 +3194,28 @@ test "parseCpuSpec unions a mask_cpu list" {
     @memcpy(listed[0..4], "0x2,");
     @memcpy(listed[4..], &high);
     try std.testing.expect(parseCpuSpec(&listed) == null);
+}
+
+test "parseCpuSpec reads a mask and its padding as Python's int and strip do" {
+    try expectCpus(parseCpuSpec("0x_2"), &.{1});
+    try expectCpus(parseCpuSpec("0x0_2"), &.{1});
+    try expectCpus(parseCpuSpec("0x\u{662}"), &.{1});
+    try expectCpus(parseCpuSpec("0x\u{ff12}"), &.{1});
+    try expectCpus(parseCpuSpec("0x\u{1d7d0}"), &.{1});
+    try expectCpus(parseCpuSpec("\u{a0}0x2\u{3000}"), &.{1});
+    try expectCpus(parseCpuSpec("0x2\u{a0},0x4"), &.{ 1, 2 });
+    try expectCpus(parseCpuSpec("0x2\x0b,0x4"), &.{ 1, 2 });
+    try expectCpus(parseCpuSpec("0x2 \t,0x4"), &.{ 1, 2 });
+    try expectCpus(parseCpuSpec("0x2\u{85},0x4"), &.{ 1, 2 });
+    try std.testing.expect(parseCpuSpec("0x\u{662}\x1f,0x4") == null);
+    try std.testing.expect(parseCpuSpec("0x2\x1f,0x4") == null);
+    try std.testing.expect(parseCpuSpec("0x2_") == null);
+    try std.testing.expect(parseCpuSpec("0x__2") == null);
+    try std.testing.expect(parseCpuSpec("0x_") == null);
+    try std.testing.expect(parseCpuSpec("0x2__0") == null);
+    try std.testing.expect(parseCpuSpec("0x 2") == null);
+    try std.testing.expect(parseCpuSpec("0x\xff2") == null);
+    try std.testing.expect(parseCpuSpec("0x\u{a0}2") == null);
 }
 
 test "resolvePath searches default_path and empty colon entries" {
