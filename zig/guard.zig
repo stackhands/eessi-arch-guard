@@ -185,6 +185,8 @@ pub const Ctx = struct {
     /// The deadline while `limitedDecide` runs; null otherwise, as in the
     /// restore helper, which its parent's deadline covers.
     limit: ?*Limit = null,
+    /// The temporary directory `tempfile.gettempdir` settles on, chosen once.
+    temp_dir: fsx.TempDir = .{},
 };
 
 // ---- running programs ----------------------------------------------------
@@ -1193,7 +1195,10 @@ fn unlinkPath(path: []const u8) void {
 }
 
 fn tempCpuFile(c: *Ctx, env: Map, data: []const u8) ?[]const u8 {
-    const base = pyTempDir(c, env);
+    const base = c.temp_dir.get(c.arena, env) catch |err| switch (err) {
+        error.OutOfMemory => main_mod.oom(),
+        error.NoTempDir => return null,
+    };
     const alphabet = "abcdefghijklmnopqrstuvwxyz0123456789_";
     var tries: usize = 0;
     while (tries < 100) : (tries += 1) {
@@ -1357,38 +1362,27 @@ pub fn restoreWorkBase(c: *Ctx, env: Map, why: *[]const u8) WorkError![]const u8
         return error.Unavailable;
     }
     if (text.safeAbsolute(temporary) and isDir(temporary)) return temporary;
-    return pyTempDir(c, env);
-}
-
-/// tempfile.gettempdir(): TMPDIR, TEMP, TMP, then /tmp, /var/tmp, /usr/tmp,
-/// then the current directory; the first that is a writable directory.
-fn pyTempDir(c: *Ctx, env: Map) []const u8 {
-    for ([_][]const u8{ "TMPDIR", "TEMP", "TMP" }) |k| {
-        const v = env.get(k) orelse continue;
-        if (v.len > 0 and writableDir(v)) return absolutize(c, v);
-    }
-    for ([_][]const u8{ "/tmp", "/var/tmp", "/usr/tmp" }) |d| if (writableDir(d)) return d;
-    return absolutize(c, ".");
-}
-
-fn absolutize(c: *Ctx, p: []const u8) []const u8 {
-    if (p.len > 0 and p[0] == '/') return p;
-    var rb: [sys.path_max]u8 = undefined;
-    const cwd = fsx.realpath(fsx.cwd, ".", &rb) catch return p;
-    return std.fs.path.join(c.arena, &.{ cwd, p }) catch p;
-}
-
-fn writableDir(p: []const u8) bool {
-    if (!isDir(p)) return false;
-    var zb: [sys.path_max:0]u8 = undefined;
-    const z = sys.z(&zb, p) catch return false;
-    return linux.errno(linux.faccessat(linux.AT.FDCWD, z.ptr, linux.W_OK | linux.X_OK, 0)) == .SUCCESS;
+    return c.temp_dir.get(c.arena, env) catch |err| switch (err) {
+        error.OutOfMemory => main_mod.oom(),
+        error.NoTempDir => {
+            why.* = c.temp_dir.message;
+            return error.Unavailable;
+        },
+    };
 }
 
 /// tempfile.mkdtemp(prefix="eessi-arch-guard-", dir=base): a new 0700
-/// directory with a random suffix.
-fn mkdtemp(c: *Ctx, base: []const u8) ?[]const u8 {
-    return fsx.mkdtemp(c.arena, base, "eessi-arch-guard-") catch null;
+/// directory with a random suffix. When it cannot be made, `why` is the
+/// OSError text Python gives, with the path that was tried.
+fn mkdtemp(c: *Ctx, base: []const u8, why: *[]const u8) ?[]const u8 {
+    var report: common.atomic.Why = .{};
+    return fsx.mkdtempReport(c.arena, base, "eessi-arch-guard-", &report) catch |err| {
+        why.* = switch (err) {
+            error.OutOfMemory => main_mod.oom(),
+            else => |e| if (report.msg.len > 0) report.msg else sys.describe(e),
+        };
+        return null;
+    };
 }
 
 fn rmtree(c: *Ctx, p: []const u8) void {
@@ -1436,7 +1430,8 @@ fn callRestore(c: *Ctx, env: Map, eessi: []const u8, modules: []const []const u8
     var why: []const u8 = "";
     const base = restoreWorkBase(c, env, &why) catch
         return notRun(a.print("restore workspace unavailable: {s}", .{why}) catch "restore workspace unavailable");
-    const work = mkdtemp(c, base) orelse return notRun("restore workspace unavailable: could not create a directory");
+    const work = mkdtemp(c, base, &why) orelse
+        return notRun(a.print("restore workspace unavailable: {s}", .{why}) catch "restore workspace unavailable");
     defer rmtree(c, work);
     var clean: Map = .empty;
     clean.put(a, "PATH", "/usr/bin:/bin") catch main_mod.oom();
@@ -1505,11 +1500,37 @@ const apply_sh = "source \"$1\" >/dev/null || exit 4\nexec env -0\n";
 
 const Applied = struct { env: ?Map, err: []const u8 };
 
-fn writePrivateNew(path: []const u8, data: []const u8, mode: u32) bool {
-    const fd = sys.openat(fsx.cwd, path, .{ .ACCMODE = .WRONLY, .CREAT = true, .EXCL = true, .NOFOLLOW = true }, 0o600) catch return false;
+/// Which call of `writePrivate` failed.
+const PrivateStep = enum { open, write, chmod };
+
+/// `_write_private` and the chmod after it: a new private file at `path`,
+/// made with `mode`. On a failure `step` says which call it was. The data
+/// goes out in one write(2), as Python's os.write does it: a short write is
+/// not an error and leaves a short file.
+fn writePrivate(path: []const u8, data: []const u8, mode: u32, step: *PrivateStep) sys.Error!void {
+    step.* = .open;
+    const fd = try sys.openat(fsx.cwd, path, .{ .ACCMODE = .WRONLY, .CREAT = true, .EXCL = true, .NOFOLLOW = true }, 0o600);
     defer sys.close(fd);
-    sys.writeAll(fd, data) catch return false;
-    if (mode != 0o600) sys.fchmod(fd, mode) catch return false;
+    step.* = .write;
+    _ = try sys.call(linux.write, .{ fd, data.ptr, data.len });
+    step.* = .chmod;
+    if (mode != 0o600) try sys.fchmod(fd, mode);
+}
+
+/// The OSError text Python gives for the failed `step` of a private write.
+/// The open and the chmod name the file, and the write does not, because
+/// Python's os.write raises without one. Call it straight after the failure,
+/// while the errno that `sys.describe` reads is still that of the call.
+fn privateFailure(c: *Ctx, err: sys.Error, path: []const u8, step: PrivateStep) []const u8 {
+    return switch (step) {
+        .write => sys.describe(err),
+        .open, .chmod => pytext.osError(c.arena, err, path) catch main_mod.oom(),
+    };
+}
+
+fn writePrivateNew(path: []const u8, data: []const u8, mode: u32) bool {
+    var step: PrivateStep = .open;
+    writePrivate(path, data, mode, &step) catch return false;
     return true;
 }
 
@@ -1531,17 +1552,22 @@ fn sourceExports(c: *Ctx, module_env: Map, script: []const u8, raised: *[]const 
         raised.* = why;
         return error.Raise;
     };
-    const tmp = mkdtemp(c, base) orelse {
-        raised.* = "could not create a temporary directory";
+    const tmp = mkdtemp(c, base, &why) orelse {
+        raised.* = why;
         return error.Raise;
     };
     defer rmtree(c, tmp);
     const fragment = std.fs.path.join(c.arena, &.{ tmp, "fragment.sh" }) catch return error.Raise;
     const apply = std.fs.path.join(c.arena, &.{ tmp, "apply.sh" }) catch return error.Raise;
-    if (!writePrivateNew(fragment, script, 0o600) or !writePrivateNew(apply, apply_sh, 0o700)) {
-        raised.* = "could not write the restore scripts";
+    var step: PrivateStep = .open;
+    writePrivate(fragment, script, 0o600, &step) catch |err| {
+        raised.* = privateFailure(c, err, fragment, step);
         return error.Raise;
-    }
+    };
+    writePrivate(apply, apply_sh, 0o700, &step) catch |err| {
+        raised.* = privateFailure(c, err, apply, step);
+        return error.Raise;
+    };
     const stripped = envmap.stripStartup(c.arena, module_env) catch return error.Raise;
     const r = runCaptured(c, &.{ "bash", "--noprofile", "--norc", "--", apply, fragment }, stripped, null, false, &why) catch {
         raised.* = why;
@@ -2535,7 +2561,7 @@ test "dryRunDecide handles skip and missing EESSI without writing" {
     try std.testing.expectEqualStrings("EESSI_ARCH_GUARD=0", d2.detail.?);
 }
 
-test "mkdtemp delegates to fsx.mkdtemp with the guard prefix" {
+test "mkdtemp delegates to fsx.mkdtempReport with the guard prefix" {
     var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena_state.deinit();
     const a = arena_state.allocator();
@@ -2547,7 +2573,8 @@ test "mkdtemp delegates to fsx.mkdtemp with the guard prefix" {
     defer fsx.deleteTree(a, fsx.cwd, base) catch {};
 
     var c: Ctx = .{ .arena = a, .env = .empty, .strict = false, .self_exe = "" };
-    const created = mkdtemp(&c, base).?;
+    var why: []const u8 = "";
+    const created = mkdtemp(&c, base, &why).?;
     const expected_prefix = try std.fmt.allocPrint(a, "{s}/eessi-arch-guard-", .{base});
     try std.testing.expect(std.mem.startsWith(u8, created, expected_prefix));
     try std.testing.expectEqual(expected_prefix.len + 8, created.len);
@@ -2556,7 +2583,28 @@ test "mkdtemp delegates to fsx.mkdtemp with the guard prefix" {
     try std.testing.expectEqual(@as(u32, 0), st.perm() & 0o077);
 
     const missing = try std.fmt.allocPrint(a, "{s}/missing", .{base});
-    try std.testing.expect(mkdtemp(&c, missing) == null);
+    try std.testing.expect(mkdtemp(&c, missing, &why) == null);
+    const prefix = try std.fmt.allocPrint(a, "[Errno 2] No such file or directory: '{s}/eessi-arch-guard-", .{missing});
+    try std.testing.expect(std.mem.startsWith(u8, why, prefix));
+    try std.testing.expectEqual(prefix.len + 9, why.len);
+    try std.testing.expect(why[why.len - 1] == '\'');
+}
+
+test "privateFailure names the file for an open and not for a write" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const a = arena_state.allocator();
+    var c: Ctx = .{ .arena = a, .env = .empty, .strict = false, .self_exe = "" };
+    var step: PrivateStep = .open;
+    const missing = "/nonexistent-eessi-arch-guard-dir/it's";
+    const open_err = if (writePrivate(missing, "x", 0o600, &step)) |_| return error.TestUnexpectedResult else |e| e;
+    try std.testing.expectEqual(PrivateStep.open, step);
+    try std.testing.expectEqualStrings(
+        "[Errno 2] No such file or directory: \"" ++ missing ++ "\"",
+        privateFailure(&c, open_err, missing, step),
+    );
+    const exists_err = if (writePrivate("/dev/null", "x", 0o600, &step)) |_| return error.TestUnexpectedResult else |e| e;
+    try std.testing.expectEqualStrings("[Errno 17] File exists: '/dev/null'", privateFailure(&c, exists_err, "/dev/null", step));
 }
 
 test "prepareCpuinfo writes scoped cpuinfo under TMPDIR" {

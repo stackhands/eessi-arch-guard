@@ -933,30 +933,6 @@ fn submitTarget(arena: Allocator, settings: ?Settings, partition: []const u8, co
     return target;
 }
 
-fn submitWritableDir(p: []const u8) bool {
-    const st = fsx.statAt(fsx.cwd, p, true) catch return false;
-    if (!st.isDir()) return false;
-    var zb: [sys.path_max:0]u8 = undefined;
-    const z = sys.z(&zb, p) catch return false;
-    return linux.errno(linux.faccessat(linux.AT.FDCWD, z.ptr, linux.W_OK | linux.X_OK, 0)) == .SUCCESS;
-}
-
-fn submitAbsolutize(arena: Allocator, p: []const u8) []const u8 {
-    if (p.len > 0 and p[0] == '/') return p;
-    var rb: [sys.path_max]u8 = undefined;
-    const cwd = fsx.realpath(fsx.cwd, ".", &rb) catch return p;
-    return std.fs.path.join(arena, &.{ cwd, p }) catch p;
-}
-
-fn submitTempDir(arena: Allocator, env: envmap.Map) []const u8 {
-    for ([_][]const u8{ "TMPDIR", "TEMP", "TMP" }) |k| {
-        const v = env.get(k) orelse continue;
-        if (v.len > 0 and submitWritableDir(v)) return submitAbsolutize(arena, v);
-    }
-    for ([_][]const u8{ "/tmp", "/var/tmp", "/usr/tmp" }) |d| if (submitWritableDir(d)) return d;
-    return submitAbsolutize(arena, ".");
-}
-
 /// "could not run eb-stack: <detail>", the detail cut to one line of at most
 /// 200 characters as Python's `one_line(str(exc), 200)` does.
 fn submitRunFailure(arena: Allocator, detail: []const u8) []const u8 {
@@ -974,11 +950,21 @@ fn makeSubmitDir(arena: Allocator, base: []const u8, why: *[]const u8) ?[]const 
     };
 }
 
-/// A new private directory for the planner inputs. When it cannot be made,
-/// `why` is the OSError text, without the file name Python appends because
-/// that name holds the random part Python chose.
+/// A new private directory for the planner inputs, under the directory
+/// tempfile.gettempdir picks. When none takes a file, `why` is the text of
+/// the FileNotFoundError Python raises; when the directory cannot be made it
+/// is the OSError text, without the file name Python appends because that
+/// name holds the random part Python chose.
 fn submitWorkDir(arena: Allocator, env: envmap.Map, why: *[]const u8) ?[]const u8 {
-    return makeSubmitDir(arena, submitTempDir(arena, env), why);
+    var temp: fsx.TempDir = .{};
+    const base = temp.get(arena, env) catch |err| switch (err) {
+        error.OutOfMemory => oom(),
+        error.NoTempDir => {
+            why.* = temp.message;
+            return null;
+        },
+    };
+    return makeSubmitDir(arena, base, why);
 }
 
 test "submitWorkDir uses fsx.mkdtemp with the submit prefix" {
