@@ -77,6 +77,7 @@ class RealLmodTests(unittest.TestCase):
             env = {
                 "PATH": _no_gpu_path(root),
                 "HOME": "/tmp",
+                "TMPDIR": str(root),
                 "USER": "tester",
                 "LANG": "C",
                 "LC_ALL": "C",

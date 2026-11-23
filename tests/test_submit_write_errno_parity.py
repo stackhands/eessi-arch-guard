@@ -42,6 +42,7 @@ def build(site: harness.Site) -> Dict[str, str]:
     eb_stack.chmod(0o755)
     return {
         "PATH": site.bindir + ":/usr/bin:/bin",
+        "TMPDIR": site.tmpdir,
         "EESSI_PREFIX": prefix,
         "EESSI_OS_TYPE": "linux",
         "LOADEDMODULES": "EESSI/2025.06:R/4.4.2",

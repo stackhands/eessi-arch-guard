@@ -9,6 +9,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
+import private_tmp  # noqa: F401
+
 ROOT = Path(__file__).resolve().parent.parent
 ZIG = shutil.which("zig")
 ZIG_API = ROOT / "docs" / "tools" / "zig_api.zig"
