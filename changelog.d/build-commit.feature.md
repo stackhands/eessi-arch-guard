@@ -1,1 +1,0 @@
-The Zig build takes `-Dcommit` and reads its version from `build.zig.zon`. Its `--version` prints the version the Python guard prints, then the target, build mode, Zig version and commit in parentheses, such as `VERSION (x86_64-linux-musl, safe, zig 0.17.1, COMMIT)`; the commit reads `unknown` without `-Dcommit`. Release binaries carry the tagged commit.

@@ -1,1 +1,0 @@
-Strip trailing slashes before checking `/modules/all` in `share/sitepath.py`, so `EESSI_SITE_SOFTWARE_PATH` and `EESSI_SOFTWARE_PATH` ending in `/modules/all/` do not get `/modules/all` appended twice.

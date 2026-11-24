@@ -1,1 +1,0 @@
-Collapse repeated slashes and match the final `/software/linux/` prefix before `/modules/` in `share/lmod/SitePackage.lua` `path_parts`, so paths with an earlier `/software/linux/` segment or doubled slashes extract the true CPU and accelerator subdirectories.

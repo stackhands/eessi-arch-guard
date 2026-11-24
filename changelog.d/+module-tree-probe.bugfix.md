@@ -1,1 +1,0 @@
-The Zig guard decides that a check-submit target has a module tree by a status check, as the Python guard does, so a module directory it may not list is reported as an empty inventory and not as an unavailable tree.

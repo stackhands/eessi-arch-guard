@@ -1,1 +1,0 @@
-Parity tests in `tests/test_integration.py` skip through `tests/harness.py` when `TOOL_BIN` is unset, instead of passing without a binary comparison. The rest of the Python suite still runs. With `TOOL_BIN` set, the dry-run, invalid-environment, and usage-error comparisons run as before.

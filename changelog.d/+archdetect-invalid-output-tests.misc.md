@@ -1,1 +1,0 @@
-Add Python and `TOOL_BIN` tests in `tests/test_strict_status.py` covering `cpupath` multiline, `cpupath` unsafe candidate, and `accelpath` invalid subdirectory `archdetect-failed` refusals in default and `--strict` modes.
