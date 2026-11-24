@@ -417,6 +417,8 @@ fn readCpuFlags(arena: Allocator, path: []const u8) []const []const u8 {
     if (path.len == 0) return &.{};
     const fd = sys.openat(fsx.cwd, path, .{ .NONBLOCK = true }, 0) catch return &.{};
     defer sys.close(fd);
+    const st = fsx.fstat(fd) catch return &.{};
+    if (!st.isReg()) return &.{};
     var data: std.ArrayList(u8) = .empty;
     var buf: [64 * 1024]u8 = undefined;
     while (data.items.len < cpuinfo_read_max) {
@@ -655,6 +657,8 @@ fn parseCpuSpec(spec: []const u8) ?CpuSet {
 fn readFile(arena: Allocator, path: []const u8, max: usize) ?[]u8 {
     const fd = sys.openat(fsx.cwd, path, .{ .NONBLOCK = true }, 0) catch return null;
     defer sys.close(fd);
+    const st = fsx.fstat(fd) catch return null;
+    if (!st.isReg()) return null;
     return fsx.readAll(arena, fd, max) catch null;
 }
 
@@ -2736,6 +2740,45 @@ test "cpuinfo lines are read as Python strips, splits and counts digits" {
     both.add(1);
     const shared = scopeCpuinfo(a, "processor : 0\nflags : avx2\u{a0}fma\n\nprocessor : \u{661}\nflags\u{a0}: avx2 fma waitpkg\n", both).?;
     try std.testing.expectEqualStrings("processor : 0\nflags : avx2 fma\n", shared);
+}
+
+test "readCpuFlags rejects a FIFO with buffered cpuinfo" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const a = arena_state.allocator();
+    var cwd_buf: [sys.path_max]u8 = undefined;
+    const here = try fsx.realpath(fsx.cwd, ".", &cwd_buf);
+    const base = try std.fmt.allocPrint(
+        a,
+        "{s}/.zig-cache/eag-flags-fifo-{d}",
+        .{ here, linux.getpid() },
+    );
+    var zb: [sys.path_max:0]u8 = undefined;
+    _ = linux.mkdirat(fsx.cwd, (try sys.z(&zb, base)).ptr, 0o700);
+    defer fsx.deleteTree(a, fsx.cwd, base) catch {};
+    const path = try std.fmt.allocPrint(a, "{s}/cpuinfo.fifo", .{base});
+    try std.testing.expectEqual(
+        linux.E.SUCCESS,
+        linux.errno(
+            linux.mknodat(
+                fsx.cwd,
+                (try sys.z(&zb, path)).ptr,
+                0o010000 | 0o600,
+                0,
+            ),
+        ),
+    );
+    const keeper = try sys.openat(fsx.cwd, path, .{ .NONBLOCK = true }, 0);
+    defer sys.close(keeper);
+    const writer = try sys.openat(
+        fsx.cwd,
+        path,
+        .{ .ACCMODE = .WRONLY, .NONBLOCK = true },
+        0,
+    );
+    try sys.writeAll(writer, "flags : avx2 waitpkg\n");
+    sys.close(writer);
+    try std.testing.expectEqual(@as(usize, 0), readCpuFlags(a, path).len);
 }
 
 test "cpuinfo words fold the long s to an s as a Python regular expression does" {

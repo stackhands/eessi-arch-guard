@@ -33,7 +33,7 @@ py-modules = ["eessi_arch_guard"]
 package-dir = { "" = "src" }
 
 [tool.setuptools.data-files]
-"share/eessi-arch-guard" = ["share/sitepath.py"]
+"share/eessi-arch-guard" = ["share/sitepath.py", "share/_regular_file.py"]
 "share/eessi-arch-guard/lmod" = ["share/lmod/SitePackage.lua"]
 
 [tool.ruff]

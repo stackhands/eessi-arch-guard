@@ -1745,6 +1745,73 @@ class IntegrationTests(unittest.TestCase):
             self.assertTrue(Path(seen).name.startswith("eessi-arch-guard-cpu-"), seen)
             self.assertFalse(Path(seen).exists())
 
+    def test_prepare_cpuinfo_rejects_fifo_and_directory(self):
+        script = Path(self.site.init) / "eessi_archdetect.sh"
+        script.write_text(
+            '#!/bin/sh\ncase "$*" in\n'
+            "*cpupath*) echo x86_64/amd/zen4 ;;\n"
+            "*) exit 2 ;;\nesac\n",
+            encoding="utf-8",
+        )
+        script.chmod(0o755)
+        fifo = Path(self.site.root) / "cpu.fifo"
+        os.mkfifo(fifo, 0o600)
+        directory = Path(self.site.root) / "cpu.dir"
+        directory.mkdir()
+        for path in (fifo, directory):
+            with self.subTest(path=path.name):
+                env = harness.base_env(self.site, ZEN4, [], gpu="none")
+                env["EESSI_PROC_CPUINFO"] = str(path)
+                env["SLURM_CPU_BIND_LIST"] = "0"
+                proc = harness.run_with_timeout(
+                    [*harness.GUARD_ARGV, "--dry-run", "--json"],
+                    env=env,
+                    timeout=1.5,
+                )
+                self.assertEqual(proc.returncode, 0, proc.stderr)
+                self.assertEqual(proc.stderr, "")
+                doc = json.loads(proc.stdout)
+                self.assertEqual(doc["decision"], "noop")
+
+    def test_buffered_fifo_cpuinfo_is_rejected(self):
+        cpus = sorted(os.sched_getaffinity(0))
+        if len(cpus) < 2:
+            self.skipTest("the buffered FIFO test needs two processors")
+        first, selected = cpus[:2]
+        cpuinfo = (
+            f"processor : {first}\n"
+            "vendor_id : AuthenticAMD\n"
+            "model name : AMD EPYC 7702 64-Core Processor\n"
+            "flags : fpu avx2 fma\n\n"
+            f"processor : {selected}\n"
+            "vendor_id : AuthenticAMD\n"
+            "model name : AMD EPYC 9654 96-Core Processor\n"
+            "flags : fpu avx2 fma vaes avx512f avx512ifma\n"
+        ).encode("ascii")
+        fifo = Path(self.site.root) / "buffered-cpuinfo.fifo"
+        os.mkfifo(fifo, 0o600)
+        keeper = os.open(fifo, os.O_RDONLY | os.O_NONBLOCK)
+        try:
+            writer = os.open(fifo, os.O_WRONLY | os.O_NONBLOCK)
+            try:
+                self.assertEqual(os.write(writer, cpuinfo), len(cpuinfo))
+            finally:
+                os.close(writer)
+            env = harness.base_env(self.site, ZEN4, [], gpu="none")
+            env["EESSI_PROC_CPUINFO"] = str(fifo)
+            env["SLURM_CPU_BIND_LIST"] = str(selected)
+            proc = harness.run_with_timeout(
+                [*harness.GUARD_ARGV, "--dry-run", "--json", "--timeout", "0.2"],
+                env=env,
+                timeout=3.0,
+            )
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            doc = json.loads(proc.stdout)
+            self.assertEqual(doc["decision"], "failed")
+            self.assertTrue(doc["marker"].endswith("->timeout"), doc)
+        finally:
+            os.close(keeper)
+
     def test_oversized_processor_id_does_not_bypass_cpu_scoping(self):
         spr = "x86_64/intel/sapphirerapids"
         generic = "x86_64/generic"

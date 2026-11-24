@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import argparse
 import datetime
+import errno
 import fcntl
 import hashlib
 import json
@@ -30,7 +31,7 @@ import sys
 import tempfile
 import time
 import unicodedata
-from typing import Dict, List, Mapping, NamedTuple, Optional, Sequence, Tuple
+from typing import Callable, Dict, List, Mapping, NamedTuple, Optional, Sequence, Tuple
 
 __version__ = "0.2.0"
 
@@ -664,13 +665,44 @@ _CPUINFO_FLAGS_RE = re.compile(r"(?im)^flags[ \t]*:[ \t]*(.*)$")
 _CPUINFO_READ_MAX = 16 * 1024 * 1024
 
 
+def _read_regular_bytes(
+    path: str,
+    limit: Optional[int] = None,
+    *,
+    nofollow: bool = False,
+    check_stat: Optional[Callable[[os.stat_result], None]] = None,
+) -> bytes:
+    """Read a regular file without blocking on a FIFO, optionally capping bytes."""
+    flags = os.O_RDONLY | os.O_NONBLOCK | os.O_CLOEXEC
+    if nofollow:
+        flags |= os.O_NOFOLLOW
+    fd = os.open(path, flags)
+    try:
+        info = os.fstat(fd)
+        if not stat.S_ISREG(info.st_mode):
+            raise OSError(errno.EINVAL, "not a regular file", path)
+        if check_stat is not None:
+            check_stat(info)
+        chunks = []
+        total = 0
+        while limit is None or total < limit:
+            size = 65536 if limit is None else min(65536, limit - total)
+            chunk = os.read(fd, size)
+            if not chunk:
+                break
+            chunks.append(chunk)
+            total += len(chunk)
+        return b"".join(chunks)
+    finally:
+        os.close(fd)
+
+
 def read_cpu_flags(path: str) -> frozenset:
     """Intersection of every flags line. One CPU without the flag rejects it."""
     if not path:
         return frozenset()
     try:
-        with open(path, "rb") as handle:
-            blob = handle.read(_CPUINFO_READ_MAX + 1)
+        blob = _read_regular_bytes(path, _CPUINFO_READ_MAX + 1)
     except OSError:
         return frozenset()
     text = blob[:_CPUINFO_READ_MAX].decode("utf-8", "replace")
@@ -1221,8 +1253,7 @@ def _prepare_cpuinfo(env: Mapping[str, str]) -> Tuple[str, Optional[str], Mappin
     if allowed is None:
         return path, None, env
     try:
-        with open(path, "rb") as handle:
-            blob = handle.read(_CPUINFO_READ_MAX + 1)
+        blob = _read_regular_bytes(path, _CPUINFO_READ_MAX + 1)
     except OSError:
         return path, None, env
     text = blob[:_CPUINFO_READ_MAX].decode("utf-8", "replace")
@@ -2753,6 +2784,15 @@ def _invoked_path(argv: Sequence[str]) -> str:
     return __file__
 
 
+class _ConfigChangedError(Exception):
+    pass
+
+
+def _check_trusted_config_stat(info: os.stat_result) -> None:
+    if info.st_uid != 0 or info.st_mode & 0o022:
+        raise _ConfigChangedError()
+
+
 def site_config(script_path: str) -> Tuple[Optional[Dict[str, str]], Optional[str]]:
     """Return (settings, warning). The first existing candidate wins."""
     path = _config_candidate_path(script_path)
@@ -2762,8 +2802,13 @@ def site_config(script_path: str) -> Tuple[Optional[Dict[str, str]], Optional[st
     if reason:
         return None, "eessi-arch-guard: config ignored: " + reason
     try:
-        with open(path, "rb") as handle:
-            blob = handle.read()
+        blob = _read_regular_bytes(
+            path,
+            nofollow=True,
+            check_stat=_check_trusted_config_stat,
+        )
+    except _ConfigChangedError:
+        return None, "eessi-arch-guard: config ignored: %s changed while it was read" % path
     except OSError as exc:
         return None, "eessi-arch-guard: config ignored: %s" % exc
     settings, bad = parse_config_bytes(blob)
