@@ -19,10 +19,21 @@ tables are read off the Python interpreter that runs this script:
   effect each code point has on a sigma next to it, so the script needs
   nothing but the interpreter.
 
-The tables are those of one Unicode version, which the file names. Run
-``python3 tools/gen_pylower.py`` and then ``zig fmt zig`` to refresh them
-when a newer Python carries a newer Unicode. ``tests/test_pylower_table.py``
-checks the file against the interpreter over every code point.
+* ``assigned``: the ranges of the code points that this Unicode version
+  assigns. The Zig guard does not read them. They tell the tests which code
+  points a Python with a newer Unicode shares with the table.
+
+The Zig guard has one table and the Python guard runs on any Python from
+3.9 on, and each Python release carries its own Unicode. A newer Unicode
+assigns more code points and gives some of them a lower case. The table is
+that of Python 3.9, Unicode 13.0.0. A newer Python lower-cases the code
+points that Unicode 13.0.0 assigns the same way, which the tests check, and
+a code point that it leaves unassigned is left as it is by Python 3.9 and by
+Zig. The script refuses to run on another version. Run
+``python3.9 tools/gen_pylower.py`` and then ``zig fmt zig`` to refresh the
+file. ``tests/test_pylower_table.py`` checks the file against any
+interpreter, over every code point on Python 3.9 and over the code points
+the two versions assign on a newer one.
 """
 
 from __future__ import annotations
@@ -35,6 +46,8 @@ from typing import Dict, List, Sequence, Tuple
 TARGET = Path(__file__).resolve().parent.parent / "zig" / "pylower_table.zig"
 SIGMA = "\u03a3"
 LAST = 0x10FFFF
+# The Unicode of Python 3.9, the oldest Python that pyproject.toml allows.
+UNICODE_VERSION = "13.0.0"
 
 LowerMap = List[Tuple[int, Tuple[int, ...]]]
 Run = Tuple[int, int, int, int]
@@ -103,6 +116,11 @@ def to_ranges(values: Sequence[int]) -> Ranges:
     return ranges
 
 
+def assigned() -> Ranges:
+    """Ranges of the code points this Unicode version assigns."""
+    return to_ranges([cp for cp in code_points() if unicodedata.category(chr(cp)) != "Cn"])
+
+
 def tables() -> Dict[str, object]:
     cased, ignorable = sigma_classes()
     found = lower_map()
@@ -112,6 +130,7 @@ def tables() -> Dict[str, object]:
         "lower_special": lower_special(found),
         "cased": cased,
         "case_ignorable": ignorable,
+        "assigned": assigned(),
     }
 
 
@@ -147,6 +166,10 @@ def render(data: Dict[str, object]) -> str:
     for name, doc in (
         ("cased", "Code points that are cased and not case-ignorable, as inclusive ranges."),
         ("case_ignorable", "Code points that are case-ignorable, as inclusive ranges."),
+        (
+            "assigned",
+            "Code points this Unicode version assigns, as inclusive ranges; read by the tests only.",
+        ),
     ):
         lines.append("/// " + doc)
         lines.append("pub const %s = [_][2]u21{" % name)
@@ -157,6 +180,11 @@ def render(data: Dict[str, object]) -> str:
 
 
 def main() -> int:
+    if unicodedata.unidata_version != UNICODE_VERSION:
+        raise SystemExit(
+            "this Python has Unicode %s; run the script with Python 3.9, which has %s"
+            % (unicodedata.unidata_version, UNICODE_VERSION)
+        )
     TARGET.write_text(render(tables()), encoding="utf-8")
     print("wrote %s for Unicode %s" % (TARGET, unicodedata.unidata_version))
     return 0

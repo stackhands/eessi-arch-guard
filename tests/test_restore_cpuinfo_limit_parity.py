@@ -25,7 +25,6 @@ comparison skips when TOOL_BIN is unset.
 from __future__ import annotations
 
 import json
-import os
 import re
 import sys
 import unittest
@@ -50,12 +49,12 @@ def build(site: harness.Site) -> Dict[str, str]:
         site.add_cpu(cpu)
         site.add_module(cpu, "R/4.4.2")
     text = (FIXTURE / "emeraldrapids-kvm-no-waitpkg.cpuinfo").read_text(encoding="utf-8")
+    text, visible = harness.on_task_cpus(text, 2)
     padded = re.sub(
         r"(vendor_id[^\n]*\n)", lambda m: m.group(1) + "padding\t: " + "x" * PAD + "\n", text
     )
     Path(site.cpuinfo).write_text(padded, encoding="utf-8")
     env = harness.base_env(site, LOADED, ["R/4.4.2"], gpu="none")
-    visible = sorted(c for c in os.sched_getaffinity(0) if c <= 7)[:2]
     env["SLURM_CPU_BIND_LIST"] = ",".join(str(c) for c in visible)
     return env
 

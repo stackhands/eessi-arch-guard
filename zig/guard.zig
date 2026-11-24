@@ -1273,14 +1273,32 @@ fn tempCpuFile(c: *Ctx, env: Map, data: []const u8, failure: *TempFailure) error
             return error.TempFile;
         },
     };
-    defer _ = linux.close(made.fd);
-    _ = sys.call(linux.write, .{ made.fd, data.ptr, data.len }) catch |err| {
-        const errno = sys.last_errno;
-        failure.* = .{ .class = osErrorClass(errno), .text = sys.describe(err) };
+    const wrote = sys.call(linux.write, .{ made.fd, data.ptr, data.len });
+    const write_errno = sys.last_errno;
+    // os.close runs in a finally block, so its error replaces that of
+    // os.write.
+    if (closeFd(made.fd)) |e| {
+        failure.* = .{ .class = osErrorClass(e), .text = sys.describeErrno(e) };
+        unlinkPath(made.path);
+        return error.TempFile;
+    }
+    _ = wrote catch |err| {
+        failure.* = .{ .class = osErrorClass(write_errno), .text = sys.describe(err) };
         unlinkPath(made.path);
         return error.TempFile;
     };
     return made.path;
+}
+
+/// os.close: the errno of a failed close(2), or null. EINTR is not an
+/// error, because Python leaves it out as PEP 475 says: the descriptor is
+/// gone on Linux, and a second close could hit a descriptor opened since.
+fn closeFd(fd: linux.fd_t) ?linux.E {
+    const e = linux.errno(linux.close(fd));
+    return switch (e) {
+        .SUCCESS, .INTR => null,
+        else => e,
+    };
 }
 
 const PreparedCpu = struct { path: []const u8, cleanup: ?[]const u8 = null, child: Map };
@@ -2801,6 +2819,14 @@ test "tempCpuFile writes a private file once and a short write is not an error" 
     defer unlinkPath(path);
     const back = readFile(a, path, 100) orelse return error.TestUnexpectedResult;
     try std.testing.expectEqualStrings("processor : 0\n", back);
+}
+
+test "closeFd reports the errno of a failed close as os.close raises it" {
+    const fd = try sys.openat(fsx.cwd, "/dev/null", .{}, 0);
+    try std.testing.expectEqual(@as(?linux.E, null), closeFd(fd));
+    try std.testing.expectEqual(@as(?linux.E, .BADF), closeFd(fd));
+    try std.testing.expectEqualStrings("OSError", osErrorClass(.BADF));
+    try std.testing.expectEqualStrings("[Errno 9] Bad file descriptor", sys.describeErrno(.BADF));
 }
 
 test "scopeCpuinfoWithBase maps LXCFS renumbered blocks and keeps gapped logical IDs" {
