@@ -39,7 +39,7 @@ After that, a task that inherits the European Environment for Scientific Softwar
 
    #+begin_example
    #!/usr/bin/python3 -I
-   0.3.0
+   0.3.1
    #+end_example
 
    =-I= makes Python ignore =PYTHONPATH= and the other =PYTHON= variables, the user's site packages and the directory the file is in.
@@ -65,7 +65,7 @@ After that, a task that inherits the European Environment for Scientific Softwar
    #+end_src
 
    #+begin_example
-   0.3.0
+   0.3.1
    #+end_example
 
    The command this installs starts Python without =-I=.

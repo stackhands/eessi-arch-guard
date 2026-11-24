@@ -2,6 +2,13 @@
 
 <!-- towncrier release notes start -->
 
+## [0.3.1] - 2026-11-24
+
+### Bugfixes
+
+- The release publishes the completions and man page as `eessi-arch-guard-VERSION-share.tar.gz`; 0.3.0 failed to publish because a release asset cannot be a directory.
+
+
 ## [0.3.0] - 2026-11-24
 
 ### Features
