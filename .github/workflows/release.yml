@@ -93,6 +93,14 @@ jobs:
           pattern: bin-*
           merge-multiple: true
           path: dist
+      # The completions and man page are one directory tree, the same from both
+      # builds; a release asset is a file, so they go out as one archive.
+      - name: archive the completion and manpage tree
+        run: |
+          tar -C dist --sort=name --owner=0 --group=0 --numeric-owner --mtime=@0 \
+            -czf "dist/eessi-arch-guard-${GITHUB_REF_NAME#v}-share.tar.gz" share
+          rm -r dist/share
+          tar -tzf "dist/eessi-arch-guard-${GITHUB_REF_NAME#v}-share.tar.gz"
       - run: cd dist && sha256sum eessi-arch-guard-* > SHA256SUMS && cat SHA256SUMS
       - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
