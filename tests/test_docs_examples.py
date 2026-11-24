@@ -8,6 +8,8 @@ import subprocess
 import tempfile
 import unittest
 
+import private_tmp  # noqa: F401
+
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 DIATAXIS_ROOT = ROOT / "docs" / "orgmode"
 DOCS_EXAMPLES = ROOT / "docs" / "examples"

@@ -1,0 +1,1 @@
+When the task may use only some of the processors of the node and the scoped cpuinfo copy cannot be made, because no temporary directory takes a file or its open or write fails, the Zig guard skips with the error Python raises instead of running the CPU detection on the unscoped cpuinfo. The copy is made with `fsx.mkstemp`, as `tempfile.mkstemp` makes it.

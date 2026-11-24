@@ -4,12 +4,15 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
 import tempfile
 import unittest
 from pathlib import Path
+
+import private_tmp  # noqa: F401
 
 ROOT = Path(__file__).resolve().parents[1]
 GUARD = ROOT / "src" / "eessi_arch_guard.py"
@@ -59,6 +62,9 @@ class Site:
         self.arch_log = os.path.join(self.root, "arch.log")
         self.cpuinfo = os.path.join(self.root, "cpuinfo")
         self.bash_env_log = os.path.join(self.root, "bash-env.log")
+        # The TMPDIR of the guard runs base_env sets up, private to the site.
+        self.tmpdir = os.path.join(self.root, "temp")
+        os.mkdir(self.tmpdir, 0o700)
         os.makedirs(self.init)
         os.makedirs(self.bindir)
         shutil.copy(STUBS / "eessi_archdetect.sh", os.path.join(self.init, "eessi_archdetect.sh"))
@@ -121,6 +127,32 @@ class Site:
             handle.write("\n".join(lines) + "\n")
 
 
+def on_task_cpus(cpuinfo: str, visible: int):
+    """``cpuinfo`` renumbered so that its first ``visible`` processors are ones
+    this process may run on, with those IDs.
+
+    A fixture numbers its processors from 0, and a host may give a test only
+    processors with higher IDs, so a test that binds the task to fixture
+    processors renumbers them first. The first blocks take the lowest IDs of
+    the affinity mask in order, and the blocks past the mask take the IDs
+    after its highest one. On a host that may use processors 0 to 7 the
+    fixture keeps its numbers. Skips when the mask has fewer than
+    ``visible`` processors.
+    """
+    allowed = sorted(os.sched_getaffinity(0))
+    if len(allowed) < visible:
+        raise unittest.SkipTest(
+            "the test needs %d processors and may run on %d" % (visible, len(allowed))
+        )
+    pattern = re.compile(r"^(processor[ \t]*:[ \t]*)[0-9]+", re.M)
+    blocks = len(pattern.findall(cpuinfo))
+    ids = allowed[:blocks]
+    ids += range(allowed[-1] + 1, allowed[-1] + 1 + blocks - len(ids))
+    numbers = iter(ids)
+    text = pattern.sub(lambda m: m.group(1) + str(next(numbers)), cpuinfo)
+    return text, ids[:visible]
+
+
 def base_env(
     site: Site, cpu: str, modules, accel: str = "", gpu: str = "none", gpu_cc: str = "9.0"
 ):
@@ -148,6 +180,7 @@ def base_env(
     env = {
         "PATH": ":".join(bins),
         "HOME": "/tmp",
+        "TMPDIR": site.tmpdir,
         "USER": "tester",
         "LANG": "C",
         "LC_ALL": "C",
@@ -265,8 +298,10 @@ def log_lines(path: str):
         return [line.rstrip("\n") for line in handle if line.strip()]
 
 
-def run_with_timeout(argv, env=None, timeout: float = 2.0, text: bool = True):
-    """Run ``argv`` with a bounded wall-clock timeout.
+def run_with_timeout(argv, env=None, timeout: float = 2.0, text: bool = True, cwd=None, input=None):
+    """Run ``argv`` with a bounded wall-clock timeout, in ``cwd`` if given.
+
+    ``input`` is fed to the program.
 
     The streams are decoded as text unless ``text`` is false. Then they stay
     bytes, and ``env`` may hold bytes, so a comparison sees input and output
@@ -274,7 +309,9 @@ def run_with_timeout(argv, env=None, timeout: float = 2.0, text: bool = True):
     """
     return subprocess.run(
         list(argv),
+        input=input,
         env=env,
+        cwd=cwd,
         capture_output=True,
         text=text,
         timeout=timeout,

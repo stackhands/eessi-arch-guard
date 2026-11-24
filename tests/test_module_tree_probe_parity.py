@@ -54,6 +54,7 @@ class ModuleTreeProbeParityTests(unittest.TestCase):
         self.planner = str(planner)
         self.env: Dict[str, str] = {
             "PATH": "/usr/bin:/bin",
+            "TMPDIR": self.site.tmpdir,
             "EESSI_PREFIX": str(self.prefix),
             "EESSI_OS_TYPE": "linux",
             "LOADEDMODULES": "EESSI/2025.06:R/4.4.2",

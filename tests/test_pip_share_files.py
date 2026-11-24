@@ -8,6 +8,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
+import private_tmp  # noqa: F401
+
 ROOT = Path(__file__).resolve().parent.parent
 
 
@@ -25,8 +27,10 @@ class PipShareFilesTests(unittest.TestCase):
                 share_root = prefix / "share"
             share = share_root / "eessi-arch-guard"
             sitepath = share / "sitepath.py"
+            regular_file = share / "_regular_file.py"
             sitepackage = share / "lmod" / "SitePackage.lua"
             self.assertTrue(sitepath.is_file(), f"missing {sitepath}")
+            self.assertTrue(regular_file.is_file(), f"missing {regular_file}")
             self.assertTrue(sitepackage.is_file(), f"missing {sitepackage}")
 
 
