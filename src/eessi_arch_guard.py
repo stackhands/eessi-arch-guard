@@ -702,8 +702,7 @@ def read_cpu_flags(path: str) -> frozenset:
     if not path:
         return frozenset()
     try:
-        with open(path, "rb") as handle:
-            blob = handle.read(_CPUINFO_READ_MAX + 1)
+        blob = _read_regular_bytes(path, _CPUINFO_READ_MAX + 1)
     except OSError:
         return frozenset()
     text = blob[:_CPUINFO_READ_MAX].decode("utf-8", "replace")

@@ -1089,6 +1089,32 @@ class UnitTests:
                 expected = "OSError: [Errno 22] not a regular file: %r" % str(path)
                 assert proc.stderr.rstrip().endswith(expected), proc.stderr
 
+    def test_read_cpu_flags_rejects_fifo_and_directory(self):
+        with tempfile.TemporaryDirectory(prefix="eag-flags-") as tmp:
+            root = Path(tmp)
+            fifo = root / "cpu.fifo"
+            os.mkfifo(fifo, 0o600)
+            directory = root / "cpu.dir"
+            directory.mkdir()
+            src = str(Path(__file__).resolve().parents[1] / "src")
+            for path in (fifo, directory):
+                proc = harness.run_with_timeout(
+                    [
+                        sys.executable,
+                        "-I",
+                        "-c",
+                        (
+                            f"import sys; sys.path.insert(0, {src!r}); "
+                            "import eessi_arch_guard as guard; "
+                            f"assert guard.read_cpu_flags({str(path)!r}) == frozenset()"
+                        ),
+                    ],
+                    timeout=1.5,
+                )
+                assert proc.returncode == 0, (path, proc.returncode, proc.stderr)
+                assert proc.stdout == ""
+                assert proc.stderr == ""
+
     def test_waitpkg_march_requires_the_flag(self):
         root = Path(__file__).resolve().parents[1] / "tests" / "fixtures" / "cpuinfo"
         real_path = root / "sapphirerapids-8488C.cpuinfo"

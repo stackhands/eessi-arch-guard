@@ -5,3 +5,7 @@ from test_unit import UnitTests
 
 def test_read_regular_bytes_rejects_fifo_and_directory():
     UnitTests().test_read_regular_bytes_rejects_fifo_and_directory()
+
+
+def test_read_cpu_flags_rejects_fifo_and_directory():
+    UnitTests().test_read_cpu_flags_rejects_fifo_and_directory()
