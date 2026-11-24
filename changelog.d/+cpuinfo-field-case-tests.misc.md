@@ -1,0 +1,1 @@
+New `TOOL_BIN` tests in `tests/test_cpuinfo_field_case_parity.py` compare the two guards on cpuinfo fields that another processor spells with plain letters in another case, and check whether each guard places the scoped copy.

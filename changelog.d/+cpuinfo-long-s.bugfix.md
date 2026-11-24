@@ -1,0 +1,1 @@
+Both guards now match the words processor and flags in a cpuinfo with the case folding of Python's regular expressions. A long s counts as an s, and both guards choose the same directory. A processor line is also read as a field of its block, as Python reads it, so a header spelled with a long s makes the processors differ in both guards.
