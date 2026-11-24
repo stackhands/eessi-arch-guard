@@ -657,6 +657,8 @@ fn parseCpuSpec(spec: []const u8) ?CpuSet {
 fn readFile(arena: Allocator, path: []const u8, max: usize) ?[]u8 {
     const fd = sys.openat(fsx.cwd, path, .{ .NONBLOCK = true }, 0) catch return null;
     defer sys.close(fd);
+    const st = fsx.fstat(fd) catch return null;
+    if (!st.isReg()) return null;
     return fsx.readAll(arena, fd, max) catch null;
 }
 

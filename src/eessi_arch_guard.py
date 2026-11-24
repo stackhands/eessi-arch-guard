@@ -1253,8 +1253,7 @@ def _prepare_cpuinfo(env: Mapping[str, str]) -> Tuple[str, Optional[str], Mappin
     if allowed is None:
         return path, None, env
     try:
-        with open(path, "rb") as handle:
-            blob = handle.read(_CPUINFO_READ_MAX + 1)
+        blob = _read_regular_bytes(path, _CPUINFO_READ_MAX + 1)
     except OSError:
         return path, None, env
     text = blob[:_CPUINFO_READ_MAX].decode("utf-8", "replace")
