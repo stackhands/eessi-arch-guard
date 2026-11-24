@@ -69,7 +69,9 @@ def _read_stat_bytes(path: str) -> bytes:
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(prog="cvmfsrev.py")
     parser.add_argument("--stat", required=True, help="file with cvmfs_config stat output")
-    parser.add_argument("--min", type=int, default=None, help="fail when the client is older than this")
+    parser.add_argument(
+        "--min", type=int, default=None, help="fail when the client is older than this"
+    )
     args = parser.parse_args(argv)
     if args.min is not None and args.min < 0:
         sys.stderr.write("cvmfsrev.py: --min must be zero or more\n")

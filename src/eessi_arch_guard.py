@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import argparse
 import datetime
+import errno
 import fcntl
 import hashlib
 import json
@@ -30,7 +31,7 @@ import sys
 import tempfile
 import time
 import unicodedata
-from typing import Dict, List, Mapping, NamedTuple, Optional, Sequence, Tuple
+from typing import Callable, Dict, List, Mapping, NamedTuple, Optional, Sequence, Tuple
 
 __version__ = "0.2.0"
 
@@ -662,6 +663,38 @@ WAITPKG_MARCHES = frozenset(
 
 _CPUINFO_FLAGS_RE = re.compile(r"(?im)^flags[ \t]*:[ \t]*(.*)$")
 _CPUINFO_READ_MAX = 16 * 1024 * 1024
+
+
+def _read_regular_bytes(
+    path: str,
+    limit: Optional[int] = None,
+    *,
+    nofollow: bool = False,
+    check_stat: Optional[Callable[[os.stat_result], None]] = None,
+) -> bytes:
+    """Read a regular file without blocking on a FIFO, optionally capping bytes."""
+    flags = os.O_RDONLY | os.O_NONBLOCK | os.O_CLOEXEC
+    if nofollow:
+        flags |= os.O_NOFOLLOW
+    fd = os.open(path, flags)
+    try:
+        info = os.fstat(fd)
+        if not stat.S_ISREG(info.st_mode):
+            raise OSError(errno.EINVAL, "not a regular file", path)
+        if check_stat is not None:
+            check_stat(info)
+        chunks = []
+        total = 0
+        while limit is None or total < limit:
+            size = 65536 if limit is None else min(65536, limit - total)
+            chunk = os.read(fd, size)
+            if not chunk:
+                break
+            chunks.append(chunk)
+            total += len(chunk)
+        return b"".join(chunks)
+    finally:
+        os.close(fd)
 
 
 def read_cpu_flags(path: str) -> frozenset:

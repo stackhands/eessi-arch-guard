@@ -143,7 +143,10 @@ def _placeholder_modules_path(value: str) -> bool:
 
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(prog="sitepath.py")
-    parser.add_argument("--repo", default=os.environ.get("EESSI_CVMFS_REPO") or "/cvmfs/software.eessi.io")
+    parser.add_argument(
+        "--repo",
+        default=os.environ.get("EESSI_CVMFS_REPO") or "/cvmfs/software.eessi.io",
+    )
     parser.add_argument("--site", default="")
     parser.add_argument("--eessi", default="")
     parser.add_argument("--modulepath", default=os.environ.get("MODULEPATH") or "")
@@ -157,7 +160,10 @@ def main(argv=None) -> int:
     site = (args.site or os.environ.get("EESSI_SITE_SOFTWARE_PATH") or "").strip()
     eessi = (args.eessi or os.environ.get("EESSI_SOFTWARE_PATH") or "").strip()
     if not site or not eessi:
-        sys.stderr.write("sitepath.py: need --site and --eessi, or EESSI_SITE_SOFTWARE_PATH and EESSI_SOFTWARE_PATH\n")
+        sys.stderr.write(
+            "sitepath.py: need --site and --eessi, or "
+            "EESSI_SITE_SOFTWARE_PATH and EESSI_SOFTWARE_PATH\n"
+        )
         return 2
     if args.require_input and (
         _placeholder_modules_path(site)

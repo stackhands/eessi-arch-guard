@@ -1060,6 +1060,35 @@ class UnitTests:
             assert "amx_tile" in scoped
             assert "waitpkg" not in scoped
 
+    def test_read_regular_bytes_rejects_fifo_and_directory(self):
+        with tempfile.TemporaryDirectory(prefix="eag-regular-") as tmp:
+            root = Path(tmp)
+            regular = root / "regular"
+            regular.write_bytes(b"hello world")
+            assert guard._read_regular_bytes(str(regular), 5) == b"hello"
+            fifo = root / "fifo"
+            os.mkfifo(fifo, 0o600)
+            directory = root / "directory"
+            directory.mkdir()
+            src = str(Path(__file__).resolve().parents[1] / "src")
+            for path in (fifo, directory):
+                proc = harness.run_with_timeout(
+                    [
+                        sys.executable,
+                        "-I",
+                        "-c",
+                        (
+                            f"import sys; sys.path.insert(0, {src!r}); "
+                            "import eessi_arch_guard as guard; "
+                            f"guard._read_regular_bytes({str(path)!r})"
+                        ),
+                    ],
+                    timeout=1.5,
+                )
+                assert proc.returncode == 1, (path, proc.returncode, proc.stderr)
+                expected = "OSError: [Errno 22] not a regular file: %r" % str(path)
+                assert proc.stderr.rstrip().endswith(expected), proc.stderr
+
     def test_waitpkg_march_requires_the_flag(self):
         root = Path(__file__).resolve().parents[1] / "tests" / "fixtures" / "cpuinfo"
         real_path = root / "sapphirerapids-8488C.cpuinfo"
