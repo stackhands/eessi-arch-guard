@@ -145,7 +145,7 @@ Slurm discards a =TaskProlog='s stderr.
 The Python guard prints its version:
 
 #+begin_example
-0.3.0
+0.3.1
 #+end_example
 
 The Zig build follows it with its target, build mode, Zig version and the commit given to =zig build= with =-Dcommit=, or =unknown= without it.

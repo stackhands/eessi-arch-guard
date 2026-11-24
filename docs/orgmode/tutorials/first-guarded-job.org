@@ -39,7 +39,7 @@ python3 src/eessi_arch_guard.py --version
 #+end_src
 
 #+begin_example
-0.3.0
+0.3.1
 #+end_example
 
 ** Run it on a stack loaded for another CPU
