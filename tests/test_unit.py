@@ -42,6 +42,18 @@ def _env(**extra):
     return base
 
 
+def _site_config_after_lstat(path: Path):
+    candidate = guard._config_candidate_path
+    untrusted = guard._config_untrusted
+    try:
+        guard._config_candidate_path = lambda _script: str(path)
+        guard._config_untrusted = lambda _path: None
+        return guard.site_config("/unused/eessi-arch-guard")
+    finally:
+        guard._config_candidate_path = candidate
+        guard._config_untrusted = untrusted
+
+
 def _cpu(status="ok", target=ZEN2, candidates=(ZEN2,), error=""):
     def probe(_env):
         return guard.CpuProbe(status, target, candidates, error)
@@ -1114,6 +1126,79 @@ class UnitTests:
                 assert proc.returncode == 0, (path, proc.returncode, proc.stderr)
                 assert proc.stdout == ""
                 assert proc.stderr == ""
+
+    def test_site_config_rechecks_non_regular_file_after_lstat(self):
+        with tempfile.TemporaryDirectory(prefix="eag-config-") as tmp:
+            root = Path(tmp)
+            script = root / "eessi-arch-guard"
+            script.write_text("#!/bin/sh\n", encoding="utf-8")
+            config = root / "eessi-arch-guard.conf"
+            src = str(Path(__file__).resolve().parents[1] / "src")
+            for kind in ("fifo", "directory"):
+                if config.exists():
+                    if config.is_dir():
+                        config.rmdir()
+                    else:
+                        config.unlink()
+                if kind == "fifo":
+                    os.mkfifo(config, 0o600)
+                else:
+                    config.mkdir()
+                code = (
+                    f"import sys; sys.path.insert(0, {src!r}); "
+                    "import eessi_arch_guard as guard; "
+                    "guard._config_untrusted = lambda _path: None; "
+                    f"settings, warning = guard.site_config({str(script)!r}); "
+                    "assert settings is None; "
+                    f"assert warning == \"eessi-arch-guard: config ignored: "
+                    f"[Errno 22] not a regular file: {str(config)!r}\", warning"
+                )
+                proc = harness.run_with_timeout(
+                    [sys.executable, "-I", "-c", code],
+                    timeout=1.5,
+                )
+                assert proc.returncode == 0, (kind, proc.returncode, proc.stderr)
+                assert proc.stdout == ""
+                assert proc.stderr == ""
+
+    def test_site_config_rechecks_owner_after_lstat(self):
+        with tempfile.TemporaryDirectory(prefix="eag-config-owner-") as tmp:
+            config = Path(tmp) / "eessi-arch-guard.conf"
+            config.write_text("timeout = 3\n", encoding="utf-8")
+            config.chmod(0o600)
+            settings, warning = _site_config_after_lstat(config)
+            assert settings is None
+            assert warning == (
+                "eessi-arch-guard: config ignored: %s changed while it was read" % config
+            )
+
+    def test_site_config_rechecks_mode_after_lstat(self):
+        with tempfile.TemporaryDirectory(prefix="eag-config-mode-") as tmp:
+            config = Path(tmp) / "eessi-arch-guard.conf"
+            config.write_text("timeout = 3\n", encoding="utf-8")
+            subprocess.check_call(["sudo", "chown", "root:root", str(config)])
+            subprocess.check_call(["sudo", "chmod", "666", str(config)])
+            settings, warning = _site_config_after_lstat(config)
+            assert settings is None
+            assert warning == (
+                "eessi-arch-guard: config ignored: %s changed while it was read" % config
+            )
+
+    def test_site_config_does_not_follow_path_after_lstat(self):
+        with tempfile.TemporaryDirectory(prefix="eag-config-link-") as tmp:
+            root = Path(tmp)
+            target = root / "target.conf"
+            target.write_text("timeout = 3\n", encoding="utf-8")
+            subprocess.check_call(["sudo", "chown", "root:root", str(target)])
+            subprocess.check_call(["sudo", "chmod", "644", str(target)])
+            config = root / "eessi-arch-guard.conf"
+            config.symlink_to(target)
+            settings, warning = _site_config_after_lstat(config)
+            assert settings is None
+            assert warning == (
+                "eessi-arch-guard: config ignored: "
+                "[Errno 40] Too many levels of symbolic links: %r" % str(config)
+            )
 
     def test_waitpkg_march_requires_the_flag(self):
         root = Path(__file__).resolve().parents[1] / "tests" / "fixtures" / "cpuinfo"

@@ -2784,6 +2784,15 @@ def _invoked_path(argv: Sequence[str]) -> str:
     return __file__
 
 
+class _ConfigChangedError(Exception):
+    pass
+
+
+def _check_trusted_config_stat(info: os.stat_result) -> None:
+    if info.st_uid != 0 or info.st_mode & 0o022:
+        raise _ConfigChangedError()
+
+
 def site_config(script_path: str) -> Tuple[Optional[Dict[str, str]], Optional[str]]:
     """Return (settings, warning). The first existing candidate wins."""
     path = _config_candidate_path(script_path)
@@ -2793,8 +2802,13 @@ def site_config(script_path: str) -> Tuple[Optional[Dict[str, str]], Optional[st
     if reason:
         return None, "eessi-arch-guard: config ignored: " + reason
     try:
-        with open(path, "rb") as handle:
-            blob = handle.read()
+        blob = _read_regular_bytes(
+            path,
+            nofollow=True,
+            check_stat=_check_trusted_config_stat,
+        )
+    except _ConfigChangedError:
+        return None, "eessi-arch-guard: config ignored: %s changed while it was read" % path
     except OSError as exc:
         return None, "eessi-arch-guard: config ignored: %s" % exc
     settings, bad = parse_config_bytes(blob)
