@@ -27,8 +27,10 @@ class PipShareFilesTests(unittest.TestCase):
                 share_root = prefix / "share"
             share = share_root / "eessi-arch-guard"
             sitepath = share / "sitepath.py"
+            regular_file = share / "_regular_file.py"
             sitepackage = share / "lmod" / "SitePackage.lua"
             self.assertTrue(sitepath.is_file(), f"missing {sitepath}")
+            self.assertTrue(regular_file.is_file(), f"missing {regular_file}")
             self.assertTrue(sitepackage.is_file(), f"missing {sitepackage}")
 
 

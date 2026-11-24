@@ -11,6 +11,9 @@ import argparse
 import os
 import sys
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from _regular_file import read_regular_bytes  # noqa: E402
+
 
 def _norm(path: str) -> str:
     path = (path or "").strip()
@@ -182,7 +185,7 @@ def main(argv=None) -> int:
         eessi = _modules(eessi)
     path = args.mountinfo or "/proc/self/mountinfo"
     try:
-        mountinfo = open(path, encoding="utf-8").read()
+        mountinfo = read_regular_bytes(path).decode("utf-8")
     except OSError as exc:
         sys.stderr.write(f"sitepath.py: cannot read {path}: {exc.strerror}\n")
         return 2
