@@ -4,7 +4,7 @@
 # Removes the temporary directory, including root-owned files, on exit.
 set -euo pipefail
 
-root=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
+root=$(CDPATH='' cd -- "$(dirname -- "$0")/../.." && pwd)
 parent=$(mktemp -d /tmp/eessi-arch-guard-conf.XXXXXX)
 cleanup() {
     sudo -n rm -rf "$parent"

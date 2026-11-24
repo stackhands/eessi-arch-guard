@@ -112,6 +112,7 @@ class CheckSubmitTests(unittest.TestCase):
             log = root / "eb-stack.log"
             env = {
                 "PATH": "/usr/bin:/bin",
+                "TMPDIR": tmp,
                 "EESSI_PREFIX": str(prefix),
                 "EESSI_OS_TYPE": "linux",
                 "LOADEDMODULES": "EESSI/2025.06:R/4.4.2:OnlyOther/1.0",
@@ -153,6 +154,7 @@ class CheckSubmitTests(unittest.TestCase):
             fake = _fake_eb_stack(root)
             env = {
                 "PATH": "/usr/bin:/bin",
+                "TMPDIR": tmp,
                 "EESSI_PREFIX": str(prefix),
                 "EESSI_OS_TYPE": "linux",
                 "LOADEDMODULES": "EESSI/2025.06:2025:Compiler/GCCcore/15.2.0:R/4.4.2",
@@ -179,6 +181,7 @@ class CheckSubmitTests(unittest.TestCase):
         fake = _fake_eb_stack(root)
         env = {
             "PATH": "/usr/bin:/bin",
+            "TMPDIR": str(root),
             "EESSI_PREFIX": str(prefix),
             "EESSI_OS_TYPE": "linux",
             "EESSI_VERSION": "2026.06",
@@ -269,6 +272,7 @@ class CheckSubmitTests(unittest.TestCase):
             fake = _fake_eb_stack(root)
             env = {
                 "PATH": "/usr/bin:/bin",
+                "TMPDIR": tmp,
                 "HOME": str(root / "home"),
                 "EESSI_PREFIX": str(prefix),
                 "EESSI_OS_TYPE": "linux",
@@ -303,6 +307,7 @@ class CheckSubmitTests(unittest.TestCase):
             fake = _fake_eb_stack(root)
             env = {
                 "PATH": "/usr/bin:/bin",
+                "TMPDIR": tmp,
                 "HOME": str(root / "home"),
                 "LANG": "C",
                 "LC_ALL": "C",
@@ -343,6 +348,7 @@ class CheckSubmitTests(unittest.TestCase):
             fake = _fake_eb_stack(root)
             env = {
                 "PATH": "/usr/bin:/bin",
+                "TMPDIR": tmp,
                 "HOME": "/tmp",
                 "LANG": "C",
                 "LC_ALL": "C",
@@ -414,6 +420,7 @@ class CheckSubmitTests(unittest.TestCase):
             fake = _fake_eb_stack(root)
             env = {
                 "PATH": "/usr/bin:/bin",
+                "TMPDIR": tmp,
                 "EESSI_PREFIX": str(prefix),
                 "EESSI_OS_TYPE": "linux",
                 "LOADEDMODULES": "EESSI/2025.06:R/4.4.2:OnlyOther/1.0",
@@ -471,6 +478,7 @@ class CheckSubmitTests(unittest.TestCase):
             prefix = root / "prefix"
             env = {
                 "PATH": "/usr/bin:/bin",
+                "TMPDIR": tmp,
                 "EESSI_PREFIX": str(prefix),
                 "EESSI_OS_TYPE": "linux",
                 "LOADEDMODULES": "EESSI/2025.06",
@@ -553,6 +561,7 @@ class CheckSubmitTests(unittest.TestCase):
                         text=True,
                         env={
                             "PATH": "/usr/bin:/bin",
+                            "TMPDIR": tmp,
                             "HOME": str(root / "home"),
                             "LANG": "C",
                             "LC_ALL": "C",
@@ -587,6 +596,7 @@ class CheckSubmitTests(unittest.TestCase):
             try:
                 env = {
                     "PATH": "/usr/bin:/bin",
+                    "TMPDIR": tmp,
                     "HOME": "/tmp",
                     "LANG": "C",
                     "LC_ALL": "C",
@@ -753,6 +763,7 @@ with open({str(env_log)!r}, "w", encoding="utf-8") as handle:
             try:
                 env = {
                     "PATH": "/usr/bin:/bin",
+                    "TMPDIR": tmp,
                     "HOME": str(root / "home"),
                     "LANG": "C",
                     "LC_ALL": "C",
@@ -914,6 +925,7 @@ class CheckSubmitEmptyTargetTests(unittest.TestCase):
             (mod_dir / "4.4.2.lua").write_text("--\n", encoding="utf-8")
             base_env = {
                 "HOME": str(root / "home"),
+                "TMPDIR": tmp,
                 "LANG": "C",
                 "LC_ALL": "C",
                 "EESSI_PREFIX": str(prefix),
@@ -1019,6 +1031,7 @@ class CheckSubmitZigParityTests(unittest.TestCase):
 
             env = {
                 "PATH": "/usr/bin:/bin",
+                "TMPDIR": tmp,
                 "HOME": str(root / "home"),
                 "LANG": "C",
                 "LC_ALL": "C",

@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import argparse
 import datetime
+import errno
 import fcntl
 import hashlib
 import json
@@ -29,7 +30,8 @@ import subprocess
 import sys
 import tempfile
 import time
-from typing import Dict, List, Mapping, NamedTuple, Optional, Sequence, Tuple
+import unicodedata
+from typing import Callable, Dict, List, Mapping, NamedTuple, Optional, Sequence, Tuple
 
 __version__ = "0.2.0"
 
@@ -635,6 +637,8 @@ def _run_bash(args: Sequence[str], env: Mapping[str, str]) -> subprocess.Complet
 # umonitor). Leaves use '_' where the march spells '-'. Taken from GCC 16
 # gcc/config/i386/i386.h (branch releases/gcc-16): the set GCC 15.2.0
 # carried plus novalake; znver6, GCC 16's other new mask, has no WAITPKG.
+# emeraldrapids is not its own mask: GCC spells the Sapphire Rapids
+# mask under that name as well, so the leaf needs the same flag.
 # archdetect's x86 spec does not require the flag, so a VM that hides it
 # is still offered that directory. A binary built with the march then
 # SIGILLs.
@@ -645,6 +649,7 @@ WAITPKG_MARCHES = frozenset(
         "arrowlake_s",
         "clearwaterforest",
         "diamondrapids",
+        "emeraldrapids",
         "grandridge",
         "graniterapids",
         "graniterapids_d",
@@ -660,13 +665,44 @@ _CPUINFO_FLAGS_RE = re.compile(r"(?im)^flags[ \t]*:[ \t]*(.*)$")
 _CPUINFO_READ_MAX = 16 * 1024 * 1024
 
 
+def _read_regular_bytes(
+    path: str,
+    limit: Optional[int] = None,
+    *,
+    nofollow: bool = False,
+    check_stat: Optional[Callable[[os.stat_result], None]] = None,
+) -> bytes:
+    """Read a regular file without blocking on a FIFO, optionally capping bytes."""
+    flags = os.O_RDONLY | os.O_NONBLOCK | os.O_CLOEXEC
+    if nofollow:
+        flags |= os.O_NOFOLLOW
+    fd = os.open(path, flags)
+    try:
+        info = os.fstat(fd)
+        if not stat.S_ISREG(info.st_mode):
+            raise OSError(errno.EINVAL, "not a regular file", path)
+        if check_stat is not None:
+            check_stat(info)
+        chunks = []
+        total = 0
+        while limit is None or total < limit:
+            size = 65536 if limit is None else min(65536, limit - total)
+            chunk = os.read(fd, size)
+            if not chunk:
+                break
+            chunks.append(chunk)
+            total += len(chunk)
+        return b"".join(chunks)
+    finally:
+        os.close(fd)
+
+
 def read_cpu_flags(path: str) -> frozenset:
     """Intersection of every flags line. One CPU without the flag rejects it."""
     if not path:
         return frozenset()
     try:
-        with open(path, "rb") as handle:
-            blob = handle.read(_CPUINFO_READ_MAX + 1)
+        blob = _read_regular_bytes(path, _CPUINFO_READ_MAX + 1)
     except OSError:
         return frozenset()
     text = blob[:_CPUINFO_READ_MAX].decode("utf-8", "replace")
@@ -684,6 +720,7 @@ def read_cpu_flags(path: str) -> frozenset:
 # sched_getaffinity and cpuset lists name processors in this range. A bind
 # mask with a bit past it is ignored rather than applied in part.
 _CPU_ID_MAX = 4096
+_DECIMAL_CAP = 1 << 64
 _CPU_ITEM_RE = re.compile(r"[0-9]+(?:-[0-9]+)?")
 _CPU_HOSTLIST_RE = re.compile(r"(?:cpu)?\[([^\[\]]+)\]", re.IGNORECASE)
 _PROCESSOR_LINE_RE = re.compile(r"(?i)^processor[ \t]*:[ \t]*(\d+)\s*$")
@@ -699,6 +736,22 @@ _IDENTITY_KEYS = frozenset(
         "mvendorid",
     )
 )
+
+
+def _decimal_value(digits: str) -> int:
+    """``int(digits)`` for text of decimal digits, at most ``_DECIMAL_CAP``.
+
+    ``int`` refuses more digits than ``sys.get_int_max_str_digits()``, leading
+    zeros included, and raises ValueError. A processor number is far below
+    the cap, so a long run of digits is read one digit at a time and a value
+    past the cap is the cap. The Zig guard reads such text the same way.
+    """
+    if len(digits) <= 600:
+        return int(digits)
+    value = 0
+    for char in digits:
+        value = min(value * 10 + unicodedata.decimal(char), _DECIMAL_CAP)
+    return value
 
 
 def _hex_mask_cpus(text: str) -> Optional[frozenset]:
@@ -761,12 +814,12 @@ def parse_cpu_spec(text: str) -> Optional[frozenset]:
             return None
         if "-" in part:
             left, right = part.split("-", 1)
-            start, end = int(left), int(right)
+            start, end = _decimal_value(left), _decimal_value(right)
             if end < start or end >= _CPU_ID_MAX:
                 return None
             found.update(range(start, end + 1))
         else:
-            cpu = int(part)
+            cpu = _decimal_value(part)
             if cpu >= _CPU_ID_MAX:
                 return None
             found.add(cpu)
@@ -1117,7 +1170,7 @@ def scope_cpuinfo(
         if match:
             if current is not None:
                 blocks.append(current)
-            current = {"id": int(match.group(1)), "lines": [line]}
+            current = {"id": _decimal_value(match.group(1)), "lines": [line]}
         elif current is not None:
             current["lines"].append(line)
     if current is not None:
@@ -1165,10 +1218,18 @@ def scope_cpuinfo(
         return values[0]
 
     def intersection(norm: str) -> str:
+        # A kept record can repeat flags, features, or isa. value_map keeps
+        # only the first line, which is enough to decide whether two whole
+        # records match. The emitted line has to drop a token any of those
+        # lines lacks, or a richer first line puts waitpkg back.
         common: Optional[set] = None
-        for item in maps:
-            tokens = set(item.get(norm, "").split())
-            common = tokens if common is None else common & tokens
+        for fields in parsed:
+            values = [value for key, _raw, value in fields if key == norm]
+            if not values:
+                values = [""]
+            for value in values:
+                tokens = set(value.split())
+                common = tokens if common is None else common & tokens
         if not common:
             return ""
         return " ".join(sorted(common))
@@ -1201,8 +1262,7 @@ def _prepare_cpuinfo(env: Mapping[str, str]) -> Tuple[str, Optional[str], Mappin
     if allowed is None:
         return path, None, env
     try:
-        with open(path, "rb") as handle:
-            blob = handle.read(_CPUINFO_READ_MAX + 1)
+        blob = _read_regular_bytes(path, _CPUINFO_READ_MAX + 1)
     except OSError:
         return path, None, env
     text = blob[:_CPUINFO_READ_MAX].decode("utf-8", "replace")
@@ -2733,6 +2793,15 @@ def _invoked_path(argv: Sequence[str]) -> str:
     return __file__
 
 
+class _ConfigChangedError(Exception):
+    pass
+
+
+def _check_trusted_config_stat(info: os.stat_result) -> None:
+    if info.st_uid != 0 or info.st_mode & 0o022:
+        raise _ConfigChangedError()
+
+
 def site_config(script_path: str) -> Tuple[Optional[Dict[str, str]], Optional[str]]:
     """Return (settings, warning). The first existing candidate wins."""
     path = _config_candidate_path(script_path)
@@ -2742,8 +2811,13 @@ def site_config(script_path: str) -> Tuple[Optional[Dict[str, str]], Optional[st
     if reason:
         return None, "eessi-arch-guard: config ignored: " + reason
     try:
-        with open(path, "rb") as handle:
-            blob = handle.read()
+        blob = _read_regular_bytes(
+            path,
+            nofollow=True,
+            check_stat=_check_trusted_config_stat,
+        )
+    except _ConfigChangedError:
+        return None, "eessi-arch-guard: config ignored: %s changed while it was read" % path
     except OSError as exc:
         return None, "eessi-arch-guard: config ignored: %s" % exc
     settings, bad = parse_config_bytes(blob)

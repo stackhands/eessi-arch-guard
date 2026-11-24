@@ -1,0 +1,1 @@
+The Zig guard picks its temporary directory with the shared `fsx.TempDir` chooser, for the check-submit planner directory, the scoped cpuinfo copy and the last fallback of the restore workspace. That chooser probes each candidate with a file write, as Python's `tempfile.gettempdir` does. When no candidate takes a file, check-submit reports the same error text as the Python guard.

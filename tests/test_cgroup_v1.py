@@ -10,6 +10,7 @@ from unittest import mock
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 import eessi_arch_guard as guard  # noqa: E402
+import private_tmp  # noqa: E402, F401
 
 
 class CgroupV1ProcTree(unittest.TestCase):

@@ -15,6 +15,7 @@ import signal
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import unittest
 from pathlib import Path
@@ -211,7 +212,8 @@ class IntegrationTests(unittest.TestCase):
         self.site.write_cpuinfo("zen2")
         env = self._cpu_env(ZEN4, "zen2")
         env["TMPDIR"] = os.path.join(self.site.root, "not-created-yet")
-        env["SLURM_JOB_ID"] = "424242"
+        # The cache lands in the shared /tmp, so the job is this process alone.
+        env["SLURM_JOB_ID"] = "4242%d" % os.getpid()
         env["SLURM_STEP_ID"] = "batch"
         path = guard.cache_file_path(env)
         self.assertIsNotNone(path)
@@ -1052,25 +1054,51 @@ class IntegrationTests(unittest.TestCase):
                 except OSError:
                     pass
 
-    def test_killed_helper_leaves_no_tmp_directory(self):
-        before = set(Path("/tmp").glob("eessi-arch-guard-*"))
+    def _killed_helper_run(self, foreign=None):
+        """Kill the helper by timeout and list its private temporary directory.
+
+        The directory belongs to this test alone, so the listing cannot see a
+        temporary directory made by a test that runs at the same time. A
+        ``foreign`` callable runs in a thread while the guard runs, standing
+        for such a test.
+        """
+        private = os.path.join(self.site.root, "tmp")
+        os.mkdir(private)
         env = self._cpu_env(ZEN4, "zen2")
-        env["TMPDIR"] = self.site.root
+        env["TMPDIR"] = private
         env["SLURM_JOB_ID"] = "6363"
         env["EESSI_TEST_APPLY_HANG"] = "30"
+        before = set(Path(private).glob("eessi-arch-guard-*"))
+        worker = threading.Thread(target=foreign) if foreign else None
+        if worker:
+            worker.start()
         started = time.monotonic()
         proc = harness.run_guard(env, ["--timeout", "1"])
         elapsed = time.monotonic() - started
+        if worker:
+            worker.join()
+        changes, _printed = _assert_prolog(proc)
+        self.assertLess(elapsed, _stop_limit(1))
+        self.assertTrue(changes["EESSI_ARCH_GUARD_FAILED"].endswith("->timeout"))
+        return before, set(Path(private).glob("eessi-arch-guard-*"))
+
+    def test_killed_helper_leaves_no_tmp_directory(self):
+        before, after = self._killed_helper_run()
+        self.assertEqual(before, after)
+
+    def test_tmp_leak_check_ignores_directories_of_other_tests(self):
+        made = []
+
+        def foreign():
+            made.append(tempfile.mkdtemp(prefix="eessi-arch-guard-foreign-"))
+
         try:
-            changes, _printed = _assert_prolog(proc)
-            self.assertLess(elapsed, _stop_limit(1))
-            self.assertTrue(changes["EESSI_ARCH_GUARD_FAILED"].endswith("->timeout"))
-            after = set(Path("/tmp").glob("eessi-arch-guard-*"))
+            before, after = self._killed_helper_run(foreign)
+            self.assertEqual(len(made), 1)
             self.assertEqual(before, after)
         finally:
-            for path in Path("/tmp").glob("eessi-arch-guard-*"):
-                if path not in before:
-                    shutil.rmtree(path, ignore_errors=True)
+            for path in made:
+                shutil.rmtree(path, ignore_errors=True)
 
     def test_config_timeout_bounds_the_decision(self):
         conf = harness.PROGRAM.with_name("eessi-arch-guard.conf")
@@ -1299,6 +1327,34 @@ class IntegrationTests(unittest.TestCase):
         _assert_prolog(proc)
         self.assertEqual(proc.stdout, "")
 
+    def test_emeraldrapids_without_waitpkg_falls_back(self):
+        # GCC's emeraldrapids march is the Sapphire Rapids mask, including
+        # waitpkg. A candidate with that leaf has to be dropped when the
+        # shared flags omit it, the same way sapphirerapids is dropped.
+        emr = "x86_64/intel/emeraldrapids"
+        icelake = "x86_64/intel/icelake"
+        self.site.add_cpu(emr)
+        self.site.add_cpu(icelake)
+        self.site.add_module(emr, "R/4.4.2")
+        self.site.add_module(icelake, "R/4.4.2")
+        self._copy_cpuinfo("sapphirerapids-kvm-no-waitpkg.cpuinfo")
+        script = Path(self.site.init) / "eessi_archdetect.sh"
+        script.write_text(
+            "#!/bin/sh\n"
+            'if [ "$2" = cpupath ]; then\n'
+            "  printf '%%s\\n' '%s:%s'\n"
+            "fi\n" % (emr, icelake),
+            encoding="utf-8",
+        )
+        script.chmod(0o755)
+        env = harness.base_env(self.site, emr, ["R/4.4.2"], gpu="none")
+        proc = harness.run_guard(env)
+        changes, _printed = _assert_prolog(proc)
+        self.assertEqual(changes.get("EESSI_SOFTWARE_SUBDIR"), icelake, proc.stdout)
+        self.assertEqual(
+            changes.get("EESSI_SOFTWARE_SUBDIR_OVERRIDE"), icelake, proc.stdout
+        )
+
     def test_graniterapids_without_waitpkg_falls_back(self):
         spr = "x86_64/intel/sapphirerapids"
         gnr = "x86_64/intel/graniterapids"
@@ -1360,6 +1416,61 @@ class IntegrationTests(unittest.TestCase):
         changes, _printed = _assert_prolog(proc)
         self.assertEqual(changes["EESSI_SOFTWARE_SUBDIR"], icelake)
         self.assertEqual(changes["EESSI_SOFTWARE_SUBDIR_OVERRIDE"], icelake)
+
+    def test_scoped_processor_intersects_repeated_flags_lines(self):
+        # Processor `target` lists a Sapphire Rapids flags line and then an
+        # Ice Lake line. A second processor is outside the bind list, so the
+        # file is rewritten. The rewritten record must keep the flags both
+        # lines share. The first line alone still names Sapphire Rapids.
+        spr = "x86_64/intel/sapphirerapids"
+        icelake = "x86_64/intel/icelake"
+        sched = guard.sched_cpus()
+        if not sched:
+            self.skipTest("sched_getaffinity returned no CPUs")
+        pool = set(sched)
+        cgroup = guard.cgroup_cpus()
+        if cgroup is not None:
+            pool &= set(cgroup)
+        if not pool:
+            self.skipTest("no processor is in both the affinity mask and the cgroup cpuset")
+        target = min(pool)
+        other = 4095 if target != 4095 else 4094
+        rich = (
+            "avx2 fma avx512f avx512bw avx512cd avx512dq avx512vl "
+            "avx512_vnni avx512_vbmi2 avx512_bf16 amx_tile waitpkg"
+        )
+        shared = (
+            "avx2 fma avx512f avx512bw avx512cd avx512dq avx512vl "
+            "avx512_vnni avx512_vbmi2"
+        )
+        self.site.add_cpu(spr)
+        self.site.add_cpu(icelake)
+        self.site.add_module(spr, "R/4.4.2")
+        self.site.add_module(icelake, "R/4.4.2")
+        cpuinfo = "\n".join(
+            (
+                "processor : %d" % target,
+                "vendor_id : GenuineIntel",
+                "cpu family : 6",
+                "model : 143",
+                "flags : " + rich,
+                "flags : " + shared,
+                "",
+                "processor : %d" % other,
+                "vendor_id : GenuineIntel",
+                "cpu family : 6",
+                "model : 143",
+                "flags : " + rich,
+                "",
+            )
+        )
+        with open(self.site.cpuinfo, "w", encoding="ascii") as handle:
+            handle.write(cpuinfo)
+        env = harness.base_env(self.site, spr, ["R/4.4.2"], gpu="none")
+        env["SLURM_CPU_BIND_LIST"] = str(target)
+        proc = harness.run_guard(env)
+        changes, _printed = _assert_prolog(proc)
+        self.assertEqual(changes.get("EESSI_SOFTWARE_SUBDIR"), icelake, proc.stdout)
 
     def test_real_emeraldrapids_kvm_cpuinfo_and_offline_gaps_fall_back(self):
         spr = "x86_64/intel/sapphirerapids"
@@ -1633,6 +1744,73 @@ class IntegrationTests(unittest.TestCase):
             self.assertEqual(Path(seen).parent, Path(tmpdir), seen)
             self.assertTrue(Path(seen).name.startswith("eessi-arch-guard-cpu-"), seen)
             self.assertFalse(Path(seen).exists())
+
+    def test_prepare_cpuinfo_rejects_fifo_and_directory(self):
+        script = Path(self.site.init) / "eessi_archdetect.sh"
+        script.write_text(
+            '#!/bin/sh\ncase "$*" in\n'
+            "*cpupath*) echo x86_64/amd/zen4 ;;\n"
+            "*) exit 2 ;;\nesac\n",
+            encoding="utf-8",
+        )
+        script.chmod(0o755)
+        fifo = Path(self.site.root) / "cpu.fifo"
+        os.mkfifo(fifo, 0o600)
+        directory = Path(self.site.root) / "cpu.dir"
+        directory.mkdir()
+        for path in (fifo, directory):
+            with self.subTest(path=path.name):
+                env = harness.base_env(self.site, ZEN4, [], gpu="none")
+                env["EESSI_PROC_CPUINFO"] = str(path)
+                env["SLURM_CPU_BIND_LIST"] = "0"
+                proc = harness.run_with_timeout(
+                    [*harness.GUARD_ARGV, "--dry-run", "--json"],
+                    env=env,
+                    timeout=1.5,
+                )
+                self.assertEqual(proc.returncode, 0, proc.stderr)
+                self.assertEqual(proc.stderr, "")
+                doc = json.loads(proc.stdout)
+                self.assertEqual(doc["decision"], "noop")
+
+    def test_buffered_fifo_cpuinfo_is_rejected(self):
+        cpus = sorted(os.sched_getaffinity(0))
+        if len(cpus) < 2:
+            self.skipTest("the buffered FIFO test needs two processors")
+        first, selected = cpus[:2]
+        cpuinfo = (
+            f"processor : {first}\n"
+            "vendor_id : AuthenticAMD\n"
+            "model name : AMD EPYC 7702 64-Core Processor\n"
+            "flags : fpu avx2 fma\n\n"
+            f"processor : {selected}\n"
+            "vendor_id : AuthenticAMD\n"
+            "model name : AMD EPYC 9654 96-Core Processor\n"
+            "flags : fpu avx2 fma vaes avx512f avx512ifma\n"
+        ).encode("ascii")
+        fifo = Path(self.site.root) / "buffered-cpuinfo.fifo"
+        os.mkfifo(fifo, 0o600)
+        keeper = os.open(fifo, os.O_RDONLY | os.O_NONBLOCK)
+        try:
+            writer = os.open(fifo, os.O_WRONLY | os.O_NONBLOCK)
+            try:
+                self.assertEqual(os.write(writer, cpuinfo), len(cpuinfo))
+            finally:
+                os.close(writer)
+            env = harness.base_env(self.site, ZEN4, [], gpu="none")
+            env["EESSI_PROC_CPUINFO"] = str(fifo)
+            env["SLURM_CPU_BIND_LIST"] = str(selected)
+            proc = harness.run_with_timeout(
+                [*harness.GUARD_ARGV, "--dry-run", "--json", "--timeout", "0.2"],
+                env=env,
+                timeout=3.0,
+            )
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            doc = json.loads(proc.stdout)
+            self.assertEqual(doc["decision"], "failed")
+            self.assertTrue(doc["marker"].endswith("->timeout"), doc)
+        finally:
+            os.close(keeper)
 
     def test_oversized_processor_id_does_not_bypass_cpu_scoping(self):
         spr = "x86_64/intel/sapphirerapids"

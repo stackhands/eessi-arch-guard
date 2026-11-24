@@ -1,0 +1,906 @@
+[
+  {
+    "name": "empty",
+    "input_hex": "",
+    "code": 1,
+    "stdout": "",
+    "stderr": "eessi-arch-guard: restore failed: Expecting value: line 1 column 1 (char 0)\n",
+    "exc": "Expecting value: line 1 column 1 (char 0)"
+  },
+  {
+    "name": "spaces",
+    "input_hex": "202020",
+    "code": 1,
+    "stdout": "",
+    "stderr": "eessi-arch-guard: restore failed: Expecting value: line 1 column 4 (char 3)\n",
+    "exc": "Expecting value: line 1 column 4 (char 3)"
+  },
+  {
+    "name": "newlines",
+    "input_hex": "0a0a",
+    "code": 1,
+    "stdout": "",
+    "stderr": "eessi-arch-guard: restore failed: Expecting value: line 3 column 1 (char 2)\n",
+    "exc": "Expecting value: line 3 column 1 (char 2)"
+  },
+  {
+    "name": "truncated-object",
+    "input_hex": "7b",
+    "code": 1,
+    "stdout": "",
+    "stderr": "eessi-arch-guard: restore failed: Expecting property name enclosed in double quotes: line 1 column 2 (char 1)\n",
+    "exc": "Expecting property name enclosed in double quotes: line 1 column 2 (char 1)"
+  },
+  {
+    "name": "truncated-array",
+    "input_hex": "5b",
+    "code": 1,
+    "stdout": "",
+    "stderr": "eessi-arch-guard: restore failed: Expecting value: line 1 column 2 (char 1)\n",
+    "exc": "Expecting value: line 1 column 2 (char 1)"
+  },
+  {
+    "name": "truncated-key",
+    "input_hex": "7b226122",
+    "code": 1,
+    "stdout": "",
+    "stderr": "eessi-arch-guard: restore failed: Expecting ':' delimiter: line 1 column 5 (char 4)\n",
+    "exc": "Expecting ':' delimiter: line 1 column 5 (char 4)"
+  },
+  {
+    "name": "truncated-colon",
+    "input_hex": "7b2261223a",
+    "code": 1,
+    "stdout": "",
+    "stderr": "eessi-arch-guard: restore failed: Expecting value: line 1 column 6 (char 5)\n",
+    "exc": "Expecting value: line 1 column 6 (char 5)"
+  },
+  {
+    "name": "truncated-string",
+    "input_hex": "226869",
+    "code": 1,
+    "stdout": "",
+    "stderr": "eessi-arch-guard: restore failed: Unterminated string starting at: line 1 column 1 (char 0)\n",
+    "exc": "Unterminated string starting at: line 1 column 1 (char 0)"
+  },
+  {
+    "name": "truncated-string-escape",
+    "input_hex": "2268695c",
+    "code": 1,
+    "stdout": "",
+    "stderr": "eessi-arch-guard: restore failed: Unterminated string starting at: line 1 column 1 (char 0)\n",
+    "exc": "Unterminated string starting at: line 1 column 1 (char 0)"
+  },
+  {
+    "name": "not-json-object",
+    "input_hex": "7b6e6f74206a736f6e",
+    "code": 1,
+    "stdout": "",
+    "stderr": "eessi-arch-guard: restore failed: Expecting property name enclosed in double quotes: line 1 column 2 (char 1)\n",
+    "exc": "Expecting property name enclosed in double quotes: line 1 column 2 (char 1)"
+  },
+  {
+    "name": "not-object-array",
+    "input_hex": "5b5d",
+    "code": 1,
+    "stdout": "",
+    "stderr": "eessi-arch-guard: restore failed: 'list' object has no attribute 'get'\n",
+    "exc": null
+  },
+  {
+    "name": "not-object-string",
+    "input_hex": "22686922",
+    "code": 1,
+    "stdout": "",
+    "stderr": "eessi-arch-guard: restore failed: 'str' object has no attribute 'get'\n",
+    "exc": null
+  },
+  {
+    "name": "not-object-int",
+    "input_hex": "31",
+    "code": 1,
+    "stdout": "",
+    "stderr": "eessi-arch-guard: restore failed: 'int' object has no attribute 'get'\n",
+    "exc": null
+  },
+  {
+    "name": "not-object-float",
+    "input_hex": "312e35",
+    "code": 1,
+    "stdout": "",
+    "stderr": "eessi-arch-guard: restore failed: 'float' object has no attribute 'get'\n",
+    "exc": null
+  },
+  {
+    "name": "not-object-exp",
+    "input_hex": "316532",
+    "code": 1,
+    "stdout": "",
+    "stderr": "eessi-arch-guard: restore failed: 'float' object has no attribute 'get'\n",
+    "exc": null
+  },
+  {
+    "name": "not-object-true",
+    "input_hex": "74727565",
+    "code": 1,
+    "stdout": "",
+    "stderr": "eessi-arch-guard: restore failed: 'bool' object has no attribute 'get'\n",
+    "exc": null
+  },
+  {
+    "name": "not-object-false",
+    "input_hex": "66616c7365",
+    "code": 1,
+    "stdout": "",
+    "stderr": "eessi-arch-guard: restore failed: 'bool' object has no attribute 'get'\n",
+    "exc": null
+  },
+  {
+    "name": "not-object-null",
+    "input_hex": "6e756c6c",
+    "code": 1,
+    "stdout": "",
+    "stderr": "eessi-arch-guard: restore failed: 'NoneType' object has no attribute 'get'\n",
+    "exc": null
+  },
+  {
+    "name": "nan",
+    "input_hex": "4e614e",
+    "code": 1,
+    "stdout": "",
+    "stderr": "eessi-arch-guard: restore failed: NaN is not JSON\n",
+    "exc": "NaN is not JSON"
+  },
+  {
+    "name": "infinity",
+    "input_hex": "496e66696e697479",
+    "code": 1,
+    "stdout": "",
+    "stderr": "eessi-arch-guard: restore failed: Infinity is not JSON\n",
+    "exc": "Infinity is not JSON"
+  },
+  {
+    "name": "neg-infinity",
+    "input_hex": "2d496e66696e697479",
+    "code": 1,
+    "stdout": "",
+    "stderr": "eessi-arch-guard: restore failed: -Infinity is not JSON\n",
+    "exc": "-Infinity is not JSON"
+  },
+  {
+    "name": "nested-nan",
+    "input_hex": "7b2261223a204e614e7d",
+    "code": 1,
+    "stdout": "",
+    "stderr": "eessi-arch-guard: restore failed: NaN is not JSON\n",
+    "exc": "NaN is not JSON"
+  },
+  {
+    "name": "array-infinity",
+    "input_hex": "5b496e66696e6974795d",
+    "code": 1,
+    "stdout": "",
+    "stderr": "eessi-arch-guard: restore failed: Infinity is not JSON\n",
+    "exc": "Infinity is not JSON"
+  },
+  {
+    "name": "nan-trailing",
+    "input_hex": "4e614e2078",
+    "code": 1,
+    "stdout": "",
+    "stderr": "eessi-arch-guard: restore failed: NaN is not JSON\n",
+    "exc": "NaN is not JSON"
+  },
+  {
+    "name": "bad-escape",
+    "input_hex": "225c7122",
+    "code": 1,
+    "stdout": "",
+    "stderr": "eessi-arch-guard: restore failed: Invalid \\escape: line 1 column 2 (char 1)\n",
+    "exc": "Invalid \\escape: line 1 column 2 (char 1)"
+  },
+  {
+    "name": "short-u-escape",
+    "input_hex": "225c75313222",
+    "code": 1,
+    "stdout": "",
+    "stderr": "eessi-arch-guard: restore failed: Invalid \\uXXXX escape: line 1 column 3 (char 2)\n",
+    "exc": "Invalid \\uXXXX escape: line 1 column 3 (char 2)"
+  },
+  {
+    "name": "bad-u-escape",
+    "input_hex": "225c755858585822",
+    "code": 1,
+    "stdout": "",
+    "stderr": "eessi-arch-guard: restore failed: Invalid \\uXXXX escape: line 1 column 3 (char 2)\n",
+    "exc": "Invalid \\uXXXX escape: line 1 column 3 (char 2)"
+  },
+  {
+    "name": "bad-surrogate-pair",
+    "input_hex": "225c75443830305c755a5a5a5a7822",
+    "code": 1,
+    "stdout": "",
+    "stderr": "eessi-arch-guard: restore failed: Invalid \\uXXXX escape: line 1 column 9 (char 8)\n",
+    "exc": "Invalid \\uXXXX escape: line 1 column 9 (char 8)"
+  },
+  {
+    "name": "control-in-string",
+    "input_hex": "220122",
+    "code": 1,
+    "stdout": "",
+    "stderr": "eessi-arch-guard: restore failed: Invalid control character at: line 1 column 2 (char 1)\n",
+    "exc": "Invalid control character at: line 1 column 2 (char 1)"
+  },
+  {
+    "name": "control-raw",
+    "input_hex": "01",
+    "code": 1,
+    "stdout": "",
+    "stderr": "eessi-arch-guard: restore failed: Expecting value: line 1 column 1 (char 0)\n",
+    "exc": "Expecting value: line 1 column 1 (char 0)"
+  },
+  {
+    "name": "del-in-string",
+    "input_hex": "227f22",
+    "code": 1,
+    "stdout": "",
+    "stderr": "eessi-arch-guard: restore failed: 'str' object has no attribute 'get'\n",
+    "exc": null
+  },
+  {
+    "name": "formfeed",
+    "input_hex": "0c7b7d",
+    "code": 1,
+    "stdout": "",
+    "stderr": "eessi-arch-guard: restore failed: Expecting value: line 1 column 1 (char 0)\n",
+    "exc": "Expecting value: line 1 column 1 (char 0)"
+  },
+  {
+    "name": "bom",
+    "input_hex": "efbbbf7b7d",
+    "code": 1,
+    "stdout": "",
+    "stderr": "eessi-arch-guard: restore failed: Unexpected UTF-8 BOM (decode using utf-8-sig): line 1 column 1 (char 0)\n",
+    "exc": "Unexpected UTF-8 BOM (decode using utf-8-sig): line 1 column 1 (char 0)"
+  },
+  {
+    "name": "bom-after-space",
+    "input_hex": "20efbbbf7b7d",
+    "code": 1,
+    "stdout": "",
+    "stderr": "eessi-arch-guard: restore failed: Expecting value: line 1 column 2 (char 1)\n",
+    "exc": "Expecting value: line 1 column 2 (char 1)"
+  },
+  {
+    "name": "leading-zero",
+    "input_hex": "3031",
+    "code": 1,
+    "stdout": "",
+    "stderr": "eessi-arch-guard: restore failed: Extra data: line 1 column 2 (char 1)\n",
+    "exc": "Extra data: line 1 column 2 (char 1)"
+  },
+  {
+    "name": "neg-leading-zero",
+    "input_hex": "2d3031",
+    "code": 1,
+    "stdout": "",
+    "stderr": "eessi-arch-guard: restore failed: Extra data: line 1 column 3 (char 2)\n",
+    "exc": "Extra data: line 1 column 3 (char 2)"
+  },
+  {
+    "name": "number-dot",
+    "input_hex": "312e",
+    "code": 1,
+    "stdout": "",
+    "stderr": "eessi-arch-guard: restore failed: Extra data: line 1 column 2 (char 1)\n",
+    "exc": "Extra data: line 1 column 2 (char 1)"
+  },
+  {
+    "name": "number-exp",
+    "input_hex": "3165",
+    "code": 1,
+    "stdout": "",
+    "stderr": "eessi-arch-guard: restore failed: Extra data: line 1 column 2 (char 1)\n",
+    "exc": "Extra data: line 1 column 2 (char 1)"
+  },
+  {
+    "name": "number-exp-sign",
+    "input_hex": "31652b",
+    "code": 1,
+    "stdout": "",
+    "stderr": "eessi-arch-guard: restore failed: Extra data: line 1 column 2 (char 1)\n",
+    "exc": "Extra data: line 1 column 2 (char 1)"
+  },
+  {
+    "name": "lone-minus",
+    "input_hex": "2d",
+    "code": 1,
+    "stdout": "",
+    "stderr": "eessi-arch-guard: restore failed: Expecting value: line 1 column 1 (char 0)\n",
+    "exc": "Expecting value: line 1 column 1 (char 0)"
+  },
+  {
+    "name": "trailing-comma-array",
+    "input_hex": "5b312c5d",
+    "code": 1,
+    "stdout": "",
+    "stderr": "eessi-arch-guard: restore failed: Illegal trailing comma before end of array: line 1 column 3 (char 2)\n",
+    "exc": "Illegal trailing comma before end of array: line 1 column 3 (char 2)"
+  },
+  {
+    "name": "trailing-comma-object",
+    "input_hex": "7b2261223a312c7d",
+    "code": 1,
+    "stdout": "",
+    "stderr": "eessi-arch-guard: restore failed: Illegal trailing comma before end of object: line 1 column 7 (char 6)\n",
+    "exc": "Illegal trailing comma before end of object: line 1 column 7 (char 6)"
+  },
+  {
+    "name": "trailing-comma-space",
+    "input_hex": "7b2261223a312c207d",
+    "code": 1,
+    "stdout": "",
+    "stderr": "eessi-arch-guard: restore failed: Illegal trailing comma before end of object: line 1 column 7 (char 6)\n",
+    "exc": "Illegal trailing comma before end of object: line 1 column 7 (char 6)"
+  },
+  {
+    "name": "missing-colon",
+    "input_hex": "7b2261227d",
+    "code": 1,
+    "stdout": "",
+    "stderr": "eessi-arch-guard: restore failed: Expecting ':' delimiter: line 1 column 5 (char 4)\n",
+    "exc": "Expecting ':' delimiter: line 1 column 5 (char 4)"
+  },
+  {
+    "name": "missing-value",
+    "input_hex": "7b2261223a7d",
+    "code": 1,
+    "stdout": "",
+    "stderr": "eessi-arch-guard: restore failed: Expecting value: line 1 column 6 (char 5)\n",
+    "exc": "Expecting value: line 1 column 6 (char 5)"
+  },
+  {
+    "name": "array-close-brace",
+    "input_hex": "5b312c327d",
+    "code": 1,
+    "stdout": "",
+    "stderr": "eessi-arch-guard: restore failed: Expecting ',' delimiter: line 1 column 5 (char 4)\n",
+    "exc": "Expecting ',' delimiter: line 1 column 5 (char 4)"
+  },
+  {
+    "name": "missing-comma",
+    "input_hex": "7b2261223a31202262223a327d",
+    "code": 1,
+    "stdout": "",
+    "stderr": "eessi-arch-guard: restore failed: Expecting ',' delimiter: line 1 column 8 (char 7)\n",
+    "exc": "Expecting ',' delimiter: line 1 column 8 (char 7)"
+  },
+  {
+    "name": "nul-literal",
+    "input_hex": "6e756c",
+    "code": 1,
+    "stdout": "",
+    "stderr": "eessi-arch-guard: restore failed: Expecting value: line 1 column 1 (char 0)\n",
+    "exc": "Expecting value: line 1 column 1 (char 0)"
+  },
+  {
+    "name": "true-capital",
+    "input_hex": "54727565",
+    "code": 1,
+    "stdout": "",
+    "stderr": "eessi-arch-guard: restore failed: Expecting value: line 1 column 1 (char 0)\n",
+    "exc": "Expecting value: line 1 column 1 (char 0)"
+  },
+  {
+    "name": "single-quote",
+    "input_hex": "277827",
+    "code": 1,
+    "stdout": "",
+    "stderr": "eessi-arch-guard: restore failed: Expecting value: line 1 column 1 (char 0)\n",
+    "exc": "Expecting value: line 1 column 1 (char 0)"
+  },
+  {
+    "name": "array-newline-comma",
+    "input_hex": "5b0a312c0a",
+    "code": 1,
+    "stdout": "",
+    "stderr": "eessi-arch-guard: restore failed: Expecting value: line 3 column 1 (char 5)\n",
+    "exc": "Expecting value: line 3 column 1 (char 5)"
+  },
+  {
+    "name": "leading-newline-array",
+    "input_hex": "0a5b",
+    "code": 1,
+    "stdout": "",
+    "stderr": "eessi-arch-guard: restore failed: Expecting value: line 2 column 2 (char 2)\n",
+    "exc": "Expecting value: line 2 column 2 (char 2)"
+  },
+  {
+    "name": "extra-data",
+    "input_hex": "312032",
+    "code": 1,
+    "stdout": "",
+    "stderr": "eessi-arch-guard: restore failed: Extra data: line 1 column 3 (char 2)\n",
+    "exc": "Extra data: line 1 column 3 (char 2)"
+  },
+  {
+    "name": "extra-data-object",
+    "input_hex": "7b2261223a317d0a7b7d",
+    "code": 1,
+    "stdout": "",
+    "stderr": "eessi-arch-guard: restore failed: Extra data: line 2 column 1 (char 8)\n",
+    "exc": "Extra data: line 2 column 1 (char 8)"
+  },
+  {
+    "name": "extra-data-values",
+    "input_hex": "7b2261223a317d7b7d",
+    "code": 1,
+    "stdout": "",
+    "stderr": "eessi-arch-guard: restore failed: Extra data: line 1 column 8 (char 7)\n",
+    "exc": "Extra data: line 1 column 8 (char 7)"
+  },
+  {
+    "name": "object-comma",
+    "input_hex": "7b2c",
+    "code": 1,
+    "stdout": "",
+    "stderr": "eessi-arch-guard: restore failed: Expecting property name enclosed in double quotes: line 1 column 2 (char 1)\n",
+    "exc": "Expecting property name enclosed in double quotes: line 1 column 2 (char 1)"
+  },
+  {
+    "name": "array-comma",
+    "input_hex": "5b2c",
+    "code": 1,
+    "stdout": "",
+    "stderr": "eessi-arch-guard: restore failed: Expecting value: line 1 column 2 (char 1)\n",
+    "exc": "Expecting value: line 1 column 2 (char 1)"
+  },
+  {
+    "name": "bare-close-array",
+    "input_hex": "5d",
+    "code": 1,
+    "stdout": "",
+    "stderr": "eessi-arch-guard: restore failed: Expecting value: line 1 column 1 (char 0)\n",
+    "exc": "Expecting value: line 1 column 1 (char 0)"
+  },
+  {
+    "name": "bare-close-object",
+    "input_hex": "7d",
+    "code": 1,
+    "stdout": "",
+    "stderr": "eessi-arch-guard: restore failed: Expecting value: line 1 column 1 (char 0)\n",
+    "exc": "Expecting value: line 1 column 1 (char 0)"
+  },
+  {
+    "name": "nested-mismatch",
+    "input_hex": "7b2261223a205b312c20327d",
+    "code": 1,
+    "stdout": "",
+    "stderr": "eessi-arch-guard: restore failed: Expecting ',' delimiter: line 1 column 12 (char 11)\n",
+    "exc": "Expecting ',' delimiter: line 1 column 12 (char 11)"
+  },
+  {
+    "name": "lone-surrogate-string",
+    "input_hex": "225c754438303022",
+    "code": 1,
+    "stdout": "",
+    "stderr": "eessi-arch-guard: restore failed: 'str' object has no attribute 'get'\n",
+    "exc": null
+  },
+  {
+    "name": "surrogate-pair-string",
+    "input_hex": "225c75443830305c754443303022",
+    "code": 1,
+    "stdout": "",
+    "stderr": "eessi-arch-guard: restore failed: 'str' object has no attribute 'get'\n",
+    "exc": null
+  },
+  {
+    "name": "lone-surrogate-bad-escape",
+    "input_hex": "225c75443830305c7122",
+    "code": 1,
+    "stdout": "",
+    "stderr": "eessi-arch-guard: restore failed: Invalid \\escape: line 1 column 8 (char 7)\n",
+    "exc": "Invalid \\escape: line 1 column 8 (char 7)"
+  },
+  {
+    "name": "lone-surrogate-object",
+    "input_hex": "7b2261223a225c7544383030227d",
+    "code": 0,
+    "stdout": "{\"ok\": false, \"missing\": [], \"error\": \"restore request is malformed\"}",
+    "stderr": "",
+    "exc": null
+  },
+  {
+    "name": "array-depth-31",
+    "input_hex": "5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b315d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d",
+    "code": 1,
+    "stdout": "",
+    "stderr": "eessi-arch-guard: restore failed: 'list' object has no attribute 'get'\n",
+    "exc": null
+  },
+  {
+    "name": "array-depth-32",
+    "input_hex": "5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b315d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d",
+    "code": 1,
+    "stdout": "",
+    "stderr": "eessi-arch-guard: restore failed: 'list' object has no attribute 'get'\n",
+    "exc": null
+  },
+  {
+    "name": "array-depth-33",
+    "input_hex": "5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b315d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d5d",
+    "code": 1,
+    "stdout": "",
+    "stderr": "eessi-arch-guard: restore failed: 'list' object has no attribute 'get'\n",
+    "exc": null
+  },
+  {
+    "name": "object-depth-31",
+    "input_hex": "7b226b223a7b226b223a7b226b223a7b226b223a7b226b223a7b226b223a7b226b223a7b226b223a7b226b223a7b226b223a7b226b223a7b226b223a7b226b223a7b226b223a7b226b223a7b226b223a7b226b223a7b226b223a7b226b223a7b226b223a7b226b223a7b226b223a7b226b223a7b226b223a7b226b223a7b226b223a7b226b223a7b226b223a7b226b223a7b226b223a7b226b223a7b7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d",
+    "code": 0,
+    "stdout": "{\"ok\": false, \"missing\": [], \"error\": \"restore request is malformed\"}",
+    "stderr": "",
+    "exc": null
+  },
+  {
+    "name": "object-depth-32",
+    "input_hex": "7b226b223a7b226b223a7b226b223a7b226b223a7b226b223a7b226b223a7b226b223a7b226b223a7b226b223a7b226b223a7b226b223a7b226b223a7b226b223a7b226b223a7b226b223a7b226b223a7b226b223a7b226b223a7b226b223a7b226b223a7b226b223a7b226b223a7b226b223a7b226b223a7b226b223a7b226b223a7b226b223a7b226b223a7b226b223a7b226b223a7b226b223a7b226b223a7b7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d",
+    "code": 0,
+    "stdout": "{\"ok\": false, \"missing\": [], \"error\": \"restore request is malformed\"}",
+    "stderr": "",
+    "exc": null
+  },
+  {
+    "name": "object-depth-33",
+    "input_hex": "7b226b223a7b226b223a7b226b223a7b226b223a7b226b223a7b226b223a7b226b223a7b226b223a7b226b223a7b226b223a7b226b223a7b226b223a7b226b223a7b226b223a7b226b223a7b226b223a7b226b223a7b226b223a7b226b223a7b226b223a7b226b223a7b226b223a7b226b223a7b226b223a7b226b223a7b226b223a7b226b223a7b226b223a7b226b223a7b226b223a7b226b223a7b226b223a7b226b223a7b7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d",
+    "code": 0,
+    "stdout": "{\"ok\": false, \"missing\": [], \"error\": \"restore request is malformed\"}",
+    "stderr": "",
+    "exc": null
+  },
+  {
+    "name": "utf8-scalar-10ffff",
+    "input_hex": "f48fbfbf",
+    "code": 1,
+    "stdout": "",
+    "stderr": "eessi-arch-guard: restore failed: Expecting value: line 1 column 1 (char 0)\n",
+    "exc": "Expecting value: line 1 column 1 (char 0)"
+  },
+  {
+    "name": "multibyte-value",
+    "input_hex": "5bc3a95d",
+    "code": 1,
+    "stdout": "",
+    "stderr": "eessi-arch-guard: restore failed: Expecting value: line 1 column 2 (char 1)\n",
+    "exc": "Expecting value: line 1 column 2 (char 1)"
+  },
+  {
+    "name": "multibyte-escape",
+    "input_hex": "22c3a95c7122",
+    "code": 1,
+    "stdout": "",
+    "stderr": "eessi-arch-guard: restore failed: Invalid \\escape: line 1 column 3 (char 2)\n",
+    "exc": "Invalid \\escape: line 1 column 3 (char 2)"
+  },
+  {
+    "name": "padded-truncated-object",
+    "input_hex": "2020207b",
+    "code": 1,
+    "stdout": "",
+    "stderr": "eessi-arch-guard: restore failed: Expecting property name enclosed in double quotes: line 1 column 5 (char 4)\n",
+    "exc": "Expecting property name enclosed in double quotes: line 1 column 5 (char 4)"
+  },
+  {
+    "name": "empty-object",
+    "input_hex": "7b7d",
+    "code": 0,
+    "stdout": "{\"ok\": false, \"missing\": [], \"error\": \"restore request is malformed\"}",
+    "stderr": "",
+    "exc": null
+  },
+  {
+    "name": "spaced-object",
+    "input_hex": "20207b7d2020",
+    "code": 0,
+    "stdout": "{\"ok\": false, \"missing\": [], \"error\": \"restore request is malformed\"}",
+    "stderr": "",
+    "exc": null
+  },
+  {
+    "name": "unicode-string-object",
+    "input_hex": "7b2261223a22c3a9227d",
+    "code": 0,
+    "stdout": "{\"ok\": false, \"missing\": [], \"error\": \"restore request is malformed\"}",
+    "stderr": "",
+    "exc": null
+  },
+  {
+    "name": "nested-array-object",
+    "input_hex": "7b2261223a5b5d7d",
+    "code": 0,
+    "stdout": "{\"ok\": false, \"missing\": [], \"error\": \"restore request is malformed\"}",
+    "stderr": "",
+    "exc": null
+  },
+  {
+    "name": "bool-object",
+    "input_hex": "7b2261223a20747275657d",
+    "code": 0,
+    "stdout": "{\"ok\": false, \"missing\": [], \"error\": \"restore request is malformed\"}",
+    "stderr": "",
+    "exc": null
+  },
+  {
+    "name": "null-object",
+    "input_hex": "7b2261223a206e756c6c7d",
+    "code": 0,
+    "stdout": "{\"ok\": false, \"missing\": [], \"error\": \"restore request is malformed\"}",
+    "stderr": "",
+    "exc": null
+  },
+  {
+    "name": "int-object",
+    "input_hex": "7b2261223a20317d",
+    "code": 0,
+    "stdout": "{\"ok\": false, \"missing\": [], \"error\": \"restore request is malformed\"}",
+    "stderr": "",
+    "exc": null
+  },
+  {
+    "name": "float-object",
+    "input_hex": "7b2261223a20312e357d",
+    "code": 0,
+    "stdout": "{\"ok\": false, \"missing\": [], \"error\": \"restore request is malformed\"}",
+    "stderr": "",
+    "exc": null
+  },
+  {
+    "name": "invalid-utf8-start",
+    "input_hex": "ff",
+    "code": 1,
+    "stdout": "",
+    "stderr": "eessi-arch-guard: restore failed: 'utf-8' codec can't decode byte 0xff in position 0: invalid start byte\n",
+    "exc": "'utf-8' codec can't decode byte 0xff in position 0: invalid start byte"
+  },
+  {
+    "name": "invalid-utf8-continuation-lead",
+    "input_hex": "80",
+    "code": 1,
+    "stdout": "",
+    "stderr": "eessi-arch-guard: restore failed: 'utf-8' codec can't decode byte 0x80 in position 0: invalid start byte\n",
+    "exc": "'utf-8' codec can't decode byte 0x80 in position 0: invalid start byte"
+  },
+  {
+    "name": "utf8-overlong-c0",
+    "input_hex": "c0",
+    "code": 1,
+    "stdout": "",
+    "stderr": "eessi-arch-guard: restore failed: 'utf-8' codec can't decode byte 0xc0 in position 0: invalid start byte\n",
+    "exc": "'utf-8' codec can't decode byte 0xc0 in position 0: invalid start byte"
+  },
+  {
+    "name": "utf8-overlong-c1",
+    "input_hex": "c1",
+    "code": 1,
+    "stdout": "",
+    "stderr": "eessi-arch-guard: restore failed: 'utf-8' codec can't decode byte 0xc1 in position 0: invalid start byte\n",
+    "exc": "'utf-8' codec can't decode byte 0xc1 in position 0: invalid start byte"
+  },
+  {
+    "name": "utf8-overlong-c0-80",
+    "input_hex": "c080",
+    "code": 1,
+    "stdout": "",
+    "stderr": "eessi-arch-guard: restore failed: 'utf-8' codec can't decode byte 0xc0 in position 0: invalid start byte\n",
+    "exc": "'utf-8' codec can't decode byte 0xc0 in position 0: invalid start byte"
+  },
+  {
+    "name": "utf8-unexpected-end",
+    "input_hex": "c2",
+    "code": 1,
+    "stdout": "",
+    "stderr": "eessi-arch-guard: restore failed: 'utf-8' codec can't decode byte 0xc2 in position 0: unexpected end of data\n",
+    "exc": "'utf-8' codec can't decode byte 0xc2 in position 0: unexpected end of data"
+  },
+  {
+    "name": "invalid-utf8-continuation",
+    "input_hex": "c220",
+    "code": 1,
+    "stdout": "",
+    "stderr": "eessi-arch-guard: restore failed: 'utf-8' codec can't decode byte 0xc2 in position 0: invalid continuation byte\n",
+    "exc": "'utf-8' codec can't decode byte 0xc2 in position 0: invalid continuation byte"
+  },
+  {
+    "name": "utf8-bad-second",
+    "input_hex": "c2c2",
+    "code": 1,
+    "stdout": "",
+    "stderr": "eessi-arch-guard: restore failed: 'utf-8' codec can't decode byte 0xc2 in position 0: invalid continuation byte\n",
+    "exc": "'utf-8' codec can't decode byte 0xc2 in position 0: invalid continuation byte"
+  },
+  {
+    "name": "utf8-e0-short",
+    "input_hex": "e0",
+    "code": 1,
+    "stdout": "",
+    "stderr": "eessi-arch-guard: restore failed: 'utf-8' codec can't decode byte 0xe0 in position 0: unexpected end of data\n",
+    "exc": "'utf-8' codec can't decode byte 0xe0 in position 0: unexpected end of data"
+  },
+  {
+    "name": "utf8-e0-prefix",
+    "input_hex": "e0a0",
+    "code": 1,
+    "stdout": "",
+    "stderr": "eessi-arch-guard: restore failed: 'utf-8' codec can't decode bytes in position 0-1: unexpected end of data\n",
+    "exc": "'utf-8' codec can't decode bytes in position 0-1: unexpected end of data"
+  },
+  {
+    "name": "utf8-overlong",
+    "input_hex": "e080",
+    "code": 1,
+    "stdout": "",
+    "stderr": "eessi-arch-guard: restore failed: 'utf-8' codec can't decode byte 0xe0 in position 0: invalid continuation byte\n",
+    "exc": "'utf-8' codec can't decode byte 0xe0 in position 0: invalid continuation byte"
+  },
+  {
+    "name": "utf8-overlong-three",
+    "input_hex": "e09f80",
+    "code": 1,
+    "stdout": "",
+    "stderr": "eessi-arch-guard: restore failed: 'utf-8' codec can't decode byte 0xe0 in position 0: invalid continuation byte\n",
+    "exc": "'utf-8' codec can't decode byte 0xe0 in position 0: invalid continuation byte"
+  },
+  {
+    "name": "utf8-surrogate",
+    "input_hex": "eda080",
+    "code": 1,
+    "stdout": "",
+    "stderr": "eessi-arch-guard: restore failed: 'utf-8' codec can't decode byte 0xed in position 0: invalid continuation byte\n",
+    "exc": "'utf-8' codec can't decode byte 0xed in position 0: invalid continuation byte"
+  },
+  {
+    "name": "utf8-surrogate-end",
+    "input_hex": "edbfbf",
+    "code": 1,
+    "stdout": "",
+    "stderr": "eessi-arch-guard: restore failed: 'utf-8' codec can't decode byte 0xed in position 0: invalid continuation byte\n",
+    "exc": "'utf-8' codec can't decode byte 0xed in position 0: invalid continuation byte"
+  },
+  {
+    "name": "utf8-surrogate-short",
+    "input_hex": "eda0",
+    "code": 1,
+    "stdout": "",
+    "stderr": "eessi-arch-guard: restore failed: 'utf-8' codec can't decode byte 0xed in position 0: invalid continuation byte\n",
+    "exc": "'utf-8' codec can't decode byte 0xed in position 0: invalid continuation byte"
+  },
+  {
+    "name": "utf8-f0-short",
+    "input_hex": "f0",
+    "code": 1,
+    "stdout": "",
+    "stderr": "eessi-arch-guard: restore failed: 'utf-8' codec can't decode byte 0xf0 in position 0: unexpected end of data\n",
+    "exc": "'utf-8' codec can't decode byte 0xf0 in position 0: unexpected end of data"
+  },
+  {
+    "name": "utf8-f0-prefix",
+    "input_hex": "f090",
+    "code": 1,
+    "stdout": "",
+    "stderr": "eessi-arch-guard: restore failed: 'utf-8' codec can't decode bytes in position 0-1: unexpected end of data\n",
+    "exc": "'utf-8' codec can't decode bytes in position 0-1: unexpected end of data"
+  },
+  {
+    "name": "utf8-f0-three",
+    "input_hex": "f09080",
+    "code": 1,
+    "stdout": "",
+    "stderr": "eessi-arch-guard: restore failed: 'utf-8' codec can't decode bytes in position 0-2: unexpected end of data\n",
+    "exc": "'utf-8' codec can't decode bytes in position 0-2: unexpected end of data"
+  },
+  {
+    "name": "utf8-overlong-four",
+    "input_hex": "f0808080",
+    "code": 1,
+    "stdout": "",
+    "stderr": "eessi-arch-guard: restore failed: 'utf-8' codec can't decode byte 0xf0 in position 0: invalid continuation byte\n",
+    "exc": "'utf-8' codec can't decode byte 0xf0 in position 0: invalid continuation byte"
+  },
+  {
+    "name": "utf8-too-large",
+    "input_hex": "f4908080",
+    "code": 1,
+    "stdout": "",
+    "stderr": "eessi-arch-guard: restore failed: 'utf-8' codec can't decode byte 0xf4 in position 0: invalid continuation byte\n",
+    "exc": "'utf-8' codec can't decode byte 0xf4 in position 0: invalid continuation byte"
+  },
+  {
+    "name": "utf8-f5",
+    "input_hex": "f5",
+    "code": 1,
+    "stdout": "",
+    "stderr": "eessi-arch-guard: restore failed: 'utf-8' codec can't decode byte 0xf5 in position 0: invalid start byte\n",
+    "exc": "'utf-8' codec can't decode byte 0xf5 in position 0: invalid start byte"
+  },
+  {
+    "name": "utf8-f7",
+    "input_hex": "f7808080",
+    "code": 1,
+    "stdout": "",
+    "stderr": "eessi-arch-guard: restore failed: 'utf-8' codec can't decode byte 0xf7 in position 0: invalid start byte\n",
+    "exc": "'utf-8' codec can't decode byte 0xf7 in position 0: invalid start byte"
+  },
+  {
+    "name": "utf8-f8",
+    "input_hex": "f8",
+    "code": 1,
+    "stdout": "",
+    "stderr": "eessi-arch-guard: restore failed: 'utf-8' codec can't decode byte 0xf8 in position 0: invalid start byte\n",
+    "exc": "'utf-8' codec can't decode byte 0xf8 in position 0: invalid start byte"
+  },
+  {
+    "name": "utf8-after-ascii",
+    "input_hex": "61ff",
+    "code": 1,
+    "stdout": "",
+    "stderr": "eessi-arch-guard: restore failed: 'utf-8' codec can't decode byte 0xff in position 1: invalid start byte\n",
+    "exc": "'utf-8' codec can't decode byte 0xff in position 1: invalid start byte"
+  },
+  {
+    "name": "utf8-truncated-after-ascii",
+    "input_hex": "61c2",
+    "code": 1,
+    "stdout": "",
+    "stderr": "eessi-arch-guard: restore failed: 'utf-8' codec can't decode byte 0xc2 in position 1: unexpected end of data\n",
+    "exc": "'utf-8' codec can't decode byte 0xc2 in position 1: unexpected end of data"
+  },
+  {
+    "name": "utf8-two-short",
+    "input_hex": "e282",
+    "code": 1,
+    "stdout": "",
+    "stderr": "eessi-arch-guard: restore failed: 'utf-8' codec can't decode bytes in position 0-1: unexpected end of data\n",
+    "exc": "'utf-8' codec can't decode bytes in position 0-1: unexpected end of data"
+  },
+  {
+    "name": "utf8-emoji-short",
+    "input_hex": "f09f98",
+    "code": 1,
+    "stdout": "",
+    "stderr": "eessi-arch-guard: restore failed: 'utf-8' codec can't decode bytes in position 0-2: unexpected end of data\n",
+    "exc": "'utf-8' codec can't decode bytes in position 0-2: unexpected end of data"
+  },
+  {
+    "name": "utf8-bad-third",
+    "input_hex": "e0a0ff",
+    "code": 1,
+    "stdout": "",
+    "stderr": "eessi-arch-guard: restore failed: 'utf-8' codec can't decode bytes in position 0-1: invalid continuation byte\n",
+    "exc": "'utf-8' codec can't decode bytes in position 0-1: invalid continuation byte"
+  },
+  {
+    "name": "utf8-bad-fourth",
+    "input_hex": "f09080ff",
+    "code": 1,
+    "stdout": "",
+    "stderr": "eessi-arch-guard: restore failed: 'utf-8' codec can't decode bytes in position 0-2: invalid continuation byte\n",
+    "exc": "'utf-8' codec can't decode bytes in position 0-2: invalid continuation byte"
+  },
+  {
+    "name": "utf8-inside-string",
+    "input_hex": "7b2261223a22c2",
+    "code": 1,
+    "stdout": "",
+    "stderr": "eessi-arch-guard: restore failed: 'utf-8' codec can't decode byte 0xc2 in position 6: unexpected end of data\n",
+    "exc": "'utf-8' codec can't decode byte 0xc2 in position 6: unexpected end of data"
+  },
+  {
+    "name": "utf8-in-array",
+    "input_hex": "5bff",
+    "code": 1,
+    "stdout": "",
+    "stderr": "eessi-arch-guard: restore failed: 'utf-8' codec can't decode byte 0xff in position 1: invalid start byte\n",
+    "exc": "'utf-8' codec can't decode byte 0xff in position 1: invalid start byte"
+  }
+]

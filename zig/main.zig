@@ -8,6 +8,7 @@ const linux = std.os.linux;
 const build_options = @import("build_options");
 const common = @import("zig_common");
 const text = @import("text.zig");
+const pytext = common.pytext;
 const envmap = @import("envmap.zig");
 const guard = @import("guard.zig");
 const jsonout = @import("jsonout.zig");
@@ -348,9 +349,10 @@ fn hasSeparatorControl(s: []const u8) bool {
 }
 
 /// float(text) as Python parses it: surrounding whitespace, a sign, digits
-/// with single underscores between them, a fraction, an exponent, or
-/// inf/infinity/nan in any case.
-fn pyFloat(arena: Allocator, raw: []const u8) ?f64 {
+/// of any script with single underscores between them, a fraction, an
+/// exponent, or inf/infinity/nan in any case.
+fn pyFloat(arena: Allocator, input: []const u8) ?f64 {
+    const raw = text.decimalToAscii(arena, input) catch return null;
     const s = text.pyStrip(raw);
     if (s.len == 0) return null;
     const lead = @intFromPtr(s.ptr) - @intFromPtr(raw.ptr);
@@ -932,33 +934,38 @@ fn submitTarget(arena: Allocator, settings: ?Settings, partition: []const u8, co
     return target;
 }
 
-fn submitWritableDir(p: []const u8) bool {
-    const st = fsx.statAt(fsx.cwd, p, true) catch return false;
-    if (!st.isDir()) return false;
-    var zb: [sys.path_max:0]u8 = undefined;
-    const z = sys.z(&zb, p) catch return false;
-    return linux.errno(linux.faccessat(linux.AT.FDCWD, z.ptr, linux.W_OK | linux.X_OK, 0)) == .SUCCESS;
+/// "could not run eb-stack: <detail>", the detail cut to one line of at most
+/// 200 characters as Python's `one_line(str(exc), 200)` does.
+fn submitRunFailure(arena: Allocator, detail: []const u8) []const u8 {
+    const shown = text.oneLine(arena, detail, 200) catch detail;
+    return arena.print("could not run eb-stack: {s}", .{shown}) catch "could not run eb-stack";
 }
 
-fn submitAbsolutize(arena: Allocator, p: []const u8) []const u8 {
-    if (p.len > 0 and p[0] == '/') return p;
-    var rb: [sys.path_max]u8 = undefined;
-    const cwd = fsx.realpath(fsx.cwd, ".", &rb) catch return p;
-    return std.fs.path.join(arena, &.{ cwd, p }) catch p;
+fn makeSubmitDir(arena: Allocator, base: []const u8, why: *[]const u8) ?[]const u8 {
+    return fsx.mkdtemp(arena, base, "eessi-arch-guard-submit-") catch |err| {
+        why.* = switch (err) {
+            error.OutOfMemory => oom(),
+            else => |e| sys.describe(e),
+        };
+        return null;
+    };
 }
 
-fn submitTempDir(arena: Allocator, env: envmap.Map) []const u8 {
-    for ([_][]const u8{ "TMPDIR", "TEMP", "TMP" }) |k| {
-        const v = env.get(k) orelse continue;
-        if (v.len > 0 and submitWritableDir(v)) return submitAbsolutize(arena, v);
-    }
-    for ([_][]const u8{ "/tmp", "/var/tmp", "/usr/tmp" }) |d| if (submitWritableDir(d)) return d;
-    return submitAbsolutize(arena, ".");
-}
-
-fn submitWorkDir(arena: Allocator, env: envmap.Map) ?[]const u8 {
-    const base = submitTempDir(arena, env);
-    return fsx.mkdtemp(arena, base, "eessi-arch-guard-submit-") catch null;
+/// A new private directory for the planner inputs, under the directory
+/// tempfile.gettempdir picks. When none takes a file, `why` is the text of
+/// the FileNotFoundError Python raises; when the directory cannot be made it
+/// is the OSError text, without the file name Python appends because that
+/// name holds the random part Python chose.
+fn submitWorkDir(arena: Allocator, env: envmap.Map, why: *[]const u8) ?[]const u8 {
+    var temp: fsx.TempDir = .{};
+    const base = temp.get(arena, env) catch |err| switch (err) {
+        error.OutOfMemory => oom(),
+        error.NoTempDir => {
+            why.* = temp.message;
+            return null;
+        },
+    };
+    return makeSubmitDir(arena, base, why);
 }
 
 test "submitWorkDir uses fsx.mkdtemp with the submit prefix" {
@@ -974,7 +981,8 @@ test "submitWorkDir uses fsx.mkdtemp with the submit prefix" {
 
     var env: envmap.Map = .empty;
     try env.put(arena, "TMPDIR", base);
-    const work = submitWorkDir(arena, env).?;
+    var why: []const u8 = "";
+    const work = submitWorkDir(arena, env, &why).?;
     const expected_prefix = try std.fmt.allocPrint(arena, "{s}/eessi-arch-guard-submit-", .{base});
     try std.testing.expect(std.mem.startsWith(u8, work, expected_prefix));
     try std.testing.expectEqual(expected_prefix.len + 8, work.len);
@@ -1124,11 +1132,16 @@ fn moduleTreeAvailable(root: []const u8) bool {
     return st.isDir();
 }
 
-fn writeSubmitFile(path: []const u8, data: []const u8) bool {
-    const fd = sys.openat(fsx.cwd, path, .{ .ACCMODE = .WRONLY, .CREAT = true, .TRUNC = true, .NOFOLLOW = true }, 0o600) catch return false;
+/// Write `data` to a new file at `path`. Null on success, otherwise the
+/// OSError text Python gives: the open names the file, and the write does
+/// not, because Python raises it when the buffered handle is flushed.
+fn writeSubmitFile(arena: Allocator, path: []const u8, data: []const u8) ?[]const u8 {
+    const fd = sys.openat(fsx.cwd, path, .{ .ACCMODE = .WRONLY, .CREAT = true, .TRUNC = true, .NOFOLLOW = true }, 0o600) catch |err| {
+        return pytext.osError(arena, err, path) catch oom();
+    };
     defer sys.close(fd);
-    sys.writeAll(fd, data) catch return false;
-    return true;
+    sys.writeAll(fd, data) catch |err| return sys.describe(err);
+    return null;
 }
 
 fn checkSubmitSemantic(code: u8) []const u8 {
@@ -1199,6 +1212,14 @@ fn finishCheckSubmit(
     return code;
 }
 
+/// The name Python shows for the eb-stack program in an exec error: the
+/// path as `shutil.which` returned it, which keeps a relative PATH entry
+/// relative, or the name as given when it holds a slash.
+fn ebStackShown(arena: Allocator, selected: []const u8, resolved: []const u8, env: envmap.Map) []const u8 {
+    if (std.mem.findScalar(u8, selected, '/') != null) return selected;
+    return (proc.whichShutil(arena, selected, env.get("PATH")) catch null) orelse resolved;
+}
+
 fn checkSubmit(arena: Allocator, args: Args, env: envmap.Map, settings: ?Settings) u8 {
     const partition = args.partition orelse "";
     const constraint = args.constraint orelse "";
@@ -1265,9 +1286,10 @@ fn checkSubmit(arena: Allocator, args: Args, env: envmap.Map, settings: ?Setting
         const line = arena.print("eessi-arch-guard: check-submit: {s}", .{reason}) catch reason;
         return finishCheckSubmit(arena, args, partition, constraint, 2, target, @intCast(loaded.len), &.{}, reason, &.{line});
     }
-    const work = submitWorkDir(arena, env) orelse {
-        const reason = "could not create temporary input directory";
-        const line = "eessi-arch-guard: check-submit: " ++ reason;
+    var made: []const u8 = "";
+    const work = submitWorkDir(arena, env, &made) orelse {
+        const reason = submitRunFailure(arena, made);
+        const line = arena.print("eessi-arch-guard: check-submit: {s}", .{reason}) catch reason;
         return finishCheckSubmit(arena, args, partition, constraint, 2, target, @intCast(loaded.len), &.{}, reason, &.{line});
     };
     defer fsx.deleteTree(arena, fsx.cwd, work) catch {};
@@ -1279,9 +1301,12 @@ fn checkSubmit(arena: Allocator, args: Args, env: envmap.Map, settings: ?Setting
     for (loaded) |module| plan.print(arena, "  - {s}\n", .{module.file}) catch oom();
     var inventory: std.ArrayList(u8) = .empty;
     for (installed) |name| inventory.print(arena, "{s}\n", .{plannerModule(arena, name)}) catch oom();
-    if (!writeSubmitFile(easystack, plan.items) or !writeSubmitFile(installed_path, inventory.items) or !writeSubmitFile(unsupported, "")) {
-        const reason = "could not write temporary planner inputs";
-        const line = "eessi-arch-guard: check-submit: " ++ reason;
+    const written = writeSubmitFile(arena, easystack, plan.items) orelse
+        writeSubmitFile(arena, installed_path, inventory.items) orelse
+        writeSubmitFile(arena, unsupported, "");
+    if (written) |detail| {
+        const reason = submitRunFailure(arena, detail);
+        const line = arena.print("eessi-arch-guard: check-submit: {s}", .{reason}) catch reason;
         return finishCheckSubmit(arena, args, partition, constraint, 2, target, @intCast(loaded.len), &.{}, reason, &.{line});
     }
     const clean_env = envmap.stripStartup(arena, env) catch {
@@ -1295,14 +1320,14 @@ fn checkSubmit(arena: Allocator, args: Args, env: envmap.Map, settings: ?Setting
         return finishCheckSubmit(arena, args, partition, constraint, 2, target, @intCast(loaded.len), &.{}, reason, &.{line});
     };
     const child_args = [_][]const u8{ eb_stack, "stack", "arch", "--arch", target, "--easystack", easystack, "--installed", installed_path, "--unsupported", unsupported };
-    const result = proc.run(arena, eb_stack, &child_args, child_env, .{
+    const result = proc.run(arena, fsx.absPath(arena, eb_stack) catch oom(), &child_args, child_env, .{
         .stdout_limit = 8 << 20,
         .stderr_limit = 8 << 20,
         .timeout_ms = null,
         .new_session = false,
         .exec_error = true,
     }) catch |err| {
-        const detail = if (sys.asError(err)) |e| sys.describe(e) else @errorName(err);
+        const detail = pytext.osError(arena, err, ebStackShown(arena, selected, eb_stack, env)) catch oom();
         const shown = text.oneLine(arena, detail, 200) catch detail;
         const reason = arena.print("could not run eb-stack: {s}", .{shown}) catch "could not run eb-stack";
         const line = arena.print("eessi-arch-guard: check-submit: {s}", .{reason}) catch reason;
@@ -1513,7 +1538,7 @@ fn realMain(arena: Allocator, argv0: []const u8, argv: []const []const u8, envp:
             was,
             guard.os_failure.class,
             guard.os_failure.text,
-            guard.os_failure.text,
+            null,
         );
         syslog.emitEmergency(arena, sl, env, guard.os_failure.class, guard.os_failure.text, args.strict);
         const code: u8 = if (args.strict) strict_failure_exit else 0;
@@ -1576,6 +1601,7 @@ test {
     _ = envmap;
     _ = guard;
     _ = syslog;
+    _ = @import("pydecode.zig");
 }
 
 test "parseArgs" {
@@ -1639,19 +1665,54 @@ test "renderCheckSubmitJson is schema_version 1" {
     );
 }
 
+test "writeSubmitFile reports the errno of a failed write without the file name" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const a = arena_state.allocator();
+    try std.testing.expectEqualStrings("[Errno 28] No space left on device", writeSubmitFile(a, "/dev/full", "x").?);
+}
+
+test "writeSubmitFile reports the errno of a failed open with the file name" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const a = arena_state.allocator();
+    const path = "/nonexistent-eessi-arch-guard-dir/planner.yml";
+    try std.testing.expectEqualStrings("[Errno 2] No such file or directory: '" ++ path ++ "'", writeSubmitFile(a, path, "x").?);
+}
+
+test "writeSubmitFile writes the file name in repr form" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const a = arena_state.allocator();
+    try std.testing.expectEqualStrings(
+        "[Errno 2] No such file or directory: \"/nonexistent-eessi-arch-guard-dir/it's\"",
+        writeSubmitFile(a, "/nonexistent-eessi-arch-guard-dir/it's", "x").?,
+    );
+}
+
+test "makeSubmitDir reports the errno of a failed mkdtemp" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const a = arena_state.allocator();
+    var why: []const u8 = "";
+    try std.testing.expect(makeSubmitDir(a, "/nonexistent-eessi-arch-guard-dir", &why) == null);
+    try std.testing.expectEqualStrings("[Errno 2] No such file or directory", why);
+}
+
 test "inventoryModules deduplicates .lua and non-.lua module entries" {
     var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena_state.deinit();
     const a = arena_state.allocator();
     const env: envmap.Map = .empty;
-    const work = submitWorkDir(a, env).?;
+    var why: []const u8 = "";
+    const work = submitWorkDir(a, env, &why).?;
     defer fsx.deleteTree(a, fsx.cwd, work) catch {};
     const mod_dir = try std.fs.path.join(a, &.{ work, "R" });
     var zb: [sys.path_max:0]u8 = undefined;
     _ = linux.mkdirat(linux.AT.FDCWD, (try sys.z(&zb, mod_dir)).ptr, 0o755);
     for ([_][]const u8{ "4.4.2", "4.4.2.lua" }) |name| {
         const p = try std.fs.path.join(a, &.{ mod_dir, name });
-        try std.testing.expect(writeSubmitFile(p, "-- mod\n"));
+        try std.testing.expect(writeSubmitFile(a, p, "-- mod\n") == null);
     }
     const items = inventoryModules(a, work);
     try std.testing.expectEqual(@as(usize, 1), items.len);
@@ -1738,6 +1799,11 @@ test "pyFloat follows Python's float()" {
     try std.testing.expectEqual(@as(?f64, 5.0), pyFloat(a, "5."));
     try std.testing.expectEqual(@as(?f64, 2e3), pyFloat(a, "+2E3"));
     try std.testing.expect(std.math.isInf(pyFloat(a, "-Infinity").?));
+    try std.testing.expectEqual(@as(?f64, 3.0), pyFloat(a, "\xd9\xa3"));
+    try std.testing.expectEqual(@as(?f64, 10.5), pyFloat(a, "\xef\xbc\x91\xef\xbc\x90.\xe0\xa5\xab"));
+    try std.testing.expectEqual(@as(?f64, 100.0), pyFloat(a, " 1_\xd9\xa0\xd9\xa0\xc2\xa0"));
+    try std.testing.expect(pyFloat(a, "\xc2\xb2") == null);
+    try std.testing.expect(pyFloat(a, "\xd9\xa3\xff") == null);
     try std.testing.expect(pyFloat(a, "1__0") == null);
     try std.testing.expect(pyFloat(a, "_1") == null);
     try std.testing.expect(pyFloat(a, "1e") == null);

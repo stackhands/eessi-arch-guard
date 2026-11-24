@@ -11,6 +11,9 @@ import argparse
 import os
 import sys
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from _regular_file import read_regular_bytes  # noqa: E402
+
 
 def _norm(path: str) -> str:
     path = (path or "").strip()
@@ -143,7 +146,10 @@ def _placeholder_modules_path(value: str) -> bool:
 
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(prog="sitepath.py")
-    parser.add_argument("--repo", default=os.environ.get("EESSI_CVMFS_REPO") or "/cvmfs/software.eessi.io")
+    parser.add_argument(
+        "--repo",
+        default=os.environ.get("EESSI_CVMFS_REPO") or "/cvmfs/software.eessi.io",
+    )
     parser.add_argument("--site", default="")
     parser.add_argument("--eessi", default="")
     parser.add_argument("--modulepath", default=os.environ.get("MODULEPATH") or "")
@@ -157,7 +163,10 @@ def main(argv=None) -> int:
     site = (args.site or os.environ.get("EESSI_SITE_SOFTWARE_PATH") or "").strip()
     eessi = (args.eessi or os.environ.get("EESSI_SOFTWARE_PATH") or "").strip()
     if not site or not eessi:
-        sys.stderr.write("sitepath.py: need --site and --eessi, or EESSI_SITE_SOFTWARE_PATH and EESSI_SOFTWARE_PATH\n")
+        sys.stderr.write(
+            "sitepath.py: need --site and --eessi, or "
+            "EESSI_SITE_SOFTWARE_PATH and EESSI_SOFTWARE_PATH\n"
+        )
         return 2
     if args.require_input and (
         _placeholder_modules_path(site)
@@ -176,7 +185,7 @@ def main(argv=None) -> int:
         eessi = _modules(eessi)
     path = args.mountinfo or "/proc/self/mountinfo"
     try:
-        mountinfo = open(path, encoding="utf-8").read()
+        mountinfo = read_regular_bytes(path).decode("utf-8")
     except OSError as exc:
         sys.stderr.write(f"sitepath.py: cannot read {path}: {exc.strerror}\n")
         return 2
