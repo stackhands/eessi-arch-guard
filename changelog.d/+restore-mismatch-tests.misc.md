@@ -1,1 +1,0 @@
-Add Python and `TOOL_BIN` tests in `tests/test_workspaces.py` covering the four `_restore_mismatch` `restore-failed` refusal messages when Lmod exits `0` without selecting the expected CPU, accelerator, `EESSI`, or application module.

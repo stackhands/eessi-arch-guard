@@ -1,1 +1,0 @@
-`--check-submit` maps an intended Slurm partition and optional constraint to an EESSI target, then asks `eb-stack` to report loaded modules absent from that target's module tree without reloading or provisioning anything. With `--json`, one stdout line carries `schema_version` 1, the target, the loaded count, any missing modules, and `exit` / `exit_semantic`.

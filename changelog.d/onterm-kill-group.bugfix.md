@@ -1,1 +1,0 @@
-In the Zig build, a SIGTERM that arrives as the decision starts a command, before the command has made its process group, kills the command: the handler and the decision's own kill signalled only the group, which did not exist yet, so the decision waited for the command to exit by itself. It builds on zig-common 0.9.0.

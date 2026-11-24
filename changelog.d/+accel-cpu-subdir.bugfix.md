@@ -1,1 +1,0 @@
-`share/lmod/SitePackage.lua` reads the CPU subdirectory of a module under `software/linux/<cpu>/accel/nvidia/cc<N>/` as `<cpu>` alone, so a load no longer warns about a CPU mismatch when `EESSI_SOFTWARE_SUBDIR` is that CPU.
