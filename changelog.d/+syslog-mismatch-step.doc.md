@@ -1,1 +1,0 @@
-The syslog how-to runs `docs/examples/syslog_journal.py` to create a CPU mismatch reload before reading `journalctl`, so the verification step sees an emitted record.

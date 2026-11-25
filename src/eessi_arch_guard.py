@@ -33,7 +33,7 @@ import time
 import unicodedata
 from typing import Callable, Dict, List, Mapping, NamedTuple, Optional, Sequence, Tuple
 
-__version__ = "0.2.0"
+__version__ = "0.3.1"
 
 # The cache key. EESSI_ARCH_GUARD is absent on purpose.
 KEY_FIELDS = (

@@ -1,1 +1,0 @@
-Scope `EESSI_PROC_CPUINFO` to the task's allowed processors during the `--restore` helper's `EESSI` module load and restore the original `EESSI_PROC_CPUINFO` afterwards, so reloads on heterogeneous CPU bindings select the same target that `probe_cpu` detected.

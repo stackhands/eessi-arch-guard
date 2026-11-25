@@ -1,1 +1,0 @@
-`DESIGN.md`, the design topic and the user TaskProlog how-to are not tied to one site: the questions left open are any site's, sized by tasks per core rather than one cluster's node, and the measured cross-target run names the zen4 target, not a partition.

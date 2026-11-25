@@ -1,1 +1,0 @@
-`--check-submit` also reads the user and project trees EESSI-extend installs into, so a module you built for the partition's target counts as available and one built only on another node type is named as absent.

@@ -1,1 +1,0 @@
-On a cgroup v1 host the cpuset directory is the cpuset mount from `/proc/self/mountinfo`, including a mount outside `/sys/fs/cgroup`. The walk stops at that mount. A hierarchy that does not list the cpuset controller contributes no processors. A mount root that contains `..` keeps the historical `/sys/fs/cgroup` paths.

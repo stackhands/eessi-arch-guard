@@ -49,7 +49,7 @@ Release archives include bash and zsh completion files plus a man page generated
 Install the static binary from a [release](https://github.com/stackhands/eessi-arch-guard/releases). It runs once per task, and starts in about 3.5 ms where the Python file takes about 46 ms ([When you need it](#when-you-need-it-and-when-you-do-not)).
 
 ```bash
-v=0.2.0 arch=x86_64   # or aarch64
+v=0.3.1 arch=x86_64   # or aarch64
 curl -LO "https://github.com/stackhands/eessi-arch-guard/releases/download/v${v}/eessi-arch-guard-${v}-${arch}-linux-musl"
 curl -LO "https://github.com/stackhands/eessi-arch-guard/releases/download/v${v}/SHA256SUMS"
 sha256sum --check --ignore-missing SHA256SUMS

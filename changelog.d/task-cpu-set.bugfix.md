@@ -1,1 +1,0 @@
-CPU detection follows the processors the task may run on. A cpuset, an affinity mask, or a Slurm bind list (`0x2`, `0-3,8`, or a `cpu[0-3]` hostlist) drops the other processors before archdetect and the flag check, so a task bound to one microarchitecture is not given another's software subdirectory.
