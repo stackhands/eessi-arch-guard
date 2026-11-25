@@ -352,45 +352,6 @@ fn isDir(path: []const u8) bool {
     return st.isDir();
 }
 
-/// The first line of text as str.splitlines() splits it.
-fn firstLine(s: []const u8) ?[]const u8 {
-    if (s.len == 0) return null;
-    var i: usize = 0;
-    while (i < s.len) {
-        const ch = text.nextChar(s[i..]);
-        if (ch.cp) |cp| switch (cp) {
-            '\n', '\r', 0x0b, 0x0c, 0x1c, 0x1d, 0x1e, 0x85, 0x2028, 0x2029 => return s[0..i],
-            else => {},
-        };
-        i += ch.len;
-    }
-    return s;
-}
-
-/// Lines as str.splitlines() returns them.
-fn splitLines(arena: Allocator, s: []const u8) Allocator.Error![]const []const u8 {
-    var out: std.ArrayList([]const u8) = .empty;
-    var start: usize = 0;
-    var i: usize = 0;
-    while (i < s.len) {
-        const ch = text.nextChar(s[i..]);
-        const brk = if (ch.cp) |cp| switch (cp) {
-            '\n', '\r', 0x0b, 0x0c, 0x1c, 0x1d, 0x1e, 0x85, 0x2028, 0x2029 => true,
-            else => false,
-        } else false;
-        if (brk) {
-            try out.append(arena, s[start..i]);
-            i += ch.len;
-            if (ch.cp.? == '\r' and i < s.len and s[i] == '\n') i += 1;
-            start = i;
-            continue;
-        }
-        i += ch.len;
-    }
-    if (start < s.len) try out.append(arena, s[start..]);
-    return out.items;
-}
-
 fn charCount(s: []const u8) usize {
     var n: usize = 0;
     var i: usize = 0;
@@ -402,7 +363,8 @@ fn charCount(s: []const u8) usize {
 fn parseCpuLine(arena: Allocator, stdout: []const u8) Allocator.Error!?[]const []const u8 {
     if (std.mem.findScalar(u8, stdout, 0) != null or charCount(stdout) > max_arch_stdout) return null;
     var nonempty: std.ArrayList([]const u8) = .empty;
-    for (try splitLines(arena, stdout)) |l| if (l.len > 0) try nonempty.append(arena, l);
+    var lines = text.splitLines(stdout);
+    while (lines.next()) |l| if (l.len > 0) try nonempty.append(arena, l);
     if (nonempty.items.len != 1) return null;
     const line = nonempty.items[0];
     for (line) |b| if (b < 32) return null;
@@ -1159,8 +1121,8 @@ fn scopeCpuinfoWithBase(arena: Allocator, cpuinfo: []const u8, allowed: CpuSet, 
     var blocks: std.ArrayList(CpuBlock) = .empty;
     var cur_id: ?ProcessorId = null;
     var cur: std.ArrayList(CpuField) = .empty;
-    const lines = splitLines(arena, cpuinfo) catch return null;
-    for (lines) |line| {
+    var lines = text.splitLines(cpuinfo);
+    while (lines.next()) |line| {
         // The header line is read as a field too, as Python reads it: a
         // header spelled with a long s keeps that letter in its field name,
         // so the field is not dropped as the processor one.
@@ -1356,7 +1318,8 @@ pub fn probeCpu(c: *Ctx, env: Map) Stop!CpuProbe {
         else => return .{ .status = .@"error", .err = c.arena.print("could not run archdetect: {s}", .{why}) catch "could not run archdetect" },
     };
     if (r.code != 0) {
-        const detail = firstLine(decodeReplace(c, r.stderr)) orelse (c.arena.print("exit {d}", .{exitShown(r.code)}) catch "exit");
+        var stderr_lines = text.splitLines(decodeReplace(c, r.stderr));
+        const detail = stderr_lines.next() orelse (c.arena.print("exit {d}", .{exitShown(r.code)}) catch "exit");
         return .{ .status = .@"error", .err = line1(c, detail, 200) };
     }
     const parsed = (parseCpuLine(c.arena, decodeReplace(c, r.stdout)) catch null) orelse

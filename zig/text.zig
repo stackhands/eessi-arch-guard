@@ -264,6 +264,65 @@ pub fn oneLine(gpa: Allocator, s: []const u8, limit: usize) Allocator.Error![]u8
     return gpa.dupe(u8, formatBoundedParts(buf, &.{s}, limit, false, std.math.maxInt(usize)));
 }
 
+/// What text mode makes of a stream: a carriage return with a line feed and
+/// a lone carriage return both end a line, and each reaches the text as one
+/// line feed.
+pub fn universalNewlines(gpa: Allocator, s: []const u8) Allocator.Error![]u8 {
+    var out: std.ArrayList(u8) = .empty;
+    errdefer out.deinit(gpa);
+    try out.ensureTotalCapacity(gpa, s.len);
+    var i: usize = 0;
+    while (i < s.len) : (i += 1) {
+        if (s[i] != '\r') {
+            out.appendAssumeCapacity(s[i]);
+            continue;
+        }
+        out.appendAssumeCapacity('\n');
+        if (i + 1 < s.len and s[i + 1] == '\n') i += 1;
+    }
+    return out.toOwnedSlice(gpa);
+}
+
+/// The length of the line end that starts `s`, or 0 when none does. These
+/// are the line ends of str.splitlines over UTF-8: a line feed, a carriage
+/// return with or without a line feed, a vertical tab, a form feed, the file,
+/// group and record separators, the next line character and the line and
+/// paragraph separators. A byte that is not UTF-8 never ends a line.
+fn lineEndLen(s: []const u8) usize {
+    switch (s[0]) {
+        '\n', 0x0b, 0x0c, 0x1c, 0x1d, 0x1e => return 1,
+        '\r' => return if (s.len > 1 and s[1] == '\n') 2 else 1,
+        0xc2 => return if (s.len > 1 and s[1] == 0x85) 2 else 0,
+        0xe2 => return if (s.len > 2 and s[1] == 0x80 and (s[2] == 0xa8 or s[2] == 0xa9)) 3 else 0,
+        else => return 0,
+    }
+}
+
+/// The lines of str.splitlines(): no line end is kept and a final line end
+/// does not start another line.
+pub const LineIterator = struct {
+    rest: []const u8,
+
+    pub fn next(self: *LineIterator) ?[]const u8 {
+        if (self.rest.len == 0) return null;
+        var i: usize = 0;
+        while (i < self.rest.len) : (i += 1) {
+            const n = lineEndLen(self.rest[i..]);
+            if (n == 0) continue;
+            const line = self.rest[0..i];
+            self.rest = self.rest[i + n ..];
+            return line;
+        }
+        const line = self.rest;
+        self.rest = self.rest[self.rest.len..];
+        return line;
+    }
+};
+
+pub fn splitLines(s: []const u8) LineIterator {
+    return .{ .rest = s };
+}
+
 /// message_bytes: one_line(text, 500), encoded as UTF-8 with an invalid
 /// byte written as '?', cut at a character boundary to fit after "print "
 /// in a 4094-byte prolog line.
@@ -379,5 +438,61 @@ test "shellQuote" {
         const q = try shellQuote(gpa, cs[0]);
         defer gpa.free(q);
         try std.testing.expectEqualStrings(cs[1], q);
+    }
+}
+
+test "universalNewlines turns each line end into one line feed" {
+    const gpa = std.testing.allocator;
+    const cases = [_][2][]const u8{
+        .{ "", "" },
+        .{ "a\nb", "a\nb" },
+        .{ "a\r\nb\r\n", "a\nb\n" },
+        .{ "a\rb\r", "a\nb\n" },
+        .{ "a\r\rb", "a\n\nb" },
+        .{ "a\r\n\r\nb", "a\n\nb" },
+        .{ "a\n\rb", "a\n\nb" },
+        .{ "\r", "\n" },
+    };
+    for (cases) |case| {
+        const got = try universalNewlines(gpa, case[0]);
+        defer gpa.free(got);
+        try std.testing.expectEqualStrings(case[1], got);
+    }
+}
+
+test "splitLines ends a line where str.splitlines does" {
+    const ends = [_][]const u8{ "\n", "\r", "\r\n", "\x0b", "\x0c", "\x1c", "\x1d", "\x1e", "\u{85}", "\u{2028}", "\u{2029}" };
+    var buf: [32]u8 = undefined;
+    for (ends) |end| {
+        const two = try std.fmt.bufPrint(&buf, "a{s}b{s}", .{ end, end });
+        var it = splitLines(two);
+        try std.testing.expectEqualStrings("a", it.next().?);
+        try std.testing.expectEqualStrings("b", it.next().?);
+        try std.testing.expect(it.next() == null);
+        const empty = try std.fmt.bufPrint(&buf, "{s}{s}x", .{ end, end });
+        it = splitLines(empty);
+        try std.testing.expectEqualStrings("", it.next().?);
+        try std.testing.expectEqualStrings("", it.next().?);
+        try std.testing.expectEqualStrings("x", it.next().?);
+        try std.testing.expect(it.next() == null);
+    }
+    var none = splitLines("");
+    try std.testing.expect(none.next() == null);
+}
+
+test "splitLines keeps bytes that only look like line ends" {
+    const same = [_][]const u8{
+        "a\x1fb",
+        "a\xc2\x84b",
+        "a\xc2b",
+        "a\xe2\x80\xa7b",
+        "a\xe2\x80\xaab",
+        "a\xe2\x80",
+        "a\xff\x85b",
+    };
+    for (same) |line| {
+        var it = splitLines(line);
+        try std.testing.expectEqualStrings(line, it.next().?);
+        try std.testing.expect(it.next() == null);
     }
 }
