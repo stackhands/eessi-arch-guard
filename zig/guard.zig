@@ -1257,15 +1257,14 @@ fn tempCpuFile(c: *Ctx, env: Map, data: []const u8, failure: *TempFailure) error
     return made.path;
 }
 
-/// os.close: the errno of a failed close(2), or null. EINTR is not an
-/// error, because Python leaves it out as PEP 475 says: the descriptor is
-/// gone on Linux, and a second close could hit a descriptor opened since.
-fn closeFd(fd: linux.fd_t) ?linux.E {
+/// os.close: the errno of a failed close(2), or null. EINTR is an error,
+/// as os.close raises InterruptedError for it: PEP 475 leaves close out of
+/// its retries, because the descriptor is gone on Linux and a second close
+/// could hit a descriptor opened since. So the close is not retried here
+/// either.
+pub fn closeFd(fd: linux.fd_t) ?linux.E {
     const e = linux.errno(linux.close(fd));
-    return switch (e) {
-        .SUCCESS, .INTR => null,
-        else => e,
-    };
+    return if (e == .SUCCESS) null else e;
 }
 
 const PreparedCpu = struct { path: []const u8, cleanup: ?[]const u8 = null, child: Map };
@@ -1561,28 +1560,48 @@ const apply_sh = "source \"$1\" >/dev/null || exit 4\nexec env -0\n";
 const Applied = struct { env: ?Map, err: []const u8 };
 
 /// Which call of `writePrivate` failed.
-const PrivateStep = enum { open, write, chmod };
+const PrivateStep = enum { open, write, close, chmod };
 
 /// `_write_private` and the chmod after it: a new private file at `path`,
 /// made with `mode`. On a failure `step` says which call it was. The data
 /// goes out in one write(2), as Python's os.write does it: a short write is
-/// not an error and leaves a short file.
+/// not an error and leaves a short file. A failed close is an error, as
+/// os.close raises it, and it replaces that of the write, as the `finally`
+/// block does. Python chmods the file by name after the close, so a failed
+/// close comes before a failed chmod too. A failed close, EINTR included,
+/// leaves its errno in `sys.last_errno` for `privateFailure`.
 fn writePrivate(path: []const u8, data: []const u8, mode: u32, step: *PrivateStep) sys.Error!void {
     step.* = .open;
     const fd = try sys.openat(fsx.cwd, path, .{ .ACCMODE = .WRONLY, .CREAT = true, .EXCL = true, .NOFOLLOW = true }, 0o600);
-    defer sys.close(fd);
+    const wrote = sys.call(linux.write, .{ fd, data.ptr, data.len });
+    const write_errno = sys.last_errno;
+    var chmodded: sys.Error!void = {};
+    if (wrote) |_| {
+        if (mode != 0o600) chmodded = sys.fchmod(fd, mode);
+    } else |_| {}
+    const chmod_errno = sys.last_errno;
+    if (closeFd(fd)) |e| {
+        step.* = .close;
+        sys.last_errno = e;
+        return error.Unexpected;
+    }
     step.* = .write;
-    _ = try sys.call(linux.write, .{ fd, data.ptr, data.len });
+    sys.last_errno = write_errno;
+    _ = try wrote;
     step.* = .chmod;
-    if (mode != 0o600) try sys.fchmod(fd, mode);
+    sys.last_errno = chmod_errno;
+    try chmodded;
 }
 
 /// The OSError text Python gives for the failed `step` of a private write.
-/// The open and the chmod name the file, and the write does not, because
-/// Python's os.write raises without one. Call it straight after the failure,
-/// while the errno that `sys.describe` reads is still that of the call.
+/// The open and the chmod name the file, and the write and the close do
+/// not, because Python's os.write and os.close raise without one. Call it
+/// straight after the failure, while `sys.last_errno` is still that of the
+/// call. A failed close is described from that errno alone, because
+/// `sys.describe` has no text for EINTR.
 fn privateFailure(c: *Ctx, err: sys.Error, path: []const u8, step: PrivateStep) []const u8 {
     return switch (step) {
+        .close => sys.describeErrno(sys.last_errno),
         .write => sys.describe(err),
         .open, .chmod => pytext.osError(c.arena, err, path) catch main_mod.oom(),
     };
@@ -2425,15 +2444,13 @@ fn lockedDecide(c: *Ctx, env: Map, shell: bool, dirfd: sys.fd_t, name: []const u
 /// which main reports as a skip. After a timeout, SIGTERM or another
 /// OSError the failed close is dropped, so that the first stop is the one
 /// reported. An interrupted close fails too: os.close does not retry it,
-/// as PEP 475 exempts close, and raises InterruptedError. closeFd counts
-/// EINTR as a success, so this calls close(2) itself.
+/// as PEP 475 exempts close, and raises InterruptedError.
 fn releaseCacheLock(lockfd: sys.fd_t, outcome: Stop!Outcome) Stop!Outcome {
     const o = outcome catch |err| {
-        _ = linux.close(lockfd);
+        _ = closeFd(lockfd);
         return err;
     };
-    const e = linux.errno(linux.close(lockfd));
-    if (e != .SUCCESS) {
+    if (closeFd(lockfd)) |e| {
         os_failure = .{ .class = osErrorClass(e), .text = sys.describeErrno(e) };
         return error.Os;
     }
@@ -2694,6 +2711,9 @@ test "privateFailure names the file for an open and not for a write" {
     );
     const exists_err = if (writePrivate("/dev/null", "x", 0o600, &step)) |_| return error.TestUnexpectedResult else |e| e;
     try std.testing.expectEqualStrings("[Errno 17] File exists: '/dev/null'", privateFailure(&c, exists_err, "/dev/null", step));
+    sys.last_errno = .INTR;
+    try std.testing.expectEqualStrings("[Errno 4] Interrupted system call", privateFailure(&c, error.Unexpected, "/dev/null", .close));
+    try std.testing.expectEqualStrings("InterruptedError", osErrorClass(.INTR));
 }
 
 test "cpuinfo lines are read as Python strips, splits and counts digits" {

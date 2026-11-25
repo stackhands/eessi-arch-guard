@@ -1133,14 +1133,21 @@ fn moduleTreeAvailable(root: []const u8) bool {
 }
 
 /// Write `data` to a new file at `path`. Null on success, otherwise the
-/// OSError text Python gives: the open names the file, and the write does
-/// not, because Python raises it when the buffered handle is flushed.
+/// OSError text Python gives: the open names the file, and the write and
+/// the close do not, because Python raises them when the buffered handle
+/// is flushed and closed. A failed close replaces a failed write, as it
+/// does when the `with` block closes the handle.
 fn writeSubmitFile(arena: Allocator, path: []const u8, data: []const u8) ?[]const u8 {
     const fd = sys.openat(fsx.cwd, path, .{ .ACCMODE = .WRONLY, .CREAT = true, .TRUNC = true, .NOFOLLOW = true }, 0o600) catch |err| {
         return pytext.osError(arena, err, path) catch oom();
     };
-    defer sys.close(fd);
-    sys.writeAll(fd, data) catch |err| return sys.describe(err);
+    const wrote = sys.writeAll(fd, data);
+    const write_errno = sys.last_errno;
+    if (guard.closeFd(fd)) |e| return sys.describeErrno(e);
+    wrote catch |err| {
+        sys.last_errno = write_errno;
+        return sys.describe(err);
+    };
     return null;
 }
 
