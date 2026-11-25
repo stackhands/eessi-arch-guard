@@ -108,8 +108,9 @@ static void open_path(pid_t pid, long nr, struct user_regs_struct *regs, char *o
     }
     int n = base[0] ? snprintf(out, PATHMAX, "%s/%s", base, raw)
                     : snprintf(out, PATHMAX, "%s", raw);
-    /* A path longer than PATHMAX names nothing, so that a needle cannot
-       match a prefix of it. */
+    /* A join that snprintf cuts short names nothing, so that a needle
+       cannot match the part that fit. Only the join is checked: read_str
+       cuts a longer path to PATHMAX - 1 bytes without saying so. */
     if (n < 0 || n >= PATHMAX) out[0] = 0;
 }
 
