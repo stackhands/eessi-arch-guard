@@ -2401,9 +2401,14 @@ pub fn cachedDecide(c: *Ctx, env: Map, shell: bool) Stop!Outcome {
     // A lock file someone else made is neither locked on nor changed:
     // decide without the cache.
     const lockfd = (state.openPrivate(dirfd, lock_name, true) catch return decide(c, env, shell)) orelse return decide(c, env, shell);
-    defer sys.close(lockfd);
+    return releaseCacheLock(lockfd, lockedDecide(c, env, shell, dirfd, p.name, lockfd));
+}
+
+/// cachedDecide under the cache lock on `lockfd`: the outcome in the cache,
+/// or a new decision, written there.
+fn lockedDecide(c: *Ctx, env: Map, shell: bool, dirfd: sys.fd_t, name: []const u8, lockfd: sys.fd_t) Stop!Outcome {
     try lockExclusive(c, lockfd);
-    if (readCache(c, dirfd, p.name, shell)) |o| {
+    if (readCache(c, dirfd, name, shell)) |o| {
         last_cached = true;
         return o;
     }
@@ -2411,8 +2416,28 @@ pub fn cachedDecide(c: *Ctx, env: Map, shell: bool) Stop!Outcome {
     const outcome = try decide(c, env, shell);
     if (c.limit) |l| l.committing.store(true, .seq_cst);
     defer if (c.limit) |l| l.committing.store(false, .seq_cst);
-    writeCache(c, dirfd, p.name, outcome);
+    writeCache(c, dirfd, name, outcome);
     return outcome;
+}
+
+/// Close the cache lock once `outcome` is known. After an outcome, a failed
+/// close is the OSError that Python's `finally: os.close(lockfd)` lets out,
+/// which main reports as a skip. After a timeout, SIGTERM or another
+/// OSError the failed close is dropped, so that the first stop is the one
+/// reported. An interrupted close fails too: os.close does not retry it,
+/// as PEP 475 exempts close, and raises InterruptedError. closeFd counts
+/// EINTR as a success, so this calls close(2) itself.
+fn releaseCacheLock(lockfd: sys.fd_t, outcome: Stop!Outcome) Stop!Outcome {
+    const o = outcome catch |err| {
+        _ = linux.close(lockfd);
+        return err;
+    };
+    const e = linux.errno(linux.close(lockfd));
+    if (e != .SUCCESS) {
+        os_failure = .{ .class = osErrorClass(e), .text = sys.describeErrno(e) };
+        return error.Os;
+    }
+    return o;
 }
 
 /// Read-only decision summary produced by `--dry-run`.
