@@ -1,0 +1,1 @@
+`tests/test_tracer_build.py` builds `tests/fs_fail.c` and `tests/close_fail.c` with gcc under `-Wall -Wextra -Werror` at `-O0` to `-O3` and `-Os`, and fails on any warning. It skips without gcc or off x86_64.

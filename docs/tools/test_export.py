@@ -46,7 +46,7 @@ def export(page):
             ["emacs", "-Q", "--batch", "--load", str(EXPORT)],
             cwd=root,
             capture_output=True,
-            text=True,
+            encoding="utf-8",
         )
         rst = root / "source" / "index.rst"
         if run.returncode != 0 or not rst.is_file():
