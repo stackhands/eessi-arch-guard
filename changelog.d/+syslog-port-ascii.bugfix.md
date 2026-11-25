@@ -1,1 +1,0 @@
-The Python guard accepts only ASCII digits in the port of a syslog target, as the Zig guard does, so a port written in other digits is reported and ignored instead of being used or ending the decision with an exception.

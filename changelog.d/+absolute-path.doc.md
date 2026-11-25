@@ -1,1 +1,0 @@
-The environment variables page says what it means by an absolute path, as both builds check it: one that starts with `/`, has no `..` part, and holds no newline, carriage return or NUL. A `TMPDIR` with a `..` part is not used, and an `EESSI_PREFIX` or `EESSI_INIT_PREFIX` with one ends in `archdetect-failed`, which the page did not say.

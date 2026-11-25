@@ -1,1 +1,0 @@
-Every `pub` declaration of the Zig build, and every public function, class and method of `src/eessi_arch_guard.py`, has a doc comment or docstring, whose first sentence is the summary the API pages list. The comment on `eessiModule` in `zig/text.zig` writes its pattern as code, so its API page shows `^EESSI/<segment>$` instead of passing `<segment>` through as an HTML tag.

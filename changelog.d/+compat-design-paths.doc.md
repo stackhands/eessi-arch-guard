@@ -1,1 +1,0 @@
-COMPAT.md says that the second configuration file is looked for beside `__file__`, which for the console script `pip` installs is the module in `site-packages`. DESIGN.md lists the helper's environment so that its last three variables are the ones that name the helper's private directory, as the text says.

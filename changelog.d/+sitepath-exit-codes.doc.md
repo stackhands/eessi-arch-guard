@@ -1,1 +1,0 @@
-The client-mount how-to matches `share/sitepath.py` exit codes (1 for a failed check, 2 for missing input or an unreadable mount table), documents unset shell variables expanding to `/modules/all`, and adds optional `--require-input` to reject that placeholder without changing the default.

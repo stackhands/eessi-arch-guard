@@ -1,1 +1,0 @@
-The Python module drops `render`, `configured_chain` and `parse_chain_config`, which the guard never called. `render` lacked the 4094-byte prolog line check of `render_bytes`, the renderer the guard uses; the tests now go through `render_bytes`, and the site config chain is read only by `main`.

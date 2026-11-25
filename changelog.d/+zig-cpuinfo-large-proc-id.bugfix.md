@@ -1,1 +1,0 @@
-Keep oversized decimal `processor` entries as out-of-range blocks in `zig/guard.zig` `processorId` and `scopeCpuinfo` so they scope like Python arbitrary-precision integers instead of bypassing scoping.

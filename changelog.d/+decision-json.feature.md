@@ -1,1 +1,0 @@
-`--json` on a normal decision run prints one line of JSON on stdout with `schema_version` 1, the decision kind, `reload_needed`, and `exit` / `exit_semantic`, instead of prolog or shell lines. Prolog and shell output are unchanged without the option. Both the Python guard and the Zig build.

@@ -1,1 +1,0 @@
-The decision cache key includes the processors the task may run on and the accelerator devices named by `CUDA_VISIBLE_DEVICES`, `ROCR_VISIBLE_DEVICES`, `GPU_DEVICE_ORDINAL`, `SLURM_STEP_GPUS`, and `SLURM_GPUS_ON_NODE`. Two tasks of one job that do not share a cpuset or a GPU no longer reuse each other's result.

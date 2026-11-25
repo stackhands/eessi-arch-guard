@@ -1,1 +1,0 @@
-The Zig build started by name through `PATH`, by a symbolic link in another directory than its target, reads `eessi-arch-guard.conf` beside the link, as the Python guard does, instead of beside the link's target. Started by a relative path, it names the file as the Python guard does, without the `.` and `..` parts of that path.
