@@ -83,7 +83,8 @@ def _build_tracer(directory: str) -> str:
     built = subprocess.run(
         ["gcc", "-O2", "-Wall", "-Wextra", "-o", out, str(FS_FAIL)],
         capture_output=True,
-        text=True,
+        encoding="utf-8",
+        errors="replace",
         check=False,
     )
     if built.returncode != 0:

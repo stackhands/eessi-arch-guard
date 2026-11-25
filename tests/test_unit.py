@@ -482,6 +482,7 @@ class UnitTests:
         fitted = guard._fit_encoded((accent * 10).encode("utf-8"), 5, "utf-8")
         fitted.decode("utf-8")
         assert len(fitted) <= 5
+        previous = locale.setlocale(locale.LC_ALL)
         locale.setlocale(locale.LC_ALL, "C.UTF-8")
         original = guard.PROLOG_LINE_MAX
         try:
@@ -493,7 +494,7 @@ class UnitTests:
             assert raw.endswith(accent.encode("utf-8"))
         finally:
             guard.PROLOG_LINE_MAX = original
-            locale.setlocale(locale.LC_ALL, "C")
+            locale.setlocale(locale.LC_ALL, previous)
 
     def test_export_line_over_the_slurm_17_11_cap_is_refused(self):
         value = "a" * (guard.PROLOG_LINE_MAX + 8)

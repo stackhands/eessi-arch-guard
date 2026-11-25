@@ -19,7 +19,7 @@ class SitePackageTests(unittest.TestCase):
         proc = subprocess.run(
             ["lua", str(ROOT / "tests" / "site_package_check.lua"), str(ROOT)],
             capture_output=True,
-            text=True,
+            encoding="utf-8",
             check=False,
         )
         self.assertEqual(proc.returncode, 0, proc.stderr + proc.stdout)
@@ -71,7 +71,7 @@ class SitePackageTests(unittest.TestCase):
                 [LUA, str(lua_script)],
                 env=env,
                 capture_output=True,
-                text=True,
+                encoding="utf-8",
                 check=False,
             )
             self.assertEqual(proc.returncode, 0, proc.stderr + proc.stdout)
@@ -128,7 +128,7 @@ class SitePackageTests(unittest.TestCase):
                 [str(lmod), "bash", "load", "Demo/1.0"],
                 env=env,
                 capture_output=True,
-                text=True,
+                encoding="utf-8",
                 check=False,
             )
             self.assertEqual(proc.returncode, 0, proc.stderr + proc.stdout)
@@ -157,7 +157,7 @@ class SitePackageTests(unittest.TestCase):
         proc = subprocess.run(
             [LUA, "-e", script],
             capture_output=True,
-            text=True,
+            encoding="utf-8",
             check=False,
         )
         self.assertEqual(proc.returncode, 0, proc.stderr + proc.stdout)
@@ -188,7 +188,7 @@ class SitePackageTests(unittest.TestCase):
         proc = subprocess.run(
             [LUA, "-e", script],
             capture_output=True,
-            text=True,
+            encoding="utf-8",
             check=False,
         )
         self.assertEqual(proc.returncode, 0, proc.stderr + proc.stdout)
@@ -218,7 +218,7 @@ class SitePackageTests(unittest.TestCase):
                 "SLURM_JOB_ID": "\x1b",
             },
             capture_output=True,
-            text=True,
+            encoding="utf-8",
             check=False,
         )
         self.assertEqual(proc.returncode, 0, proc.stderr + proc.stdout)
@@ -249,7 +249,7 @@ class SitePackageTests(unittest.TestCase):
                 "EESSI_USAGE_TRACKING": "1",
             },
             capture_output=True,
-            text=True,
+            encoding="utf-8",
             check=False,
         )
         self.assertEqual(proc.returncode, 0, proc.stderr + proc.stdout)

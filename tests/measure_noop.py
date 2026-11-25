@@ -68,7 +68,7 @@ def main():
     finally:
         site.close()
 
-    uname = subprocess.run(["uname", "-srvm"], capture_output=True, text=True, check=False)
+    uname = subprocess.run(["uname", "-srvm"], capture_output=True, encoding="utf-8", check=False)
     print("host:", uname.stdout.strip())
     print("python:", sys.version.split()[0], sys.executable)
     print("method: time.perf_counter around subprocess.run of the command below")

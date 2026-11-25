@@ -13,7 +13,7 @@ def run_guard(*args: str, stdin: str = "") -> subprocess.CompletedProcess[str]:
         [*harness.GUARD_ARGV, *args],
         input=stdin,
         capture_output=True,
-        text=True,
+        encoding="utf-8",
         check=False,
     )
 

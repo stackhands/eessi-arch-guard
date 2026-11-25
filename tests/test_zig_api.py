@@ -41,7 +41,7 @@ class ZigApiTests(unittest.TestCase):
             cwd=ROOT,
             env=env,
             capture_output=True,
-            text=True,
+            encoding="utf-8",
             check=False,
         )
         self.assertEqual(proc.returncode, 0, proc.stderr + proc.stdout)

@@ -87,7 +87,7 @@ class CacheLockCloseTests(unittest.TestCase):
         return subprocess.run(
             self._argv(args, errno),
             capture_output=True,
-            text=True,
+            encoding="utf-8",
             env=self.env,
             timeout=60,
             check=False,
@@ -144,7 +144,7 @@ class CacheLockCloseTests(unittest.TestCase):
         proc = subprocess.run(
             [self.tracer, EIO, "/nonexistent", "--", *harness.GUARD_ARGV],
             capture_output=True,
-            text=True,
+            encoding="utf-8",
             env=self.env,
             timeout=60,
             check=False,
@@ -168,7 +168,7 @@ class CacheLockCloseTests(unittest.TestCase):
             self._argv(["--timeout", "30"]),
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            text=True,
+            encoding="utf-8",
             env=self.env,
         )
         try:

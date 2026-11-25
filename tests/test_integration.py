@@ -434,7 +434,7 @@ class IntegrationTests(unittest.TestCase):
                 proc.stdout,
             ],
             capture_output=True,
-            text=True,
+            encoding="utf-8",
             env={"PATH": "/usr/bin:/bin", "HOME": "/tmp"},
             check=False,
         )
@@ -538,7 +538,7 @@ class IntegrationTests(unittest.TestCase):
                     list(harness.GUARD_ARGV),
                     stdout=subprocess.PIPE,
                     stderr=subprocess.PIPE,
-                    text=True,
+                    encoding="utf-8",
                     env=one,
                 )
             )
@@ -568,7 +568,7 @@ class IntegrationTests(unittest.TestCase):
                     list(harness.GUARD_ARGV),
                     stdout=subprocess.PIPE,
                     stderr=subprocess.PIPE,
-                    text=True,
+                    encoding="utf-8",
                     env=one,
                 )
             )
@@ -747,7 +747,7 @@ class IntegrationTests(unittest.TestCase):
             proc = subprocess.run(
                 ["eessi-arch-guard", "--shell"],
                 capture_output=True,
-                text=True,
+                encoding="utf-8",
                 env={"PATH": entry + ":/usr/bin:/bin", "LC_ALL": "C"},
                 cwd=self.site.root,
                 check=False,
@@ -922,7 +922,7 @@ class IntegrationTests(unittest.TestCase):
             [*harness.GUARD_ARGV, "--timeout", "30"],
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            text=True,
+            encoding="utf-8",
             env=env,
         )
         pid_path = Path(env["EESSI_TEST_HANG_PID"])
@@ -1182,7 +1182,7 @@ class IntegrationTests(unittest.TestCase):
         proc = subprocess.run(
             ["bash", script, "-a", "cpupath"],
             capture_output=True,
-            text=True,
+            encoding="utf-8",
             env=env,
             check=False,
         )
@@ -1252,7 +1252,7 @@ class IntegrationTests(unittest.TestCase):
             [*harness.GUARD_ARGV, "--restore"],
             input=json.dumps(request),
             capture_output=True,
-            text=True,
+            encoding="utf-8",
             env=env,
             check=False,
         )
@@ -1282,7 +1282,7 @@ class IntegrationTests(unittest.TestCase):
                 [*harness.GUARD_ARGV, "--restore"],
                 input=request.replace('"@VALUE@"', value),
                 capture_output=True,
-                text=True,
+                encoding="utf-8",
                 env=env,
                 check=False,
             )
@@ -2152,7 +2152,7 @@ class IntegrationTests(unittest.TestCase):
                 py_proc = subprocess.run(
                     [sys.executable, "-I", str(harness.GUARD), *args],
                     capture_output=True,
-                    text=True,
+                    encoding="utf-8",
                     env=env,
                     check=False,
                 )
@@ -2238,7 +2238,9 @@ class IntegrationTests(unittest.TestCase):
         os.symlink("missing-target.conf", conf)
 
         env = {"PATH": "/usr/bin:/bin", "LC_ALL": "C"}
-        prolog = subprocess.run([program], capture_output=True, text=True, env=env, check=False)
+        prolog = subprocess.run(
+            [program], capture_output=True, encoding="utf-8", env=env, check=False
+        )
         self.assertEqual(prolog.returncode, 0)
         self.assertEqual(prolog.stdout, "")
         self.assertIn("is a symlink and is ignored", prolog.stderr)
@@ -2246,7 +2248,7 @@ class IntegrationTests(unittest.TestCase):
         dry = subprocess.run(
             [program, "--dry-run", "--json"],
             capture_output=True,
-            text=True,
+            encoding="utf-8",
             env=env,
             check=False,
         )
@@ -2292,7 +2294,7 @@ class IntegrationTests(unittest.TestCase):
                     env=env,
                     stdout=subprocess.PIPE,
                     stderr=subprocess.PIPE,
-                    text=True,
+                    encoding="utf-8",
                 )
                 try:
                     deadline = time.monotonic() + 3.0

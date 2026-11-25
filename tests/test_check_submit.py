@@ -328,7 +328,7 @@ class CheckSubmitTests(unittest.TestCase):
                     str(fake),
                 ],
                 capture_output=True,
-                text=True,
+                encoding="utf-8",
                 env=env,
                 check=False,
             )
@@ -373,7 +373,7 @@ class CheckSubmitTests(unittest.TestCase):
                         str(fake),
                     ],
                     capture_output=True,
-                    text=True,
+                    encoding="utf-8",
                     env=env,
                     check=False,
                 )
@@ -558,7 +558,7 @@ class CheckSubmitTests(unittest.TestCase):
                             str(fake),
                         ],
                         capture_output=True,
-                        text=True,
+                        encoding="utf-8",
                         env={
                             "PATH": "/usr/bin:/bin",
                             "TMPDIR": tmp,
@@ -616,7 +616,7 @@ class CheckSubmitTests(unittest.TestCase):
                         str(fake),
                     ],
                     capture_output=True,
-                    text=True,
+                    encoding="utf-8",
                     env=env,
                     check=False,
                 )
@@ -654,7 +654,7 @@ class CheckSubmitTests(unittest.TestCase):
                     "cpu",
                 ],
                 capture_output=True,
-                text=True,
+                encoding="utf-8",
                 env=env,
                 check=False,
             )
@@ -734,7 +734,7 @@ with open({str(env_log)!r}, "w", encoding="utf-8") as handle:
                         str(fake),
                     ],
                     capture_output=True,
-                    text=True,
+                    encoding="utf-8",
                     env=env,
                     check=False,
                 )
@@ -784,7 +784,7 @@ with open({str(env_log)!r}, "w", encoding="utf-8") as handle:
                         str(fake),
                     ],
                     capture_output=True,
-                    text=True,
+                    encoding="utf-8",
                     env=env,
                     check=False,
                 )
@@ -910,7 +910,7 @@ class CheckSubmitEmptyTargetTests(unittest.TestCase):
                 proc = subprocess.run(
                     [*harness.GUARD_ARGV, *argv],
                     capture_output=True,
-                    text=True,
+                    encoding="utf-8",
                     check=False,
                 )
                 self.assertEqual(proc.returncode, 2, proc.stdout + proc.stderr)
@@ -976,7 +976,7 @@ class CheckSubmitZigParityTests(unittest.TestCase):
             proc = subprocess.run(
                 [*harness.GUARD_ARGV, "--check-submit", "--json", "--target", ZEN4],
                 capture_output=True,
-                text=True,
+                encoding="utf-8",
                 env=env_missing_prefix,
                 check=False,
             )
@@ -1005,7 +1005,7 @@ class CheckSubmitZigParityTests(unittest.TestCase):
                     str(root / "no-such-eb-stack"),
                 ],
                 capture_output=True,
-                text=True,
+                encoding="utf-8",
                 env=env_missing_eb,
                 check=False,
             )
@@ -1050,7 +1050,7 @@ class CheckSubmitZigParityTests(unittest.TestCase):
                     str(silent),
                 ],
                 capture_output=True,
-                text=True,
+                encoding="utf-8",
                 env=env,
                 check=False,
             )
@@ -1069,7 +1069,7 @@ class CheckSubmitZigParityTests(unittest.TestCase):
                     str(bad_exec),
                 ],
                 capture_output=True,
-                text=True,
+                encoding="utf-8",
                 env=env,
                 check=False,
             )
