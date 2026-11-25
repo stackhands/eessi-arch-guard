@@ -2165,8 +2165,11 @@ def _write_cache(path: str, outcome: Outcome) -> None:
             )
             os.write(fd, data)
             os.fchmod(fd, 0o600)
-            os.close(fd)
-            fd = -1
+            # A failed close has still freed the descriptor.
+            try:
+                os.close(fd)
+            finally:
+                fd = -1
             os.replace(tmp_path, path)
         except OSError:
             _discard_file(tmp_path)
