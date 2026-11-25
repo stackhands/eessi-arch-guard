@@ -33,7 +33,7 @@ def main() -> int:
         baked = subprocess.run(
             ["bash", "--noprofile", "--norc", "-c", script, "bash", proc.stdout],
             capture_output=True,
-            text=True,
+            encoding="utf-8",
             env={"PATH": "/usr/bin:/bin", "LC_ALL": "C"},
             check=False,
         )
