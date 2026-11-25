@@ -26,6 +26,7 @@ jobs:
         with:
           version: 0.17.1
       - run: zig build test --summary all
+      - uses: ./.github/actions/allow-userns
       - name: Python suite against the binary
         run: zig build -Drelease=true && TOOL_BIN="$PWD/zig-out/bin/eessi-arch-guard" python3 -m unittest discover -s tests
       - name: build
