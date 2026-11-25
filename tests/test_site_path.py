@@ -98,7 +98,7 @@ class SitePathTests(unittest.TestCase):
                 "/proc/self/mountinfo",
             ],
             capture_output=True,
-            text=True,
+            encoding="utf-8",
             check=False,
         )
         self.assertEqual(proc.returncode, 2, proc.stderr)
@@ -159,7 +159,7 @@ class SitePathTests(unittest.TestCase):
                 ],
                 env=env,
                 capture_output=True,
-                text=True,
+                encoding="utf-8",
                 check=False,
             )
         self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)

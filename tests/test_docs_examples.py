@@ -76,7 +76,7 @@ class DocsExamplesTests(unittest.TestCase):
                 command,
                 cwd=ROOT,
                 shell=True,
-                text=True,
+                encoding="utf-8",
                 capture_output=True,
                 check=False,
             )
@@ -126,7 +126,7 @@ class DocsExamplesTests(unittest.TestCase):
             proc = subprocess.run(
                 [str(script), str(job)],
                 cwd=ROOT,
-                text=True,
+                encoding="utf-8",
                 capture_output=True,
                 env=env,
                 check=False,

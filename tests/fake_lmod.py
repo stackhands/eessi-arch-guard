@@ -55,7 +55,7 @@ def arch_cpu() -> tuple:
     proc = subprocess.run(
         ["bash", script, "-a", "cpupath"],
         capture_output=True,
-        text=True,
+        encoding="utf-8",
         env=os.environ.copy(),
         check=False,
     )
@@ -78,7 +78,7 @@ def arch_accel() -> str:
     proc = subprocess.run(
         ["bash", script, "accelpath"],
         capture_output=True,
-        text=True,
+        encoding="utf-8",
         env=os.environ.copy(),
         check=False,
     )

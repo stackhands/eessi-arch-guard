@@ -224,7 +224,7 @@ def run_guard(env, args=()):
     proc = subprocess.run(
         [*GUARD_ARGV, *args],
         capture_output=True,
-        text=True,
+        encoding="utf-8",
         env=env,
         check=False,
     )
@@ -303,9 +303,9 @@ def run_with_timeout(argv, env=None, timeout: float = 2.0, text: bool = True, cw
 
     ``input`` is fed to the program.
 
-    The streams are decoded as text unless ``text`` is false. Then they stay
-    bytes, and ``env`` may hold bytes, so a comparison sees input and output
-    that are not valid UTF-8.
+    The streams are decoded as UTF-8, whatever the locale, unless ``text`` is
+    false. Then they stay bytes, and ``env`` may hold bytes, so a comparison
+    sees input and output that are not valid UTF-8.
     """
     return subprocess.run(
         list(argv),
@@ -313,7 +313,7 @@ def run_with_timeout(argv, env=None, timeout: float = 2.0, text: bool = True, cw
         env=env,
         cwd=cwd,
         capture_output=True,
-        text=text,
+        encoding="utf-8" if text else None,
         timeout=timeout,
         check=False,
     )
