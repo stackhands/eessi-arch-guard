@@ -106,8 +106,11 @@ static void open_path(pid_t pid, long nr, struct user_regs_struct *regs, char *o
     } else if (path_of(dirfd)) {
         snprintf(base, sizeof base, "%s", path_of(dirfd));
     }
-    if (base[0]) snprintf(out, PATHMAX, "%s/%s", base, raw);
-    else snprintf(out, PATHMAX, "%s", raw);
+    int n = base[0] ? snprintf(out, PATHMAX, "%s/%s", base, raw)
+                    : snprintf(out, PATHMAX, "%s", raw);
+    /* A path longer than PATHMAX names nothing, so that a needle cannot
+       match a prefix of it. */
+    if (n < 0 || n >= PATHMAX) out[0] = 0;
 }
 
 int main(int argc, char **argv) {
