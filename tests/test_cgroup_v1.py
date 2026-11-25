@@ -1,5 +1,6 @@
 """Cgroup v1 cpuset directories come from mountinfo, not a fixed prefix."""
 
+import os
 import sys
 import tempfile
 import unittest
@@ -47,6 +48,58 @@ class CgroupV1ProcTree(unittest.TestCase):
         with mock.patch.object(guard, "_read_text", side_effect=read):
             self.assertIsNone(guard._walk_cpuset("/", "/"))
         self.assertEqual(paths, ["/cpuset.cpus.effective"])
+
+    def test_double_slash_cpuset_walk_does_not_read_relative_to_cwd(self):
+        paths = []
+
+        def read(path):
+            paths.append(path)
+            return "1\n" if path == "cpuset.cpus.effective" else None
+
+        with mock.patch.object(guard, "_read_text", side_effect=read):
+            self.assertIsNone(guard._walk_cpuset("//job", "/"))
+        self.assertNotIn("cpuset.cpus.effective", paths)
+
+    def test_double_slash_cgroup_path_does_not_hide_another_processor(self):
+        # Processor 0 is Haswell. Processor 1 is Sapphire Rapids. A cgroup
+        # path that starts with // must not adopt cpuset.cpus.effective from
+        # the working directory, or the task is judged on processor 1 alone
+        # and keeps waitpkg.
+        old = os.getcwd()
+        os.chdir(self.root)
+        try:
+            (self.root / "cpuset.cpus.effective").write_text("1\n", encoding="ascii")
+            self.write(self.proc / "cgroup", "0:://job\n")
+            self.write(
+                self.proc / "mountinfo",
+                "22 20 0:22 / / rw - cgroup2 cgroup2 rw\n",
+            )
+            found = self.lookup()
+            cpuinfo = "\n".join(
+                (
+                    "processor : 0",
+                    "vendor_id : GenuineIntel",
+                    "cpu family : 6",
+                    "model : 60",
+                    "flags : avx2 fma",
+                    "",
+                    "processor : 1",
+                    "vendor_id : GenuineIntel",
+                    "cpu family : 6",
+                    "model : 143",
+                    "flags : avx2 fma avx512f avx512bw avx512cd avx512dq "
+                    "avx512vl avx512_bf16 amx_tile waitpkg",
+                    "",
+                )
+            )
+            allowed, base = guard._task_cpu_bounds({}, frozenset({0, 1}), found)
+            scoped = guard.scope_cpuinfo(cpuinfo, allowed, base_cpus=base)
+            self.assertIsNotNone(scoped)
+            self.assertNotIn("waitpkg", scoped)
+            self.assertIn("avx2", scoped)
+            self.assertIn("fma", scoped)
+        finally:
+            os.chdir(old)
 
     def test_v1_cpuset_mounted_off_the_default_path(self):
         point = self.root / "cgroup" / "cpuset"

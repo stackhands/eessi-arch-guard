@@ -889,8 +889,13 @@ def _walk_cpuset(directory: str, stop: str) -> Optional[frozenset]:
 
     At most 64 parents. ``stop`` of ``/`` allows any absolute path. Any
     other stop matches the directory itself or a child (``stop`` + ``/``).
+    A directory made only of slashes is the filesystem root. ``dirname``
+    of ``//job`` is ``//``, which is that root, so the next directory
+    is ``/``.
     """
     for _ in range(64):
+        if not directory.startswith("/"):
+            break
         if stop != "/" and directory != stop and not directory.startswith(stop + "/"):
             break
         raw = _read_text(os.path.join(directory, "cpuset.cpus.effective"))
@@ -898,10 +903,14 @@ def _walk_cpuset(directory: str, stop: str) -> Optional[frozenset]:
             parsed = parse_cpu_spec(raw.strip())
             if parsed is not None:
                 return parsed
-        if directory == "/":
+        # "/" , "//", and "///" are the root. dirname("//") stays "//", and
+        # rstrip then yields an empty path relative to the working directory.
+        if directory.rstrip("/") == "":
             break
         parent = os.path.dirname(directory.rstrip("/"))
-        if parent == directory:
+        if parent.rstrip("/") == "":
+            parent = "/"
+        if parent == directory or not parent.startswith("/"):
             break
         directory = parent
     return None
