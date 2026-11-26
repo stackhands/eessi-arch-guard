@@ -65,7 +65,7 @@ The release also has a wheel per architecture. `pip install eessi_arch_guard-*.w
 Optional site tools ship in `share/`, each with a how-to:
 
 - The Lmod `SitePackage.lua` hooks warn at module load, track module usage and hide toolchain modules: [Warn at module load](docs/orgmode/howto/warn-at-module-load.org).
-- `eessi-arch-guard --check-mount` checks that the site module tree precedes the EESSI tree and that the repository sits on a cvmfs mount: [Check the client mount](docs/orgmode/howto/check-the-client-mount.org). `share/sitepath.py` takes the same options and runs it.
+- `eessi-arch-guard --check-mount` checks that the site module tree precedes the EESSI tree and that the repository sits on a cvmfs mount: [Check the client mount](docs/orgmode/howto/check-the-client-mount.org). `share/sitepath.py` takes the same options and runs it. It reads `EESSI_CVMFS_REPO`, `EESSI_SITE_SOFTWARE_PATH`, `EESSI_SOFTWARE_PATH` and `MODULEPATH` when the matching option is absent.
 - `eessi-arch-guard --check-revision --stat FILE [--min N]` reads the CVMFS client revision from `cvmfs_config stat` output and compares it with a minimum: [Check the client revision](docs/orgmode/howto/check-the-client-revision.org). `share/cvmfsrev.py` takes the same options and runs it.
 
 ## Flags and environment
