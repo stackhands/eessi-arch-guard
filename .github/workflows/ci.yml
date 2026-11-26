@@ -17,7 +17,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # 3.9 is what a Rocky 9 prolog host runs; pyproject says >=3.9.
+        # 3.9 is what a Rocky 9 host runs the launcher and the tests with.
         python-version: ["3.9", "3.12"]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -28,56 +28,30 @@ jobs:
           python-version: ${{ matrix.python-version }}
       - name: Install Lua test interpreter
         run: sudo apt-get update && sudo apt-get install --yes lua5.4
+      # setup-zig checks the tarball's minisign signature against the Zig
+      # project's key.
+      - uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2.2.1
+        with:
+          version: 0.17.1
       - name: lint
         run: |
           python -m pip install ruff jsonschema
-          ruff check src tests
+          ruff check src tests share
       - name: no site names in the tree
         run: |
           ! git grep -nIiE 'snellius|surf\.nl|/gpfs/|/projects/0|rg\.terra|scratch-shared|scratch-node' -- . ':!.github/workflows/ci.yml'
+      - run: zig fmt --check build.zig build.zig.zon zig
+      - run: zig build test --summary all
+      - run: zig build -Drelease=true
+      - name: build.zig.zon's version and -Dcommit reach --version
+        run: bash tests/build_version.sh
       - uses: ./.github/actions/allow-userns
       - name: test
-        run: |
-          python -m pip install jsonschema
-          python -m unittest discover -s tests -v
-      - name: completion and manpage generation pass one
-        uses: stackhands/.github/.github/actions/parser-cli-assets@main
-        with:
-          pythonpath: src
-          parser_ref: eessi_arch_guard.build_arg_parser
-          parser_module: eessi_arch_guard
-          parser_function: build_arg_parser
-          prog: eessi-arch-guard
-          out_completions_dir: ${{ runner.temp }}/eag-cli-one/completions
-          out_man_dir: ${{ runner.temp }}/eag-cli-one/man
-          out_bash_file: eessi-arch-guard.bash
-          out_zsh_file: _eessi-arch-guard
-          out_man_file: eessi-arch-guard.1
-      - name: completion and manpage generation pass two
-        uses: stackhands/.github/.github/actions/parser-cli-assets@main
-        with:
-          pythonpath: src
-          parser_ref: eessi_arch_guard.build_arg_parser
-          parser_module: eessi_arch_guard
-          parser_function: build_arg_parser
-          prog: eessi-arch-guard
-          out_completions_dir: ${{ runner.temp }}/eag-cli-two/completions
-          out_man_dir: ${{ runner.temp }}/eag-cli-two/man
-          out_bash_file: eessi-arch-guard.bash
-          out_zsh_file: _eessi-arch-guard
-          out_man_file: eessi-arch-guard.1
-      - name: completion and manpage generation is reproducible
-        run: |
-          diff -ru "${RUNNER_TEMP}/eag-cli-one" "${RUNNER_TEMP}/eag-cli-two"
-          find "${RUNNER_TEMP}/eag-cli-one" -type f | sort
+        run: TOOL_BIN="$PWD/zig-out/bin/eessi-arch-guard" python -m unittest discover -s tests -v
 
-  zig:
-    # The Zig build against the same Python suite, through TOOL_BIN.
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-22.04, ubuntu-24.04-arm]
-    runs-on: ${{ matrix.os }}
+  zig-arm:
+    # The same build and suite on aarch64.
+    runs-on: ubuntu-24.04-arm
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -93,35 +67,38 @@ jobs:
       - uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2.2.1
         with:
           version: 0.17.1
-      - run: zig fmt --check build.zig build.zig.zon zig
+      - run: python -m pip install jsonschema
       - run: zig build test --summary all
       - run: zig build -Drelease=true
-      - name: generate completion and manpage assets
-        uses: stackhands/.github/.github/actions/parser-cli-assets@main
-        with:
-          pythonpath: src
-          parser_ref: eessi_arch_guard.build_arg_parser
-          parser_module: eessi_arch_guard
-          parser_function: build_arg_parser
-          prog: eessi-arch-guard
-          out_completions_dir: zig-out/share/completions
-          out_man_dir: zig-out/share/man
-          out_bash_file: eessi-arch-guard.bash
-          out_zsh_file: _eessi-arch-guard
-          out_man_file: eessi-arch-guard.1
-      - name: list generated cli assets
-        run: |
-          find zig-out/share -type f | sort
-          test -s zig-out/share/man/eessi-arch-guard.1
-      - name: build.zig.zon's version and -Dcommit reach --version
-        run: bash tests/build_version.sh
+      - run: bash tests/build_version.sh
       - uses: ./.github/actions/allow-userns
-      - name: Python suite against the binary
+      - name: test
         run: TOOL_BIN="$PWD/zig-out/bin/eessi-arch-guard" python -m unittest discover -s tests -v
+
+  wheel:
+    # The wheel carries the binary; the installed console script and module
+    # run it.
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+      # setup-zig checks the tarball's minisign signature against the Zig
+      # project's key.
+      - uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2.2.1
+        with:
+          version: 0.17.1
+      - run: zig build -Drelease=true
+      - name: build the wheel, install it, run the entry points
+        run: bash docs/examples/check_install.sh
 
   real-eb-stack:
     # The tests that read EB_STACK_BIN skip without it, and no other job sets
-    # it. This one gives them the released eb-stack, for both builds.
+    # it. This one gives them the released eb-stack.
     name: check-submit against eb-stack 0.8.0
     runs-on: ubuntu-22.04
     timeout-minutes: 30
@@ -146,9 +123,7 @@ jobs:
         with:
           version: 0.17.1
       - run: zig build -Drelease=true
-      - name: The Python guard
-        run: python -m unittest discover -s tests -p 'test_real_eb_stack.py' -v
-      - name: The Zig guard
+      - name: The guard
         run: TOOL_BIN="$PWD/zig-out/bin/eessi-arch-guard" python -m unittest discover -s tests -p 'test_real_eb_stack.py' -v
 
   docs:
@@ -162,6 +137,11 @@ jobs:
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.12"
+      - uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2.2.1
+        with:
+          version: 0.17.1
+      - run: zig build -Drelease=true
+      - uses: ./.github/actions/allow-userns
       - name: run documentation examples
         run: |
           python docs/examples/walkthrough.py mismatch
@@ -181,5 +161,4 @@ jobs:
           python docs/examples/accelerator.py mismatch
           python docs/examples/accelerator.py missing-module
           python docs/examples/syslog_journal.py
-          bash docs/examples/check_install.sh
           bash docs/examples/check_config.sh
