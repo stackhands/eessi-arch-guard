@@ -1,0 +1,51 @@
+=== anchor installed --dry-run
+rc: 0
+--- stdout
+mode: prolog
+strict: false
+announce: true
+config: none
+chain: none
+timeout: 60
+syslog: none
+syslog_all: false
+syslog_pen: 32473
+job: none
+step: none
+localid: unset
+cache: none
+decision: skip
+was: x86_64/amd/zen4
+now: none
+was_accel: none
+now_accel: none
+compare_accel: true
+pin: none
+eessi: none
+modules: none
+marker: none
+detail: EESSI_SOFTWARE_SUBDIR_OVERRIDE is set
+message: none
+exit: 0
+
+--- stderr
+
+--- end
+=== anchor slash live
+rc: 0
+--- stdout
+export EESSI_ARCH_GUARD_FAILED=x86_64/amd/zen4->invalid-environment
+print eessi-arch-guard: EESSI_SOFTWARE_SUBDIR_OVERRIDE is not a safe subdirectory: x86_64/amd/zen2/; environment left as it was
+
+--- stderr
+
+--- end
+=== anchor not installed live
+rc: 0
+--- stdout
+export EESSI_ARCH_GUARD_FAILED=x86_64/amd/zen4->invalid-environment
+print eessi-arch-guard: EESSI_SOFTWARE_SUBDIR_OVERRIDE is not an installed target: x86_64/amd/unknown; environment left as it was
+
+--- stderr
+
+--- end

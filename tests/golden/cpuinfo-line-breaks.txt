@@ -1,0 +1,80 @@
+=== before flags: CR
+rc: 0
+--- stdout
+{"cached": false, "cause": null, "decision": "reloaded", "detail": null, "exit": 0, "exit_semantic": "ok", "kind": "decision", "message": "eessi-arch-guard: reloaded modules for x86_64/intel/icelake (loaded for x86_64/amd/zen4)", "now": "x86_64/intel/icelake", "reload_needed": true, "schema_version": 1, "shell": false, "strict": false, "was": "x86_64/amd/zen4"}
+
+--- stderr
+
+--- end
+=== before flags: VT
+rc: 0
+--- stdout
+{"cached": false, "cause": null, "decision": "reloaded", "detail": null, "exit": 0, "exit_semantic": "ok", "kind": "decision", "message": "eessi-arch-guard: reloaded modules for x86_64/intel/icelake (loaded for x86_64/amd/zen4)", "now": "x86_64/intel/icelake", "reload_needed": true, "schema_version": 1, "shell": false, "strict": false, "was": "x86_64/amd/zen4"}
+
+--- stderr
+
+--- end
+=== before flags: FF
+rc: 0
+--- stdout
+{"cached": false, "cause": null, "decision": "reloaded", "detail": null, "exit": 0, "exit_semantic": "ok", "kind": "decision", "message": "eessi-arch-guard: reloaded modules for x86_64/intel/icelake (loaded for x86_64/amd/zen4)", "now": "x86_64/intel/icelake", "reload_needed": true, "schema_version": 1, "shell": false, "strict": false, "was": "x86_64/amd/zen4"}
+
+--- stderr
+
+--- end
+=== before flags: FS
+rc: 0
+--- stdout
+{"cached": false, "cause": null, "decision": "reloaded", "detail": null, "exit": 0, "exit_semantic": "ok", "kind": "decision", "message": "eessi-arch-guard: reloaded modules for x86_64/intel/icelake (loaded for x86_64/amd/zen4)", "now": "x86_64/intel/icelake", "reload_needed": true, "schema_version": 1, "shell": false, "strict": false, "was": "x86_64/amd/zen4"}
+
+--- stderr
+
+--- end
+=== before flags: GS
+rc: 0
+--- stdout
+{"cached": false, "cause": null, "decision": "reloaded", "detail": null, "exit": 0, "exit_semantic": "ok", "kind": "decision", "message": "eessi-arch-guard: reloaded modules for x86_64/intel/icelake (loaded for x86_64/amd/zen4)", "now": "x86_64/intel/icelake", "reload_needed": true, "schema_version": 1, "shell": false, "strict": false, "was": "x86_64/amd/zen4"}
+
+--- stderr
+
+--- end
+=== before flags: RS
+rc: 0
+--- stdout
+{"cached": false, "cause": null, "decision": "reloaded", "detail": null, "exit": 0, "exit_semantic": "ok", "kind": "decision", "message": "eessi-arch-guard: reloaded modules for x86_64/intel/icelake (loaded for x86_64/amd/zen4)", "now": "x86_64/intel/icelake", "reload_needed": true, "schema_version": 1, "shell": false, "strict": false, "was": "x86_64/amd/zen4"}
+
+--- stderr
+
+--- end
+=== before flags: NEL
+rc: 0
+--- stdout
+{"cached": false, "cause": null, "decision": "reloaded", "detail": null, "exit": 0, "exit_semantic": "ok", "kind": "decision", "message": "eessi-arch-guard: reloaded modules for x86_64/intel/icelake (loaded for x86_64/amd/zen4)", "now": "x86_64/intel/icelake", "reload_needed": true, "schema_version": 1, "shell": false, "strict": false, "was": "x86_64/amd/zen4"}
+
+--- stderr
+
+--- end
+=== before flags: LS
+rc: 0
+--- stdout
+{"cached": false, "cause": null, "decision": "reloaded", "detail": null, "exit": 0, "exit_semantic": "ok", "kind": "decision", "message": "eessi-arch-guard: reloaded modules for x86_64/intel/icelake (loaded for x86_64/amd/zen4)", "now": "x86_64/intel/icelake", "reload_needed": true, "schema_version": 1, "shell": false, "strict": false, "was": "x86_64/amd/zen4"}
+
+--- stderr
+
+--- end
+=== before flags: PS
+rc: 0
+--- stdout
+{"cached": false, "cause": null, "decision": "reloaded", "detail": null, "exit": 0, "exit_semantic": "ok", "kind": "decision", "message": "eessi-arch-guard: reloaded modules for x86_64/intel/icelake (loaded for x86_64/amd/zen4)", "now": "x86_64/intel/icelake", "reload_needed": true, "schema_version": 1, "shell": false, "strict": false, "was": "x86_64/amd/zen4"}
+
+--- stderr
+
+--- end
+=== CRLF
+rc: 0
+--- stdout
+{"cached": false, "cause": null, "decision": "reloaded", "detail": null, "exit": 0, "exit_semantic": "ok", "kind": "decision", "message": "eessi-arch-guard: reloaded modules for x86_64/intel/icelake (loaded for x86_64/amd/zen4)", "now": "x86_64/intel/icelake", "reload_needed": true, "schema_version": 1, "shell": false, "strict": false, "was": "x86_64/amd/zen4"}
+
+--- stderr
+
+--- end

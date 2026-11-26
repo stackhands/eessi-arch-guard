@@ -1,0 +1,8 @@
+=== permission denied
+rc: 0
+--- stdout
+{"cached": false, "cause": "PermissionError", "decision": "failed", "detail": null, "exit": 0, "exit_semantic": "ok", "kind": "decision", "message": "[Errno 13] Permission denied: '@WORK@/cache'", "now": null, "reload_needed": true, "schema_version": 1, "shell": false, "strict": false, "was": "x86_64/amd/zen4"}
+
+--- stderr
+
+--- end
