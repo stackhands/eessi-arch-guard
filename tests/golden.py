@@ -83,6 +83,7 @@ class Sheet:
     def check(self, case: TestCase, label: str, actual: str) -> None:
         """Compare ``actual`` with the section ``label``, or record it."""
         self.checked.add(label)
+        case.maxDiff = None
         if RECORD:
             self.recorded[label] = actual
             return
