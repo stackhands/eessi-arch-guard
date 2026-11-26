@@ -1,3 +1,4 @@
+zig/policy_test.zig
 //! Tests of the rules that keep a value, a name or a message from becoming a
 //! second directive: the grammar of module names and subdirectories, the
 //! delta and the text that publishes it, the message cut, the timeout rules,
@@ -18,11 +19,11 @@ test "module names are two or more safe segments, or four ASCII digits" {
     const good = [_][]const u8{ "EESSI/2025.06", "R/4.4.2-gfbf-2024a", "Compiler/GCCcore/15.2.0", "GCC/15.2.0", "foss/2024a", "2026", "1999" };
     for (good) |name| try std.testing.expect(text.moduleName(name));
     const bad = [_][]const u8{
-        "R/4.4.2\nexport LD_PRELOAD=x", "R/4.4.2;rm",    "$(id)",                      "`id`",
-        "foo/'bar",                     "foo/\"bar",     "has space/1.0",              "EESSI",
-        "/EESSI/2025.06",               "R/../4.4.2",    "name/ver\r",                 "name/ver$",
-        "GCC",                          "202",           "20261",                      "year2026",
-        "\u{ff12}\u{ff10}\u{ff12}\u{ff16}", "2026/",     "2026//x",                    "/2026",
+        "R/4.4.2\nexport LD_PRELOAD=x",     "R/4.4.2;rm", "$(id)",         "`id`",
+        "foo/'bar",                         "foo/\"bar",  "has space/1.0", "EESSI",
+        "/EESSI/2025.06",                   "R/../4.4.2", "name/ver\r",    "name/ver$",
+        "GCC",                              "202",        "20261",         "year2026",
+        "\u{ff12}\u{ff10}\u{ff12}\u{ff16}", "2026/",      "2026//x",       "/2026",
         "",
     };
     for (bad) |name| try std.testing.expect(!text.moduleName(name));
