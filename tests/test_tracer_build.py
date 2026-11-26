@@ -1,7 +1,7 @@
 """The ptrace tracers of the suite must build without a warning.
 
-``test_write_close_parity`` builds ``tests/fs_fail.c`` and
-``test_cache_lock_close_parity`` builds ``tests/close_fail.c``. Both build
+``test_write_close`` builds ``tests/fs_fail.c`` and
+``test_cache_lock_close`` builds ``tests/close_fail.c``. Both build
 without ``-Werror`` and skip their cases when the build fails, so a warning
 there only shows as compiler output that the test then has to decode. Each
 optimization level checks other things: gcc 11 warns about a possible
