@@ -1029,6 +1029,8 @@ class IntegrationTests(unittest.TestCase):
         env = self._hang_env(loaded=ZEN4, node="zen2")
         env["EESSI_TEST_GPU_HANG"] = "30"
         path = _cache_path(env)
+        # The path query ran the archdetect stub; the run under test is the one to count.
+        open(self.site.arch_log, "w").close()
         _write_cache(
             path,
             _Outcome(
