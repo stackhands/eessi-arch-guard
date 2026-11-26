@@ -26,6 +26,7 @@ tests/golden/cpuinfo-long-s-header.txt.
 from __future__ import annotations
 
 import json
+import os
 import sys
 import unittest
 from pathlib import Path
@@ -152,6 +153,12 @@ class LongSTests(unittest.TestCase):
             if mode:
                 self.assertEqual(run.returncode, 0, run.stderr)
                 self.assertEqual(json.loads(run.stdout)["cause"], "archdetect-failed", run.stdout)
+
+
+def setUpModule() -> None:
+    """Run from the tests directory: the temporary directory candidates and PWD name it."""
+    unittest.addModuleCleanup(os.chdir, os.getcwd())
+    os.chdir(Path(__file__).resolve().parent)
 
 
 if __name__ == "__main__":

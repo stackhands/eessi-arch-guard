@@ -1,0 +1,34 @@
+=== unset text
+rc: 2
+--- stdout
+
+--- stderr
+eessi-arch-guard: check-submit: could not run eb-stack: [Errno 2] No usable temporary directory found in ['/tmp', '/var/tmp', '/usr/tmp', '@REPO@/tests']
+
+--- end
+=== unset json
+rc: 2
+--- stdout
+{"constraint": null, "exit": 2, "exit_semantic": "invalid", "kind": "check-submit", "loaded": 1, "message": "could not run eb-stack: [Errno 2] No usable temporary directory found in ['/tmp', '/var/tmp', '/usr/tmp', '@REPO@/tests']", "missing": [], "partition": null, "schema_version": 1, "target": "x86_64/amd/zen4"}
+
+--- stderr
+eessi-arch-guard: check-submit: could not run eb-stack: [Errno 2] No usable temporary directory found in ['/tmp', '/var/tmp', '/usr/tmp', '@REPO@/tests']
+
+--- end
+=== long text
+rc: 2
+--- stdout
+
+--- stderr
+eessi-arch-guard: check-submit: could not run eb-stack: [Errno 2] No usable temporary directory found in ['/nonexistent/ddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd...
+
+--- end
+=== long --json
+rc: 2
+--- stdout
+{"constraint": null, "exit": 2, "exit_semantic": "invalid", "kind": "check-submit", "loaded": 1, "message": "could not run eb-stack: [Errno 2] No usable temporary directory found in ['/nonexistent/ddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd...", "missing": [], "partition": null, "schema_version": 1, "target": "x86_64/amd/zen4"}
+
+--- stderr
+eessi-arch-guard: check-submit: could not run eb-stack: [Errno 2] No usable temporary directory found in ['/nonexistent/ddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd...
+
+--- end

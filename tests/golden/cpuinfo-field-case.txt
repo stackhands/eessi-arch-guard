@@ -1,0 +1,452 @@
+=== same name [text]
+rc: 0
+--- stdout
+export EESSI_ARCH_GUARD_FAILED=x86_64/intel/sapphirerapids->archdetect-failed
+print eessi-arch-guard: archdetect failed (exit -25); environment left as it was
+
+--- stderr
+
+--- end
+=== same name [--json]
+rc: 0
+--- stdout
+{"cached": false, "cause": "archdetect-failed", "decision": "failed", "detail": null, "exit": 0, "exit_semantic": "ok", "kind": "decision", "message": "eessi-arch-guard: archdetect failed (exit -25); environment left as it was", "now": null, "reload_needed": true, "schema_version": 1, "shell": false, "strict": false, "was": "x86_64/intel/sapphirerapids"}
+
+--- stderr
+
+--- end
+=== title and lower [text]
+rc: 0
+--- stdout
+export EESSI_ARCH_GUARD_FAILED=x86_64/intel/sapphirerapids->archdetect-failed
+print eessi-arch-guard: archdetect failed (exit -25); environment left as it was
+
+--- stderr
+
+--- end
+=== title and lower [--json]
+rc: 0
+--- stdout
+{"cached": false, "cause": "archdetect-failed", "decision": "failed", "detail": null, "exit": 0, "exit_semantic": "ok", "kind": "decision", "message": "eessi-arch-guard: archdetect failed (exit -25); environment left as it was", "now": null, "reload_needed": true, "schema_version": 1, "shell": false, "strict": false, "was": "x86_64/intel/sapphirerapids"}
+
+--- stderr
+
+--- end
+=== upper and lower [text]
+rc: 0
+--- stdout
+export EESSI_ARCH_GUARD_FAILED=x86_64/intel/sapphirerapids->archdetect-failed
+print eessi-arch-guard: archdetect failed (exit -25); environment left as it was
+
+--- stderr
+
+--- end
+=== upper and lower [--json]
+rc: 0
+--- stdout
+{"cached": false, "cause": "archdetect-failed", "decision": "failed", "detail": null, "exit": 0, "exit_semantic": "ok", "kind": "decision", "message": "eessi-arch-guard: archdetect failed (exit -25); environment left as it was", "now": null, "reload_needed": true, "schema_version": 1, "shell": false, "strict": false, "was": "x86_64/intel/sapphirerapids"}
+
+--- stderr
+
+--- end
+=== title and upper [text]
+rc: 0
+--- stdout
+export EESSI_ARCH_GUARD_FAILED=x86_64/intel/sapphirerapids->archdetect-failed
+print eessi-arch-guard: archdetect failed (exit -25); environment left as it was
+
+--- stderr
+
+--- end
+=== title and upper [--json]
+rc: 0
+--- stdout
+{"cached": false, "cause": "archdetect-failed", "decision": "failed", "detail": null, "exit": 0, "exit_semantic": "ok", "kind": "decision", "message": "eessi-arch-guard: archdetect failed (exit -25); environment left as it was", "now": null, "reload_needed": true, "schema_version": 1, "shell": false, "strict": false, "was": "x86_64/intel/sapphirerapids"}
+
+--- stderr
+
+--- end
+=== three spellings [text]
+rc: 0
+--- stdout
+export EESSI_ARCH_GUARD_FAILED=x86_64/intel/sapphirerapids->archdetect-failed
+print eessi-arch-guard: archdetect failed (exit -25); environment left as it was
+
+--- stderr
+
+--- end
+=== three spellings [--json]
+rc: 0
+--- stdout
+{"cached": false, "cause": "archdetect-failed", "decision": "failed", "detail": null, "exit": 0, "exit_semantic": "ok", "kind": "decision", "message": "eessi-arch-guard: archdetect failed (exit -25); environment left as it was", "now": null, "reload_needed": true, "schema_version": 1, "shell": false, "strict": false, "was": "x86_64/intel/sapphirerapids"}
+
+--- stderr
+
+--- end
+=== padded name [text]
+rc: 0
+--- stdout
+export EESSI_ARCH_GUARD_FAILED=x86_64/intel/sapphirerapids->archdetect-failed
+print eessi-arch-guard: archdetect failed (exit -25); environment left as it was
+
+--- stderr
+
+--- end
+=== padded name [--json]
+rc: 0
+--- stdout
+{"cached": false, "cause": "archdetect-failed", "decision": "failed", "detail": null, "exit": 0, "exit_semantic": "ok", "kind": "decision", "message": "eessi-arch-guard: archdetect failed (exit -25); environment left as it was", "now": null, "reload_needed": true, "schema_version": 1, "shell": false, "strict": false, "was": "x86_64/intel/sapphirerapids"}
+
+--- stderr
+
+--- end
+=== other name [text]
+rc: 0
+--- stdout
+print eessi-arch-guard: skipped, FileNotFoundError: [Errno 2] No usable temporary directory found in ['@WORK@/temp', '/tmp', '/var/tmp', '/usr/tmp', '@REPO@/tests']
+
+--- stderr
+
+--- end
+=== other name [--json]
+rc: 0
+--- stdout
+{"cached": false, "cause": "FileNotFoundError", "decision": "failed", "detail": null, "exit": 0, "exit_semantic": "ok", "kind": "decision", "message": "[Errno 2] No usable temporary directory found in ['@WORK@/temp', '/tmp', '/var/tmp', '/usr/tmp', '@REPO@/tests']", "now": null, "reload_needed": true, "schema_version": 1, "shell": false, "strict": false, "was": "x86_64/intel/sapphirerapids"}
+
+--- stderr
+
+--- end
+=== kelvin sign and lower [text]
+rc: 0
+--- stdout
+export EESSI_ARCH_GUARD_FAILED=x86_64/intel/sapphirerapids->archdetect-failed
+print eessi-arch-guard: archdetect failed (exit -25); environment left as it was
+
+--- stderr
+
+--- end
+=== kelvin sign and lower [--json]
+rc: 0
+--- stdout
+{"cached": false, "cause": "archdetect-failed", "decision": "failed", "detail": null, "exit": 0, "exit_semantic": "ok", "kind": "decision", "message": "eessi-arch-guard: archdetect failed (exit -25); environment left as it was", "now": null, "reload_needed": true, "schema_version": 1, "shell": false, "strict": false, "was": "x86_64/intel/sapphirerapids"}
+
+--- stderr
+
+--- end
+=== kelvin sign and title [text]
+rc: 0
+--- stdout
+export EESSI_ARCH_GUARD_FAILED=x86_64/intel/sapphirerapids->archdetect-failed
+print eessi-arch-guard: archdetect failed (exit -25); environment left as it was
+
+--- stderr
+
+--- end
+=== kelvin sign and title [--json]
+rc: 0
+--- stdout
+{"cached": false, "cause": "archdetect-failed", "decision": "failed", "detail": null, "exit": 0, "exit_semantic": "ok", "kind": "decision", "message": "eessi-arch-guard: archdetect failed (exit -25); environment left as it was", "now": null, "reload_needed": true, "schema_version": 1, "shell": false, "strict": false, "was": "x86_64/intel/sapphirerapids"}
+
+--- stderr
+
+--- end
+=== kelvin sign and upper [text]
+rc: 0
+--- stdout
+export EESSI_ARCH_GUARD_FAILED=x86_64/intel/sapphirerapids->archdetect-failed
+print eessi-arch-guard: archdetect failed (exit -25); environment left as it was
+
+--- stderr
+
+--- end
+=== kelvin sign and upper [--json]
+rc: 0
+--- stdout
+{"cached": false, "cause": "archdetect-failed", "decision": "failed", "detail": null, "exit": 0, "exit_semantic": "ok", "kind": "decision", "message": "eessi-arch-guard: archdetect failed (exit -25); environment left as it was", "now": null, "reload_needed": true, "schema_version": 1, "shell": false, "strict": false, "was": "x86_64/intel/sapphirerapids"}
+
+--- stderr
+
+--- end
+=== kelvin sign beside spaces [text]
+rc: 0
+--- stdout
+print eessi-arch-guard: skipped, FileNotFoundError: [Errno 2] No usable temporary directory found in ['@WORK@/temp', '/tmp', '/var/tmp', '/usr/tmp', '@REPO@/tests']
+
+--- stderr
+
+--- end
+=== kelvin sign beside spaces [--json]
+rc: 0
+--- stdout
+{"cached": false, "cause": "FileNotFoundError", "decision": "failed", "detail": null, "exit": 0, "exit_semantic": "ok", "kind": "decision", "message": "[Errno 2] No usable temporary directory found in ['@WORK@/temp', '/tmp', '/var/tmp', '/usr/tmp', '@REPO@/tests']", "now": null, "reload_needed": true, "schema_version": 1, "shell": false, "strict": false, "was": "x86_64/intel/sapphirerapids"}
+
+--- stderr
+
+--- end
+=== kelvin sign beside another letter [text]
+rc: 0
+--- stdout
+print eessi-arch-guard: skipped, FileNotFoundError: [Errno 2] No usable temporary directory found in ['@WORK@/temp', '/tmp', '/var/tmp', '/usr/tmp', '@REPO@/tests']
+
+--- stderr
+
+--- end
+=== kelvin sign beside another letter [--json]
+rc: 0
+--- stdout
+{"cached": false, "cause": "FileNotFoundError", "decision": "failed", "detail": null, "exit": 0, "exit_semantic": "ok", "kind": "decision", "message": "[Errno 2] No usable temporary directory found in ['@WORK@/temp', '/tmp', '/var/tmp', '/usr/tmp', '@REPO@/tests']", "now": null, "reload_needed": true, "schema_version": 1, "shell": false, "strict": false, "was": "x86_64/intel/sapphirerapids"}
+
+--- stderr
+
+--- end
+=== dotted capital i and its lower case [text]
+rc: 0
+--- stdout
+export EESSI_ARCH_GUARD_FAILED=x86_64/intel/sapphirerapids->archdetect-failed
+print eessi-arch-guard: archdetect failed (exit -25); environment left as it was
+
+--- stderr
+
+--- end
+=== dotted capital i and its lower case [--json]
+rc: 0
+--- stdout
+{"cached": false, "cause": "archdetect-failed", "decision": "failed", "detail": null, "exit": 0, "exit_semantic": "ok", "kind": "decision", "message": "eessi-arch-guard: archdetect failed (exit -25); environment left as it was", "now": null, "reload_needed": true, "schema_version": 1, "shell": false, "strict": false, "was": "x86_64/intel/sapphirerapids"}
+
+--- stderr
+
+--- end
+=== dotted capital i and a plain i [text]
+rc: 0
+--- stdout
+print eessi-arch-guard: skipped, FileNotFoundError: [Errno 2] No usable temporary directory found in ['@WORK@/temp', '/tmp', '/var/tmp', '/usr/tmp', '@REPO@/tests']
+
+--- stderr
+
+--- end
+=== dotted capital i and a plain i [--json]
+rc: 0
+--- stdout
+{"cached": false, "cause": "FileNotFoundError", "decision": "failed", "detail": null, "exit": 0, "exit_semantic": "ok", "kind": "decision", "message": "[Errno 2] No usable temporary directory found in ['@WORK@/temp', '/tmp', '/var/tmp', '/usr/tmp', '@REPO@/tests']", "now": null, "reload_needed": true, "schema_version": 1, "shell": false, "strict": false, "was": "x86_64/intel/sapphirerapids"}
+
+--- stderr
+
+--- end
+=== long s is not an s [text]
+rc: 0
+--- stdout
+print eessi-arch-guard: skipped, FileNotFoundError: [Errno 2] No usable temporary directory found in ['@WORK@/temp', '/tmp', '/var/tmp', '/usr/tmp', '@REPO@/tests']
+
+--- stderr
+
+--- end
+=== long s is not an s [--json]
+rc: 0
+--- stdout
+{"cached": false, "cause": "FileNotFoundError", "decision": "failed", "detail": null, "exit": 0, "exit_semantic": "ok", "kind": "decision", "message": "[Errno 2] No usable temporary directory found in ['@WORK@/temp', '/tmp', '/var/tmp', '/usr/tmp', '@REPO@/tests']", "now": null, "reload_needed": true, "schema_version": 1, "shell": false, "strict": false, "was": "x86_64/intel/sapphirerapids"}
+
+--- stderr
+
+--- end
+=== long s and a capital s [text]
+rc: 0
+--- stdout
+print eessi-arch-guard: skipped, FileNotFoundError: [Errno 2] No usable temporary directory found in ['@WORK@/temp', '/tmp', '/var/tmp', '/usr/tmp', '@REPO@/tests']
+
+--- stderr
+
+--- end
+=== long s and a capital s [--json]
+rc: 0
+--- stdout
+{"cached": false, "cause": "FileNotFoundError", "decision": "failed", "detail": null, "exit": 0, "exit_semantic": "ok", "kind": "decision", "message": "[Errno 2] No usable temporary directory found in ['@WORK@/temp', '/tmp', '/var/tmp', '/usr/tmp', '@REPO@/tests']", "now": null, "reload_needed": true, "schema_version": 1, "shell": false, "strict": false, "was": "x86_64/intel/sapphirerapids"}
+
+--- stderr
+
+--- end
+=== accented capital [text]
+rc: 0
+--- stdout
+export EESSI_ARCH_GUARD_FAILED=x86_64/intel/sapphirerapids->archdetect-failed
+print eessi-arch-guard: archdetect failed (exit -25); environment left as it was
+
+--- stderr
+
+--- end
+=== accented capital [--json]
+rc: 0
+--- stdout
+{"cached": false, "cause": "archdetect-failed", "decision": "failed", "detail": null, "exit": 0, "exit_semantic": "ok", "kind": "decision", "message": "eessi-arch-guard: archdetect failed (exit -25); environment left as it was", "now": null, "reload_needed": true, "schema_version": 1, "shell": false, "strict": false, "was": "x86_64/intel/sapphirerapids"}
+
+--- stderr
+
+--- end
+=== cherokee capital [text]
+rc: 0
+--- stdout
+export EESSI_ARCH_GUARD_FAILED=x86_64/intel/sapphirerapids->archdetect-failed
+print eessi-arch-guard: archdetect failed (exit -25); environment left as it was
+
+--- stderr
+
+--- end
+=== cherokee capital [--json]
+rc: 0
+--- stdout
+{"cached": false, "cause": "archdetect-failed", "decision": "failed", "detail": null, "exit": 0, "exit_semantic": "ok", "kind": "decision", "message": "eessi-arch-guard: archdetect failed (exit -25); environment left as it was", "now": null, "reload_needed": true, "schema_version": 1, "shell": false, "strict": false, "was": "x86_64/intel/sapphirerapids"}
+
+--- stderr
+
+--- end
+=== georgian mtavruli [text]
+rc: 0
+--- stdout
+export EESSI_ARCH_GUARD_FAILED=x86_64/intel/sapphirerapids->archdetect-failed
+print eessi-arch-guard: archdetect failed (exit -25); environment left as it was
+
+--- stderr
+
+--- end
+=== georgian mtavruli [--json]
+rc: 0
+--- stdout
+{"cached": false, "cause": "archdetect-failed", "decision": "failed", "detail": null, "exit": 0, "exit_semantic": "ok", "kind": "decision", "message": "eessi-arch-guard: archdetect failed (exit -25); environment left as it was", "now": null, "reload_needed": true, "schema_version": 1, "shell": false, "strict": false, "was": "x86_64/intel/sapphirerapids"}
+
+--- stderr
+
+--- end
+=== deseret capital [text]
+rc: 0
+--- stdout
+export EESSI_ARCH_GUARD_FAILED=x86_64/intel/sapphirerapids->archdetect-failed
+print eessi-arch-guard: archdetect failed (exit -25); environment left as it was
+
+--- stderr
+
+--- end
+=== deseret capital [--json]
+rc: 0
+--- stdout
+{"cached": false, "cause": "archdetect-failed", "decision": "failed", "detail": null, "exit": 0, "exit_semantic": "ok", "kind": "decision", "message": "eessi-arch-guard: archdetect failed (exit -25); environment left as it was", "now": null, "reload_needed": true, "schema_version": 1, "shell": false, "strict": false, "was": "x86_64/intel/sapphirerapids"}
+
+--- stderr
+
+--- end
+=== titlecase digraph [text]
+rc: 0
+--- stdout
+export EESSI_ARCH_GUARD_FAILED=x86_64/intel/sapphirerapids->archdetect-failed
+print eessi-arch-guard: archdetect failed (exit -25); environment left as it was
+
+--- stderr
+
+--- end
+=== titlecase digraph [--json]
+rc: 0
+--- stdout
+{"cached": false, "cause": "archdetect-failed", "decision": "failed", "detail": null, "exit": 0, "exit_semantic": "ok", "kind": "decision", "message": "eessi-arch-guard: archdetect failed (exit -25); environment left as it was", "now": null, "reload_needed": true, "schema_version": 1, "shell": false, "strict": false, "was": "x86_64/intel/sapphirerapids"}
+
+--- stderr
+
+--- end
+=== final sigma [text]
+rc: 0
+--- stdout
+export EESSI_ARCH_GUARD_FAILED=x86_64/intel/sapphirerapids->archdetect-failed
+print eessi-arch-guard: archdetect failed (exit -25); environment left as it was
+
+--- stderr
+
+--- end
+=== final sigma [--json]
+rc: 0
+--- stdout
+{"cached": false, "cause": "archdetect-failed", "decision": "failed", "detail": null, "exit": 0, "exit_semantic": "ok", "kind": "decision", "message": "eessi-arch-guard: archdetect failed (exit -25); environment left as it was", "now": null, "reload_needed": true, "schema_version": 1, "shell": false, "strict": false, "was": "x86_64/intel/sapphirerapids"}
+
+--- stderr
+
+--- end
+=== final sigma written as a medial one [text]
+rc: 0
+--- stdout
+print eessi-arch-guard: skipped, FileNotFoundError: [Errno 2] No usable temporary directory found in ['@WORK@/temp', '/tmp', '/var/tmp', '/usr/tmp', '@REPO@/tests']
+
+--- stderr
+
+--- end
+=== final sigma written as a medial one [--json]
+rc: 0
+--- stdout
+{"cached": false, "cause": "FileNotFoundError", "decision": "failed", "detail": null, "exit": 0, "exit_semantic": "ok", "kind": "decision", "message": "[Errno 2] No usable temporary directory found in ['@WORK@/temp', '/tmp', '/var/tmp', '/usr/tmp', '@REPO@/tests']", "now": null, "reload_needed": true, "schema_version": 1, "shell": false, "strict": false, "was": "x86_64/intel/sapphirerapids"}
+
+--- stderr
+
+--- end
+=== medial sigma [text]
+rc: 0
+--- stdout
+export EESSI_ARCH_GUARD_FAILED=x86_64/intel/sapphirerapids->archdetect-failed
+print eessi-arch-guard: archdetect failed (exit -25); environment left as it was
+
+--- stderr
+
+--- end
+=== medial sigma [--json]
+rc: 0
+--- stdout
+{"cached": false, "cause": "archdetect-failed", "decision": "failed", "detail": null, "exit": 0, "exit_semantic": "ok", "kind": "decision", "message": "eessi-arch-guard: archdetect failed (exit -25); environment left as it was", "now": null, "reload_needed": true, "schema_version": 1, "shell": false, "strict": false, "was": "x86_64/intel/sapphirerapids"}
+
+--- stderr
+
+--- end
+=== sigma after a full stop [text]
+rc: 0
+--- stdout
+export EESSI_ARCH_GUARD_FAILED=x86_64/intel/sapphirerapids->archdetect-failed
+print eessi-arch-guard: archdetect failed (exit -25); environment left as it was
+
+--- stderr
+
+--- end
+=== sigma after a full stop [--json]
+rc: 0
+--- stdout
+{"cached": false, "cause": "archdetect-failed", "decision": "failed", "detail": null, "exit": 0, "exit_semantic": "ok", "kind": "decision", "message": "eessi-arch-guard: archdetect failed (exit -25); environment left as it was", "now": null, "reload_needed": true, "schema_version": 1, "shell": false, "strict": false, "was": "x86_64/intel/sapphirerapids"}
+
+--- stderr
+
+--- end
+=== sigma after an underscore [text]
+rc: 0
+--- stdout
+export EESSI_ARCH_GUARD_FAILED=x86_64/intel/sapphirerapids->archdetect-failed
+print eessi-arch-guard: archdetect failed (exit -25); environment left as it was
+
+--- stderr
+
+--- end
+=== sigma after an underscore [--json]
+rc: 0
+--- stdout
+{"cached": false, "cause": "archdetect-failed", "decision": "failed", "detail": null, "exit": 0, "exit_semantic": "ok", "kind": "decision", "message": "eessi-arch-guard: archdetect failed (exit -25); environment left as it was", "now": null, "reload_needed": true, "schema_version": 1, "shell": false, "strict": false, "was": "x86_64/intel/sapphirerapids"}
+
+--- stderr
+
+--- end
+=== ill-formed byte [text]
+rc: 0
+--- stdout
+export EESSI_ARCH_GUARD_FAILED=x86_64/intel/sapphirerapids->archdetect-failed
+print eessi-arch-guard: archdetect failed (exit -25); environment left as it was
+
+--- stderr
+
+--- end
+=== ill-formed byte [--json]
+rc: 0
+--- stdout
+{"cached": false, "cause": "archdetect-failed", "decision": "failed", "detail": null, "exit": 0, "exit_semantic": "ok", "kind": "decision", "message": "eessi-arch-guard: archdetect failed (exit -25); environment left as it was", "now": null, "reload_needed": true, "schema_version": 1, "shell": false, "strict": false, "was": "x86_64/intel/sapphirerapids"}
+
+--- stderr
+
+--- end

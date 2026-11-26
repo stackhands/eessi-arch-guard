@@ -1,0 +1,16 @@
+=== key and Key with other values [text]
+rc: 0
+--- stdout
+print eessi-arch-guard: skipped, FileNotFoundError: [Errno 2] No usable temporary directory found in ['@WORK@/temp', '/tmp', '/var/tmp', '/usr/tmp', '@REPO@/tests']
+
+--- stderr
+
+--- end
+=== key and Key with other values [--json]
+rc: 0
+--- stdout
+{"cached": false, "cause": "FileNotFoundError", "decision": "failed", "detail": null, "exit": 0, "exit_semantic": "ok", "kind": "decision", "message": "[Errno 2] No usable temporary directory found in ['@WORK@/temp', '/tmp', '/var/tmp', '/usr/tmp', '@REPO@/tests']", "now": null, "reload_needed": true, "schema_version": 1, "shell": false, "strict": false, "was": "x86_64/intel/sapphirerapids"}
+
+--- stderr
+
+--- end

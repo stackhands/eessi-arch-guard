@@ -1,0 +1,49 @@
+=== 'proce\u017f\u017for\t: 1' [text]
+rc: 0
+--- stdout
+print eessi-arch-guard: skipped, FileNotFoundError: [Errno 2] No usable temporary directory found in ['@WORK@/temp', '/tmp', '/var/tmp', '/usr/tmp', '@REPO@/tests']
+
+--- stderr
+
+--- end
+=== 'proce\u017f\u017for\t: 1' [--json]
+rc: 0
+--- stdout
+{"cached": false, "cause": "FileNotFoundError", "decision": "failed", "detail": null, "exit": 0, "exit_semantic": "ok", "kind": "decision", "message": "[Errno 2] No usable temporary directory found in ['@WORK@/temp', '/tmp', '/var/tmp', '/usr/tmp', '@REPO@/tests']", "now": null, "reload_needed": true, "schema_version": 1, "shell": false, "strict": false, "was": "x86_64/generic"}
+
+--- stderr
+
+--- end
+=== 'PROCE\u017fSOR\t: 1' [text]
+rc: 0
+--- stdout
+print eessi-arch-guard: skipped, FileNotFoundError: [Errno 2] No usable temporary directory found in ['@WORK@/temp', '/tmp', '/var/tmp', '/usr/tmp', '@REPO@/tests']
+
+--- stderr
+
+--- end
+=== 'PROCE\u017fSOR\t: 1' [--json]
+rc: 0
+--- stdout
+{"cached": false, "cause": "FileNotFoundError", "decision": "failed", "detail": null, "exit": 0, "exit_semantic": "ok", "kind": "decision", "message": "[Errno 2] No usable temporary directory found in ['@WORK@/temp', '/tmp', '/var/tmp', '/usr/tmp', '@REPO@/tests']", "now": null, "reload_needed": true, "schema_version": 1, "shell": false, "strict": false, "was": "x86_64/generic"}
+
+--- stderr
+
+--- end
+=== plain header [text]
+rc: 0
+--- stdout
+export EESSI_ARCH_GUARD_FAILED=x86_64/generic->archdetect-failed
+print eessi-arch-guard: archdetect failed (exit -25); environment left as it was
+
+--- stderr
+
+--- end
+=== plain header [--json]
+rc: 0
+--- stdout
+{"cached": false, "cause": "archdetect-failed", "decision": "failed", "detail": null, "exit": 0, "exit_semantic": "ok", "kind": "decision", "message": "eessi-arch-guard: archdetect failed (exit -25); environment left as it was", "now": null, "reload_needed": true, "schema_version": 1, "shell": false, "strict": false, "was": "x86_64/generic"}
+
+--- stderr
+
+--- end

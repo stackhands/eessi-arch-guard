@@ -79,5 +79,11 @@ class SubmitTempdirTests(unittest.TestCase):
                     )
 
 
+def setUpModule() -> None:
+    """Run from the tests directory: the temporary directory candidates and PWD name it."""
+    unittest.addModuleCleanup(os.chdir, os.getcwd())
+    os.chdir(Path(__file__).resolve().parent)
+
+
 if __name__ == "__main__":
     unittest.main()

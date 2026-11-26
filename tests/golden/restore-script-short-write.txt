@@ -1,0 +1,14 @@
+=== unlimited
+rc: 0
+--- stdout
+{"ok": true, "env": {"EESSI_TEST_GPU": "none", "MARKER": "full", "EESSI_VERSION": "2025.06", "LEAD": "1", "EESSI_SOFTWARE_SUBDIR": "x86_64/amd/zen4", "PWD": "@REPO@/tests", "EESSI_TEST_GPU_CC": "9.0", "HOME": "/tmp", "LANG": "C", "EESSI_OS_TYPE": "linux", "TMPDIR": "@WORK@/workbase", "EESSI_TEST_BASE_PATH": "@WORK@/bin:/usr/bin:/bin", "USER": "tester", "LOADEDMODULES": "EESSI/2025.06:R/4.4.2", "SHLVL": "0", "_ModuleTable001_": "table-for-x86_64-amd-zen4", "EBVERSIONR": "4.4.2", "LC_ALL": "C", "EESSI_TEST_EVENT_LOG": "@WORK@/lmod.log", "PATH": "@WORK@/bin:@WORK@/prefix/software/linux/x86_64/amd/zen4/software/R/4.4.2/bin:@WORK@/prefix/software/linux/x86_64/amd/zen4/bin:/usr/bin:/bin", "MODULEPATH": "@WORK@/prefix/software/linux/x86_64/amd/zen4/modules/all", "EESSI_PROC_CPUINFO": "@WORK@/cpuinfo", "LMOD_CMD": "@WORK@/fixed-lmod", "EBROOTR": "@WORK@/prefix/software/linux/x86_64/amd/zen4/software/R/4.4.2", "EESSI_INIT_PREFIX": "@WORK@/prefix/init", "EESSI_TEST_ARCH_LOG": "@WORK@/arch.log", "EESSI_PREFIX": "@WORK@/prefix"}, "missing": [], "error": ""}
+--- stderr
+
+--- end
+=== limit 100
+rc: 0
+--- stdout
+{"ok": true, "env": {"EESSI_TEST_GPU": "none", "EESSI_VERSION": "2025.06", "LEAD": "1", "EESSI_SOFTWARE_SUBDIR": "x86_64/amd/zen4", "PWD": "@REPO@/tests", "EESSI_TEST_GPU_CC": "9.0", "HOME": "/tmp", "LANG": "C", "EESSI_OS_TYPE": "linux", "TMPDIR": "@WORK@/workbase", "EESSI_TEST_BASE_PATH": "@WORK@/bin:/usr/bin:/bin", "USER": "tester", "LOADEDMODULES": "EESSI/2025.06:R/4.4.2", "SHLVL": "0", "_ModuleTable001_": "table-for-x86_64-amd-zen4", "EBVERSIONR": "4.4.2", "LC_ALL": "C", "EESSI_TEST_EVENT_LOG": "@WORK@/lmod.log", "PATH": "@WORK@/bin:@WORK@/prefix/software/linux/x86_64/amd/zen4/software/R/4.4.2/bin:@WORK@/prefix/software/linux/x86_64/amd/zen4/bin:/usr/bin:/bin", "MODULEPATH": "@WORK@/prefix/software/linux/x86_64/amd/zen4/modules/all", "EESSI_PROC_CPUINFO": "@WORK@/cpuinfo", "LMOD_CMD": "@WORK@/fixed-lmod", "EBROOTR": "@WORK@/prefix/software/linux/x86_64/amd/zen4/software/R/4.4.2", "EESSI_INIT_PREFIX": "@WORK@/prefix/init", "EESSI_TEST_ARCH_LOG": "@WORK@/arch.log", "EESSI_PREFIX": "@WORK@/prefix"}, "missing": [], "error": ""}
+--- stderr
+
+--- end
