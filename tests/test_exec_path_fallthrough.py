@@ -1,13 +1,13 @@
-"""The Python and Zig guards must go on along PATH when an exec fails.
+"""The guard goes on along PATH when an exec of bash fails.
 
-The guard runs bash from PATH. Python's subprocess tries each PATH entry in
-turn: an entry whose exec fails, because the file is in no executable format
-or its interpreter is missing, does not end the search, and a later entry
-holding a working bash runs. When no entry runs, the first error that is not
-"no such file" or "not a directory" is reported, and when every entry fails
-with one of those two the error of the last entry is reported. The cases run
-both programs on one generated tree and compare exit status, standard output,
-and standard error. The comparison skips when TOOL_BIN is unset.
+The guard runs bash from PATH and tries each entry in turn: an entry whose
+exec fails, because the file is in no executable format or its interpreter is
+missing, does not end the search, and a later entry holding a working bash
+runs. When no entry runs, the first error that is not "no such file" or "not
+a directory" is reported, and when every entry fails with one of those two
+the error of the last entry is reported. The cases run on one generated tree.
+The first test checks the error of each case, and
+``golden/exec-path-fallthrough.txt`` pins the exit status and both streams.
 """
 
 from __future__ import annotations
@@ -21,6 +21,7 @@ from typing import Dict, Tuple
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import harness  # noqa: E402
+import retire_b_support as support  # noqa: E402
 
 ZEN2 = "x86_64/amd/zen2"
 ZEN4 = "x86_64/amd/zen4"
@@ -33,7 +34,7 @@ ABSENT = "[Errno 2] No such file or directory: 'bash'"
 NOT_A_DIRECTORY = "[Errno 20] Not a directory: 'bash'"
 
 
-class ExecPathFallthroughParityTests(unittest.TestCase):
+class ExecPathFallthroughTests(unittest.TestCase):
     def setUp(self) -> None:
         self.site = harness.Site()
         self.addCleanup(self.site.close)
@@ -75,34 +76,28 @@ class ExecPathFallthroughParityTests(unittest.TestCase):
         env["PATH"] = path
         return env
 
-    def _python(self, env: Dict[str, str]):
-        argv = [sys.executable, "-I", str(harness.GUARD), "--dry-run", "--json"]
-        return harness.run_with_timeout(argv, env=env, timeout=RUN_TIMEOUT)
-
     def _program(self, env: Dict[str, str]):
-        argv = [str(harness.PROGRAM), "--dry-run", "--json"]
+        argv = [*harness.GUARD_ARGV, "--dry-run", "--json"]
         return harness.run_with_timeout(argv, env=env, timeout=RUN_TIMEOUT)
 
-    def test_python_guard_goes_on_past_a_failed_exec(self) -> None:
+    def test_the_search_goes_on_past_a_failed_exec(self) -> None:
         for label, (path, expected) in self.cases.items():
             with self.subTest(case=label):
-                proc = self._python(self._env(path))
+                proc = self._program(self._env(path))
                 self.assertEqual(proc.returncode, 0, proc.stderr)
                 if expected:
                     self.assertIn("could not run archdetect: " + expected, proc.stdout)
                 else:
                     self.assertNotIn("could not run archdetect", proc.stdout)
 
-    def test_programs_agree_when_an_exec_fails_along_path(self) -> None:
-        harness.skip_unless_tool_bin(self)
+    def test_output_when_an_exec_fails_along_path(self) -> None:
+        sheet = support.sheet(self, "exec-path-fallthrough")
         for label, (path, _expected) in self.cases.items():
-            env = self._env(path)
-            python = self._python(env)
-            program = self._program(env)
             with self.subTest(case=label):
-                self.assertEqual(program.returncode, python.returncode)
-                self.assertEqual(program.stderr, python.stderr)
-                self.assertEqual(program.stdout, python.stdout)
+                proc = self._program(self._env(path))
+                sheet.check(
+                    self, support.label(label), support.render_proc(proc, support.site_work(self.site))
+                )
 
 
 if __name__ == "__main__":

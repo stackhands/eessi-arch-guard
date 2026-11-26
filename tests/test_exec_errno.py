@@ -1,13 +1,12 @@
-"""The Python and Zig guards must report a failed exec by its errno alike.
+"""A failed exec is reported by its errno text and the program name.
 
-Python raises the OSError that exec produced, so a program that exists but is
-not a valid executable ("Exec format error") or whose interpreter is missing
-("No such file or directory") is reported with its own text and the program
-name. The guard reaches such a program in two places: bash on PATH, which
-reads the archdetect answer, and the Lmod command, which restores modules. The
-cases run both programs on one generated tree and compare exit status,
-standard output, and standard error. The comparison skips when TOOL_BIN is
-unset.
+A program that exists but is not a valid executable ("Exec format error") or
+whose interpreter is missing ("No such file or directory") is reported with
+its own text and the program name. The guard reaches such a program in two
+places: bash on PATH, which reads the archdetect answer, and the Lmod
+command, which restores modules. The cases run on one generated tree. The
+first test checks the message of each case, and ``golden/exec-errno.txt``
+pins the exit status and both streams.
 """
 
 from __future__ import annotations
@@ -22,6 +21,7 @@ from typing import Dict, List, Tuple
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import harness  # noqa: E402
+import retire_b_support as support  # noqa: E402
 
 ZEN2 = "x86_64/amd/zen2"
 ZEN4 = "x86_64/amd/zen4"
@@ -36,7 +36,7 @@ QUOTED_NAMES = {
 }
 
 
-class ExecErrnoParityTests(unittest.TestCase):
+class ExecErrnoTests(unittest.TestCase):
     def setUp(self) -> None:
         self.site = harness.Site()
         self.addCleanup(self.site.close)
@@ -98,31 +98,25 @@ class ExecErrnoParityTests(unittest.TestCase):
         return cases
 
     @staticmethod
-    def _python(env: Dict[str, str], args: List[str]):
-        argv = [sys.executable, "-I", str(harness.GUARD), *args]
-        return harness.run_with_timeout(argv, env=env, timeout=RUN_TIMEOUT)
-
-    @staticmethod
     def _program(env: Dict[str, str], args: List[str]):
-        argv = [str(harness.PROGRAM), *args]
+        argv = [*harness.GUARD_ARGV, *args]
         return harness.run_with_timeout(argv, env=env, timeout=RUN_TIMEOUT)
 
-    def test_python_guard_reports_the_exec_errno(self) -> None:
+    def test_the_exec_errno_is_reported(self) -> None:
         for label, env, args, expected in self._cases():
             with self.subTest(case=label):
-                proc = self._python(env, args)
+                proc = self._program(env, args)
                 self.assertEqual(proc.returncode, 0, proc.stderr)
                 self.assertIn(expected, json.loads(proc.stdout)["message"])
 
-    def test_programs_agree_when_exec_fails(self) -> None:
-        harness.skip_unless_tool_bin(self)
+    def test_output_when_exec_fails(self) -> None:
+        sheet = support.sheet(self, "exec-errno")
         for label, env, args, _expected in self._cases():
-            python = self._python(env, args)
-            program = self._program(env, args)
             with self.subTest(case=label):
-                self.assertEqual(program.returncode, python.returncode)
-                self.assertEqual(program.stderr, python.stderr)
-                self.assertEqual(program.stdout, python.stdout)
+                proc = self._program(env, args)
+                sheet.check(
+                    self, support.label(label), support.render_proc(proc, support.site_work(self.site))
+                )
 
 
 if __name__ == "__main__":

@@ -1,11 +1,10 @@
-"""The Python and Zig guards must run a relative eb-stack path alike.
+"""check-submit runs a relative eb-stack path from the current directory.
 
-check-submit accepts an eb-stack path that is relative, and Python runs it
-from the current directory. The cases run both programs from one generated
-tree with relative paths, with and without a leading dot, for an eb-stack
-that succeeds, one in no executable format, and one naming a missing
-interpreter. They compare exit status, standard output, and standard error.
-The comparison skips when TOOL_BIN is unset.
+check-submit accepts an eb-stack path that is relative. The cases run from
+one generated tree with relative paths, with and without a leading dot, for
+an eb-stack that succeeds, one in no executable format, and one naming a
+missing interpreter. The first test checks the text of each outcome, and
+``golden/eb-stack-relative-path.txt`` pins the exit status and both streams.
 """
 
 from __future__ import annotations
@@ -19,6 +18,7 @@ from typing import Dict, List, Tuple
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import harness  # noqa: E402
+import retire_b_support as support  # noqa: E402
 
 TARGET = "x86_64/amd/zen4"
 RUN_TIMEOUT = 20.0
@@ -27,7 +27,7 @@ BAD_FORMAT = "could not run eb-stack: [Errno 8] Exec format error: "
 ABSENT = "could not run eb-stack: [Errno 2] No such file or directory: "
 
 
-class EbStackRelativeParityTests(unittest.TestCase):
+class EbStackRelativePathTests(unittest.TestCase):
     def setUp(self) -> None:
         self.site = harness.Site()
         self.addCleanup(self.site.close)
@@ -49,7 +49,7 @@ class EbStackRelativeParityTests(unittest.TestCase):
 
     @staticmethod
     def _cases() -> List[Tuple[str, str, str]]:
-        """Return label, option value, and the text Python reports."""
+        """Return label, option value, and the expected text."""
         return [
             ("dot slash, runs", "./tools/eb-ok", AVAILABLE),
             ("plain relative, runs", "tools/eb-ok", AVAILABLE),
@@ -71,29 +71,24 @@ class EbStackRelativeParityTests(unittest.TestCase):
     def _argv(option: str) -> List[str]:
         return ["--check-submit", "--target", TARGET, "--eb-stack", option]
 
-    def _python(self, option: str):
-        argv = [sys.executable, "-I", str(harness.GUARD), *self._argv(option)]
-        return harness.run_with_timeout(argv, env=self._env(), timeout=RUN_TIMEOUT, cwd=self.root)
-
     def _program(self, option: str):
-        argv = [str(harness.PROGRAM), *self._argv(option)]
+        argv = [*harness.GUARD_ARGV, *self._argv(option)]
         return harness.run_with_timeout(argv, env=self._env(), timeout=RUN_TIMEOUT, cwd=self.root)
 
-    def test_python_guard_runs_a_relative_eb_stack(self) -> None:
+    def test_a_relative_eb_stack_runs(self) -> None:
         for label, option, expected in self._cases():
             with self.subTest(case=label):
-                proc = self._python(option)
+                proc = self._program(option)
                 self.assertIn(expected, proc.stdout + proc.stderr)
 
-    def test_programs_agree_on_a_relative_eb_stack(self) -> None:
-        harness.skip_unless_tool_bin(self)
+    def test_output_of_a_relative_eb_stack(self) -> None:
+        sheet = support.sheet(self, "eb-stack-relative-path")
         for label, option, _expected in self._cases():
-            python = self._python(option)
-            program = self._program(option)
             with self.subTest(case=label):
-                self.assertEqual(program.returncode, python.returncode)
-                self.assertEqual(program.stderr, python.stderr)
-                self.assertEqual(program.stdout, python.stdout)
+                proc = self._program(option)
+                sheet.check(
+                    self, support.label(label), support.render_proc(proc, support.site_work(self.site))
+                )
 
 
 if __name__ == "__main__":
