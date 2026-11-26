@@ -639,6 +639,9 @@ def _run_bash(args: Sequence[str], env: Mapping[str, str]) -> subprocess.Complet
 # carried plus novalake; znver6, GCC 16's other new mask, has no WAITPKG.
 # emeraldrapids is not its own mask: GCC spells the Sapphire Rapids
 # mask under that name as well, so the leaf needs the same flag.
+# gracemont, meteorlake and raptorlake alias PTA_ALDERLAKE and lunarlake
+# aliases PTA_ARROWLAKE_S in gcc/common/config/i386/i386-common.cc, and
+# both masks carry WAITPKG.
 # archdetect's x86 spec does not require the flag, so a VM that hides it
 # is still offered that directory. A binary built with the march then
 # SIGILLs.
@@ -650,11 +653,15 @@ WAITPKG_MARCHES = frozenset(
         "clearwaterforest",
         "diamondrapids",
         "emeraldrapids",
+        "gracemont",
         "grandridge",
         "graniterapids",
         "graniterapids_d",
+        "lunarlake",
+        "meteorlake",
         "novalake",
         "pantherlake",
+        "raptorlake",
         "sapphirerapids",
         "sierraforest",
         "tremont",
