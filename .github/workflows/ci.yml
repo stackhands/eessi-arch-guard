@@ -12,7 +12,9 @@ concurrency:
 jobs:
   test:
     # ubuntu-latest is 26.04, for which setup-python carries no 3.9 build.
-    runs-on: ubuntu-22.04
+    # 22.04 has bash 5.1, which adds a second line to the syntax error the
+    # goldens of a cut script record; 24.04 has the bash 5.2 text.
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     strategy:
       fail-fast: false
