@@ -2,12 +2,15 @@
 
 Importing it must not turn the GIL back on: CPython re-enables the GIL when it
 imports an extension module that does not declare free-threading support, and
-the package carries none. ``locate`` keeps no shared state, so calls from many
-threads at once give the answer one thread gets.
+the package carries ``_launch``, so the probe imports it and reads the GIL
+afterwards. ``locate`` keeps no shared state, so calls from many threads at
+once give the answer one thread gets; ``_launch.execv`` on a missing path
+fails with ENOENT in every thread and leaves the process in place.
 """
 
 from __future__ import annotations
 
+import errno
 import json
 import os
 import shutil
@@ -45,6 +48,7 @@ class FreeThreadingTests(unittest.TestCase):
         else:
             self.assertIsNone(report["gil"])
         self.assertEqual(report["errors"], [])
+        self.assertEqual(report["exec_errors"], [errno.ENOENT])
         self.assertEqual(report["answers"], [[str(binary), 0, version]])
 
 
