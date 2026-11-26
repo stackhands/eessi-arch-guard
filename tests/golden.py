@@ -56,8 +56,10 @@ def _parse(path: Path) -> Dict[str, str]:
     sections: Dict[str, str] = {}
     label: Optional[str] = None
     lines = []
-    for line in path.read_text(encoding="utf-8").splitlines(keepends=True):
-        match = _HEADER.match(line.rstrip("\n"))
+    with open(path, encoding="utf-8", newline="") as handle:
+        text = handle.read()
+    for line in [x + "\n" for x in text.split("\n")[:-1]]:
+        match = _HEADER.match(line[:-1])
         if match:
             if label is not None:
                 sections[label] = "".join(lines)
@@ -92,7 +94,8 @@ class Sheet:
         if RECORD:
             DIRECTORY.mkdir(exist_ok=True)
             body = "".join("=== %s\n%s" % (k, v) for k, v in self.recorded.items())
-            self.path.write_text(body, encoding="utf-8")
+            with open(self.path, "w", encoding="utf-8", newline="") as handle:
+                handle.write(body)
             return
         stale = sorted(set(self.expected) - self.checked)
         if stale and self.checked:
