@@ -990,6 +990,8 @@ class IntegrationTests(unittest.TestCase):
         env["TMPDIR"] = self.site.root
         env["SLURM_JOB_ID"] = "6262"
         path = _cache_path(env)
+        # Naming the cache file runs the program once; the log starts empty.
+        Path(self.site.arch_log).write_text("", encoding="utf-8")
         lock_path = path + ".lock"
         fd = os.open(lock_path, os.O_CREAT | os.O_RDWR, 0o600)
         fcntl.flock(fd, fcntl.LOCK_EX)
@@ -1045,7 +1047,9 @@ class IntegrationTests(unittest.TestCase):
             self.assertEqual(hung, [alive_fd])
             self.assertEqual(os.read(alive_fd, 1), b"")
             if pid_path.is_file():
-                self.assertFalse(_pid_alive(int(pid_path.read_text(encoding="ascii"))))
+                child = int(pid_path.read_text(encoding="ascii"))
+                _wait_until_dead(child)
+                self.assertFalse(_pid_alive(child))
         finally:
             os.close(alive_fd)
             fcntl.flock(held, fcntl.LOCK_UN)
