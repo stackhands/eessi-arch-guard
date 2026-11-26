@@ -5,7 +5,7 @@ to subprocess. ``text=True`` would decode with the codec of the process
 locale at the time of the call, and a test that leaves the locale at "C"
 makes that ASCII for every later test: the UTF-8 quotes of a gcc warning
 then raise UnicodeDecodeError. The decode stays strict, so output that is
-not UTF-8 still raises, as ``test_raw_bytes_parity`` relies on.
+not UTF-8 still raises, as ``test_raw_bytes`` relies on.
 
 Python turns its UTF-8 mode on when it starts in the C locale, as under
 ``LANG=C LC_ALL=C``, and then decodes ``text=True`` output as UTF-8 too.
@@ -25,7 +25,6 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import harness  # noqa: E402
-import test_unit  # noqa: E402
 
 TESTS = Path(__file__).resolve().parent
 RUN_TIMEOUT = 20.0
@@ -92,15 +91,6 @@ class LocaleIndependenceTests(unittest.TestCase):
         self.assertNotEqual(result["codec"], "utf-8", "the child's locale codec is UTF-8")
         self.assertEqual(result["text"], TEXT)
         self.assertEqual(result["stray"], "raised")
-
-    def test_unit_puts_back_the_locale_it_found(self) -> None:
-        self.addCleanup(locale.setlocale, locale.LC_ALL, locale.setlocale(locale.LC_ALL))
-        for start in ("C", "C.UTF-8"):
-            with self.subTest(start=start):
-                locale.setlocale(locale.LC_ALL, start)
-                found = locale.setlocale(locale.LC_ALL)
-                test_unit.UnitTests().test_message_trim_keeps_a_character_boundary()
-                self.assertEqual(locale.setlocale(locale.LC_ALL), found)
 
 
 if __name__ == "__main__":

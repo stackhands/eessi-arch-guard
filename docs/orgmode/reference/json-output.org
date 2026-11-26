@@ -8,8 +8,7 @@ The guard already speaks JSON on stdin and stdout in =--restore= helper mode.
 Opt-in =--json= on a normal decision run prints one line of JSON on stdout with
 the decision summary instead of Slurm prolog lines or shell =export= / =unset=
 lines. Warnings, the reload message with =--shell=, and verbose detail stay on
-stderr as without the option. Both the Python guard and the Zig build print the
-same document.
+stderr as without the option. The binary prints the document the schema files describe.
 
 ** JSON Schema files
 

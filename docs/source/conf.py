@@ -88,6 +88,9 @@ if PYTHON_PACKAGES:
         "imported-members",
     ]
     autoapi_ignore = ["*/tests/*", "*/test_*.py", "*/conftest.py"]
+    # `from . import _launch` names the compiled extension, which has no
+    # source for autoapi to read, so it cannot resolve the name.
+    suppress_warnings = ["autoapi.python_import_resolution"]
 
 # Rust: sphinx-rustdocgen reads each crate listed here (crate name: its
 # directory) into reference/api/rust/<crate>/, for sphinxcontrib-rust.
@@ -101,7 +104,7 @@ if RUST_CRATES:
     rust_generate_mode = "always"
     # A rustdoc link to an item named like its module ([`gap`] in gap) also
     # matches that module's page; MyST links the page, which lists the item.
-    suppress_warnings = ["myst.xref_ambiguous"]
+    suppress_warnings = [*globals().get("suppress_warnings", []), "myst.xref_ambiguous"]
     # A type from std, core or another crate has no page here; a name in
     # these crates that does not resolve still fails the build.
     nitpick_ignore_regex = [

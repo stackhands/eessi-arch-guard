@@ -27,7 +27,7 @@ def main() -> int:
         print("syslog: %s" % target)
         print("loaded: %s" % support.ZEN4)
         print("node cpuinfo: zen2")
-        print("command: python3 -I src/eessi_arch_guard.py")
+        print("command: eessi-arch-guard")
         support.show(proc, site.root)
         if proc.returncode != 0:
             return proc.returncode

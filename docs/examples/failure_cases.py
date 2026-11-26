@@ -28,7 +28,7 @@ CASES = (
 
 
 def _finish(site, proc, checks) -> int:
-    print("command: python3 -I src/eessi_arch_guard.py")
+    print("command: eessi-arch-guard")
     support.show(proc, site.root if site is not None else "")
     failed = False
     for label, ok in checks:
@@ -173,7 +173,7 @@ def bad_timeout() -> int:
         {"PATH": "/usr/bin:/bin", "LC_ALL": "C"},
         ("--timeout", "0"),
     )
-    print("command: python3 -I src/eessi_arch_guard.py --timeout 0")
+    print("command: eessi-arch-guard --timeout 0")
     support.show(proc, "")
     warning = (
         "eessi-arch-guard: --timeout is not a positive number of seconds "

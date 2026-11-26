@@ -52,4 +52,4 @@ The lists name each target's flags under GCC 15.2.0 by their =/proc/cpuinfo= nam
 ** See also
 
 - [[file:../explanation/how-it-decides.org][How the guard decides]]
-- [[py:eessi_arch_guard.WAITPKG_MARCHES]], [[py:eessi_arch_guard.candidate_supports_cpu]] and [[py:eessi_arch_guard.read_cpu_flags]]
+- [[zig:eessi-arch-guard.guard.probeCpu]]

@@ -10,7 +10,7 @@ Slurm runs a second task prolog for each job step that asks for one, after the s
 ** Before you start
 
 - The module environment of the European Environment for Scientific Software Installations (EESSI) loaded where you submit, as for any job that inherits it.
-- A copy of =src/eessi_arch_guard.py= from the repository, and a home directory the compute nodes mount.
+- The release binary for the nodes' architecture ([[file:install-the-prolog.org][Install the prolog]] shows the download), and a home directory the compute nodes mount.
 
 ** Steps
 
@@ -18,10 +18,10 @@ Slurm runs a second task prolog for each job step that asks for one, after the s
 
    #+begin_src bash
    mkdir -p ~/bin
-   install -m 755 src/eessi_arch_guard.py ~/bin/eessi-arch-guard
+   install -m 755 "eessi-arch-guard-${v}-${arch}-linux-musl" ~/bin/eessi-arch-guard
    #+end_src
 
-   Its first line, =#!/usr/bin/python3 -I=, starts it with the system's Python, whatever Python a loaded module provides.
+   The file is a static binary, so it runs on a node with no Python and whatever Python a loaded module provides.
 
 2. Name it as the task prolog of every =srun= that follows, with its full path:
 
@@ -41,7 +41,7 @@ Slurm runs a second task prolog for each job step that asks for one, after the s
 4. In a batch script, add this line at the top as well, because =sbatch= has no task prolog and =SLURM_TASK_PROLOG= covers only =srun= steps:
 
    #+begin_src bash
-   eval "$(/usr/bin/python3 -I "$HOME/bin/eessi-arch-guard" --shell)"
+   eval "$("$HOME/bin/eessi-arch-guard" --shell)"
    #+end_src
 
    The commands of a batch script run in the batch step, which gets the site's =TaskProlog= but no per-job prolog, as seen with Slurm 23.11.4.

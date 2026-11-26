@@ -1,0 +1,16 @@
+=== fragment.sh
+rc: 1
+--- stdout
+
+--- stderr
+eessi-arch-guard: restore failed: [Errno 5] Input/output error
+
+--- end
+=== apply.sh
+rc: 1
+--- stdout
+
+--- stderr
+eessi-arch-guard: restore failed: [Errno 5] Input/output error
+
+--- end

@@ -1,0 +1,80 @@
+=== absolute path, bad format
+rc: 2
+--- stdout
+
+--- stderr
+eessi-arch-guard: check-submit: could not run eb-stack: [Errno 8] Exec format error: '@WORK@/tools/eb-garbage'
+
+--- end
+=== absolute path, missing interpreter
+rc: 2
+--- stdout
+
+--- stderr
+eessi-arch-guard: check-submit: could not run eb-stack: [Errno 2] No such file or directory: '@WORK@/tools/eb-shebang'
+
+--- end
+=== absolute entry
+rc: 2
+--- stdout
+
+--- stderr
+eessi-arch-guard: check-submit: could not run eb-stack: [Errno 8] Exec format error: '@WORK@/tools/eb-garbage'
+
+--- end
+=== relative entry
+rc: 2
+--- stdout
+
+--- stderr
+eessi-arch-guard: check-submit: could not run eb-stack: [Errno 8] Exec format error: 'tools/eb-garbage'
+
+--- end
+=== relative entry, no shebang
+rc: 2
+--- stdout
+
+--- stderr
+eessi-arch-guard: check-submit: could not run eb-stack: [Errno 2] No such file or directory: 'tools/eb-shebang'
+
+--- end
+=== absolute path, quote
+rc: 2
+--- stdout
+
+--- stderr
+eessi-arch-guard: check-submit: could not run eb-stack: [Errno 8] Exec format error: "@WORK@/tools/eb-it's"
+
+--- end
+=== absolute entry, quote
+rc: 2
+--- stdout
+
+--- stderr
+eessi-arch-guard: check-submit: could not run eb-stack: [Errno 8] Exec format error: "@WORK@/tools/eb-it's"
+
+--- end
+=== relative entry, quote
+rc: 2
+--- stdout
+
+--- stderr
+eessi-arch-guard: check-submit: could not run eb-stack: [Errno 8] Exec format error: "tools/eb-it's"
+
+--- end
+=== absolute entry, newline
+rc: 2
+--- stdout
+
+--- stderr
+eessi-arch-guard: check-submit: could not run eb-stack: [Errno 8] Exec format error: '@WORK@/tools/eb\nstack'
+
+--- end
+=== relative entry, newline
+rc: 2
+--- stdout
+
+--- stderr
+eessi-arch-guard: check-submit: could not run eb-stack: [Errno 8] Exec format error: 'tools/eb\nstack'
+
+--- end

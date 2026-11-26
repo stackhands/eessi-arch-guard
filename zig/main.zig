@@ -14,6 +14,7 @@ const guard = @import("guard.zig");
 const jsonout = @import("jsonout.zig");
 const jsonline = @import("jsonline.zig");
 const syslog = @import("syslog.zig");
+const sitetools = @import("sitetools.zig");
 
 const sys = common.sys;
 const fsx = common.fsx;
@@ -24,18 +25,17 @@ const Allocator = std.mem.Allocator;
 const Py = json.Py;
 const empty: []const u8 = "";
 
-/// The version `--version` prints first, `.version` of build.zig.zon. The
-/// Python guard's `__version__` and pyproject.toml name the same one.
+/// The version `--version` prints first, `.version` of build.zig.zon.
 pub const version = build_options.version;
 const tool = "eessi-arch-guard";
-/// The Python guard's bare version, then this build (COMPAT.md).
+/// The bare version, then this build.
 const version_text = cli.versionLine(tool, version, build_options.commit)[tool.len + 1 ..];
 const strict_failure_exit: u8 = 78;
-const default_timeout: f64 = 60.0;
+pub const default_timeout: f64 = 60.0;
 /// TIMEOUT_MAX, as Python prints it: the Python guard's subprocess waits
 /// with poll(), whose timeout is a C int of milliseconds.
-const timeout_max: f64 = 2147483.647;
-const timeout_max_text = "2147483.647";
+pub const timeout_max: f64 = 2147483.647;
+pub const timeout_max_text = "2147483.647";
 
 const help_text =
     \\usage: eessi-arch-guard [--shell] [--strict] [--dry-run] [--json]
@@ -44,6 +44,9 @@ const help_text =
     \\       eessi-arch-guard --check-submit --partition NAME [--constraint NAME]
     \\                        [--eb-stack PATH] [--json]
     \\       eessi-arch-guard --check-submit --target TARGET [--eb-stack PATH] [--json]
+    \\       eessi-arch-guard --check-mount [--repo PATH] [--site PATH] [--eessi PATH]
+    \\                        [--modulepath PATH] [--mountinfo FILE] [--require-input]
+    \\       eessi-arch-guard --check-revision --stat FILE [--min N]
     \\
     \\Slurm TaskProlog: when the loaded EESSI CPU or accelerator target is not this
     \\node's, print export/unset lines for the reloaded module environment.
@@ -63,6 +66,10 @@ const help_text =
     \\so a site sets this in a wrapper or in a root-owned eessi-arch-guard.conf.
     \\--timeout SEC bounds the decision. The default is 60 seconds.
     \\--syslog TARGET sends structured RFC 5424 or journald decision events.
+    \\--check-mount says whether the EESSI repository is on a cvmfs mount and the site
+    \\module directory precedes the EESSI one on MODULEPATH; exit 0 when both hold.
+    \\--check-revision reads `cvmfs_config stat` output from --stat FILE, prints the
+    \\client revision, and exits 1 when it is older than --min N.
     \\--restore reads a JSON restore request on stdin and writes the JSON result.
     \\-h, --help print this text. --version prints the version.
     \\
@@ -254,7 +261,7 @@ fn installCrashHandlers() void {
 
 // ---- arguments ---------------------------------------------------------
 
-const Args = struct {
+pub const Args = struct {
     shell: bool = false,
     restore: bool = false,
     help: bool = false,
@@ -270,6 +277,16 @@ const Args = struct {
     constraint: ?[]const u8 = null,
     eb_stack: ?[]const u8 = null,
     target: ?[]const u8 = null,
+    check_mount: bool = false,
+    check_revision: bool = false,
+    repo: ?[]const u8 = null,
+    site: ?[]const u8 = null,
+    eessi: ?[]const u8 = null,
+    modulepath: ?[]const u8 = null,
+    mountinfo: ?[]const u8 = null,
+    require_input: bool = false,
+    stat: ?[]const u8 = null,
+    min: ?[]const u8 = null,
 };
 
 /// _option_value: the word after argv[i.*], with i.* moved onto it, unless
@@ -282,7 +299,7 @@ fn optionValue(argv: []const []const u8, i: *usize) []const u8 {
 }
 
 /// parse_args: documented flags only; anything else is skipped.
-fn parseArgs(argv: []const []const u8) Args {
+pub fn parseArgs(argv: []const []const u8) Args {
     var a: Args = .{};
     var i: usize = 0;
     while (i < argv.len) : (i += 1) {
@@ -331,6 +348,40 @@ fn parseArgs(argv: []const []const u8) Args {
             a.target = optionValue(argv, &i);
         } else if (std.mem.startsWith(u8, arg, "--target=")) {
             a.target = arg["--target=".len..];
+        } else if (std.mem.eql(u8, arg, "--repo")) {
+            a.repo = optionValue(argv, &i);
+        } else if (std.mem.startsWith(u8, arg, "--repo=")) {
+            a.repo = arg["--repo=".len..];
+        } else if (std.mem.eql(u8, arg, "--site")) {
+            a.site = optionValue(argv, &i);
+        } else if (std.mem.startsWith(u8, arg, "--site=")) {
+            a.site = arg["--site=".len..];
+        } else if (std.mem.eql(u8, arg, "--eessi")) {
+            a.eessi = optionValue(argv, &i);
+        } else if (std.mem.startsWith(u8, arg, "--eessi=")) {
+            a.eessi = arg["--eessi=".len..];
+        } else if (std.mem.eql(u8, arg, "--modulepath")) {
+            a.modulepath = optionValue(argv, &i);
+        } else if (std.mem.startsWith(u8, arg, "--modulepath=")) {
+            a.modulepath = arg["--modulepath=".len..];
+        } else if (std.mem.eql(u8, arg, "--mountinfo")) {
+            a.mountinfo = optionValue(argv, &i);
+        } else if (std.mem.startsWith(u8, arg, "--mountinfo=")) {
+            a.mountinfo = arg["--mountinfo=".len..];
+        } else if (std.mem.eql(u8, arg, "--stat")) {
+            a.stat = optionValue(argv, &i);
+        } else if (std.mem.startsWith(u8, arg, "--stat=")) {
+            a.stat = arg["--stat=".len..];
+        } else if (std.mem.eql(u8, arg, "--min")) {
+            a.min = optionValue(argv, &i);
+        } else if (std.mem.startsWith(u8, arg, "--min=")) {
+            a.min = arg["--min=".len..];
+        } else if (std.mem.eql(u8, arg, "--check-mount")) {
+            a.check_mount = true;
+        } else if (std.mem.eql(u8, arg, "--check-revision")) {
+            a.check_revision = true;
+        } else if (std.mem.eql(u8, arg, "--require-input")) {
+            a.require_input = true;
         }
     }
     return a;
@@ -422,7 +473,7 @@ fn pyFloat(arena: Allocator, input: []const u8) ?f64 {
 }
 
 /// parse_timeout: a positive number of seconds at most TIMEOUT_MAX.
-fn parseTimeout(arena: Allocator, s: []const u8) ?f64 {
+pub fn parseTimeout(arena: Allocator, s: []const u8) ?f64 {
     const v = pyFloat(arena, s) orelse return null;
     if (std.math.isNan(v) or v <= 0 or v > timeout_max) return null;
     return v;
@@ -430,9 +481,9 @@ fn parseTimeout(arena: Allocator, s: []const u8) ?f64 {
 
 // ---- the site configuration --------------------------------------------
 
-const Settings = std.StringArrayHashMapUnmanaged([]const u8);
+pub const Settings = std.StringArrayHashMapUnmanaged([]const u8);
 
-const Config = struct {
+pub const Config = struct {
     path: ?[]const u8 = null,
     settings: ?Settings = null,
     warning: ?[]const u8 = null,
@@ -445,7 +496,7 @@ fn pyStripBytes(s: []const u8) []const u8 {
 /// parse_config_bytes: KEY = VALUE lines; '#' comments; a key that is not
 /// UTF-8 is skipped; a value that is not UTF-8 is kept as its bytes and
 /// named in the returned list.
-fn parseConfigBytes(arena: Allocator, blob: []const u8, bad: *std.ArrayList([]const u8)) Allocator.Error!Settings {
+pub fn parseConfigBytes(arena: Allocator, blob: []const u8, bad: *std.ArrayList([]const u8)) Allocator.Error!Settings {
     var settings: Settings = .empty;
     var i: usize = 0;
     while (i < blob.len) {
@@ -478,7 +529,7 @@ fn lstatRaw(path: []const u8, x: *linux.Statx) linux.E {
 }
 
 /// _config_untrusted: the reason a config path is not trusted, or null.
-fn configUntrusted(arena: Allocator, path: []const u8) ?[]const u8 {
+pub fn configUntrusted(arena: Allocator, path: []const u8) ?[]const u8 {
     var x: linux.Statx = undefined;
     const e = lstatRaw(path, &x);
     if (e != .SUCCESS) return arena.print("{s} ({s})", .{ path, osErrorText(arena, e, path) }) catch path;
@@ -503,6 +554,33 @@ fn configReadWarning(arena: Allocator, path: []const u8, err: anyerror) ?[]const
     return arena.print("eessi-arch-guard: config ignored: {s}: {t}", .{ path, err }) catch null;
 }
 
+/// Whether an open config file is still one to trust: owned by root and not
+/// writable by group or others. It is asked of the open descriptor, after the
+/// path passed `configUntrusted`, so a swap in between is caught.
+pub fn configDescriptorTrusted(uid: u32, mode: u32) bool {
+    return uid == 0 and mode & 0o022 == 0;
+}
+
+/// The config at `path`, read through a descriptor opened without following a
+/// link and checked again there. `siteConfig` calls it once `configUntrusted`
+/// accepted the path.
+pub fn readConfigFile(arena: Allocator, path: []const u8) Config {
+    const f = fsx.openRegular(fsx.cwd, path, false) catch |err|
+        return .{ .path = path, .warning = configReadWarning(arena, path, err) };
+    defer sys.close(f.fd);
+    if (!configDescriptorTrusted(f.stat.uid, f.stat.mode))
+        return .{ .path = path, .warning = arena.print("eessi-arch-guard: config ignored: {s} changed while it was read", .{path}) catch null };
+    const blob = fsx.readAll(arena, f.fd, 1 << 20) catch |err|
+        return .{ .path = path, .warning = configReadWarning(arena, path, err) };
+    var bad: std.ArrayList([]const u8) = .empty;
+    const settings = parseConfigBytes(arena, blob, &bad) catch return .{ .path = path };
+    if (bad.items.len > 0) {
+        const shown = std.mem.join(arena, " ", bad.items) catch "";
+        return .{ .path = path, .settings = settings, .warning = arena.print("eessi-arch-guard: config value kept with its original bytes: {s}", .{shown}) catch null };
+    }
+    return .{ .path = path, .settings = settings };
+}
+
 /// site_config: /etc/eessi-arch-guard.conf, else the file beside the
 /// program as it was invoked; the first that exists decides.
 fn siteConfig(arena: Allocator, invoked: []const u8) Config {
@@ -511,21 +589,7 @@ fn siteConfig(arena: Allocator, invoked: []const u8) Config {
         if (!exists(path)) continue;
         if (configUntrusted(arena, path)) |reason|
             return .{ .path = path, .warning = arena.print("eessi-arch-guard: config ignored: {s}", .{reason}) catch null };
-        // Checked again on the open file, without following a link.
-        const f = fsx.openRegular(fsx.cwd, path, false) catch |err|
-            return .{ .path = path, .warning = configReadWarning(arena, path, err) };
-        defer sys.close(f.fd);
-        if (f.stat.uid != 0 or f.stat.mode & 0o022 != 0)
-            return .{ .path = path, .warning = arena.print("eessi-arch-guard: config ignored: {s} changed while it was read", .{path}) catch null };
-        const blob = fsx.readAll(arena, f.fd, 1 << 20) catch |err|
-            return .{ .path = path, .warning = configReadWarning(arena, path, err) };
-        var bad: std.ArrayList([]const u8) = .empty;
-        const settings = parseConfigBytes(arena, blob, &bad) catch return .{ .path = path };
-        if (bad.items.len > 0) {
-            const shown = std.mem.join(arena, " ", bad.items) catch "";
-            return .{ .path = path, .settings = settings, .warning = arena.print("eessi-arch-guard: config value kept with its original bytes: {s}", .{shown}) catch null };
-        }
-        return .{ .path = path, .settings = settings };
+        return readConfigFile(arena, path);
     }
     return .{};
 }
@@ -535,7 +599,7 @@ fn chainPathOk(path: []const u8) bool {
     return guard.lmodInvocable(path);
 }
 
-fn resolveTimeout(arena: Allocator, cli_text: ?[]const u8, settings: ?Settings) struct { value: f64, warning: ?[]const u8 } {
+pub fn resolveTimeout(arena: Allocator, cli_text: ?[]const u8, settings: ?Settings) struct { value: f64, warning: ?[]const u8 } {
     var chosen = default_timeout;
     var warnings: std.ArrayList([]const u8) = .empty;
     if (settings) |s| if (s.get("timeout")) |t| {
@@ -891,7 +955,7 @@ fn selectorHint(arena: Allocator, settings: Settings, prefix: []const u8, value:
     return arena.print("; nearest known {s} is {s}{s}", .{ kind, prefix, chosen }) catch "";
 }
 
-fn submitTarget(arena: Allocator, settings: ?Settings, partition: []const u8, constraint: []const u8, why: *[]const u8) ?[]const u8 {
+pub fn submitTarget(arena: Allocator, settings: ?Settings, partition: []const u8, constraint: []const u8, why: *[]const u8) ?[]const u8 {
     if (!submitSelector(partition)) {
         why.* = "--partition needs one safe partition name";
         return null;
@@ -1401,6 +1465,15 @@ fn realMain(arena: Allocator, argv0: []const u8, argv: []const []const u8, envp:
         .self_exe = selfExe(arena),
     };
     if (args.restore) return guard.restoreMain(&ctx);
+    if (args.check_mount) return sitetools.runMount(arena, .{
+        .repo = args.repo,
+        .site = args.site,
+        .eessi = args.eessi,
+        .modulepath = args.modulepath,
+        .mountinfo = args.mountinfo,
+        .require_input = args.require_input,
+    }, env);
+    if (args.check_revision) return sitetools.runRevision(arena, args.stat, args.min);
 
     var chain_out: []const u8 = "";
     const cfg = siteConfig(arena, invokedPath(arena, argv0));
@@ -1610,7 +1683,12 @@ test {
     _ = envmap;
     _ = guard;
     _ = syslog;
+    _ = sitetools;
     _ = @import("pydecode.zig");
+    _ = @import("submit_target_test.zig");
+    _ = @import("syslog_pen_test.zig");
+    _ = @import("cpuscope_test.zig");
+    _ = @import("policy_test.zig");
 }
 
 test "parseArgs" {

@@ -108,22 +108,22 @@ and output that does not fails with =archdetect-failed=.
 The helper starts with only =PATH=/usr/bin:/bin=, =LANG=C=, =LC_ALL=C=, and =HOME=, =TMPDIR= and =EESSI_ARCH_GUARD_WORKDIR=, which all name its private directory.
 The task's environment reaches it as data in its request.
 
-** SitePackage.lua and share/sitepath.py
+** SitePackage.lua and --check-mount
 
-The shipped Lmod hook (=share/lmod/SitePackage.lua=) and client mount check (=share/sitepath.py=) read these variables from the environment:
+The shipped Lmod hook (=share/lmod/SitePackage.lua=) and client mount check (=eessi-arch-guard --check-mount=, also started by =share/sitepath.py=) read these variables from the environment:
 
 | Variable | Component | Use |
 |----------+-----------+-----|
 | =EESSI_HIDE_TOOLCHAINS= | =SitePackage.lua= | =1=, =true= or =on= hides the default EasyBuild toolchain modules from =module avail=; =0=, =false= or =off= shows them; any other non-empty value replaces the hidden list. Overrides =hide_toolchains=. |
 | =EESSI_WARN_ACCEL_MISMATCH= | =SitePackage.lua= | =1=, =true= or =on= warns on stderr when loading an =accel/nvidia/cc<N>= module that does not match =eessi_archdetect.sh accelpath=; =0=, =false= or =off= disables it. Overrides =warn_accel_mismatch=. |
 | =EESSI_USAGE_TRACKING= | =SitePackage.lua= | =1=, =true=, =on= or =yes= emits =ModuleUsageTracking= syslog records on module loads; =0=, =false= or =off= disables it. Overrides =usage_tracking=. |
-| =EESSI_CVMFS_REPO= | =sitepath.py= | Repository mount path checked against =/proc/self/mountinfo=; default =/cvmfs/software.eessi.io=, overridden by =--repo=. |
-| =EESSI_SITE_SOFTWARE_PATH= | =sitepath.py= | Site software tree used when =--site= is omitted; =/modules/all= is appended if not already present. |
-| =EESSI_SOFTWARE_PATH= | =sitepath.py= | EESSI software tree used when =--eessi= is omitted; =/modules/all= is appended if not already present. |
+| =EESSI_CVMFS_REPO= | =--check-mount= | Repository mount path checked against =/proc/self/mountinfo=; default =/cvmfs/software.eessi.io=, overridden by =--repo=. |
+| =EESSI_SITE_SOFTWARE_PATH= | =--check-mount= | Site software tree used when =--site= is omitted; =/modules/all= is appended if not already present. |
+| =EESSI_SOFTWARE_PATH= | =--check-mount= | EESSI software tree used when =--eessi= is omitted; =/modules/all= is appended if not already present. |
 
 ** See also
 
 - [[file:cli.org][The eessi-arch-guard command]]
 - [[file:failures.org][Messages and markers]]
 - [[file:../explanation/how-it-decides.org][How the guard decides]] and [[file:../explanation/output-modes.org][Prolog lines and shell lines]]
-- [[py:eessi_arch_guard.environment_delta]], [[py:eessi_arch_guard.module_name_ok]], [[py:eessi_arch_guard.restore_work_base]] and [[py:eessi_arch_guard.task_cpu_ids]]
+- [[zig:eessi-arch-guard.guard.restoreWorkBase]]

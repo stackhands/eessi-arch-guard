@@ -28,10 +28,10 @@ Use the guard's shell mode instead when you want a loaded module that has no bui
 1. Put this line at the top of the batch script, after the =#SBATCH= lines and before the first command that uses a module:
 
    #+begin_src bash
-   eval "$(/usr/bin/python3 -I /usr/local/sbin/eessi-arch-guard --shell)"
+   eval "$(/usr/local/sbin/eessi-arch-guard --shell)"
    #+end_src
 
-   =/usr/bin/python3 -I= starts the guard with the system's Python, not one a loaded module put first on =PATH=.
+   The binary needs no interpreter, so a Python a loaded module put first on =PATH= cannot change what runs.
    The guard's message goes to stderr, so the command substitution captures only the assignments.
 
 2. Start the job steps after that line, so that they inherit the corrected environment:
@@ -45,7 +45,7 @@ Use the guard's shell mode instead when you want a loaded module that has no bui
 3. To stop the job when the guard cannot load the modules for the node, use =--strict= and test its status instead:
 
    #+begin_src bash
-   if delta="$(/usr/bin/python3 -I /usr/local/sbin/eessi-arch-guard --strict --shell)"; then
+   if delta="$(/usr/local/sbin/eessi-arch-guard --strict --shell)"; then
        eval "$delta"
    else
        exit "$?"
@@ -74,7 +74,7 @@ python3 docs/examples/shell_demo.py
 
 #+begin_example
 case: shell
-command: python3 -I src/eessi_arch_guard.py --shell
+command: eessi-arch-guard --shell
 exit: 0
 --- stdout ---
 export EBROOTR=$PREFIX/prefix/software/linux/x86_64/amd/zen2/software/R/4.4.2
@@ -113,7 +113,7 @@ python3 docs/examples/strict_workspace.py
 
 #+begin_example
 case: strict-no-workspace
-command: python3 -I src/eessi_arch_guard.py --strict --shell
+command: eessi-arch-guard --strict --shell
 exit: 78
 --- stdout ---
 export EESSI_ARCH_GUARD_FAILED='x86_64/amd/zen4->restore-failed'

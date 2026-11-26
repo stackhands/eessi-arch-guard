@@ -49,7 +49,7 @@ It checks one flag, =waitpkg=: EESSI's detection does not ask for it, but GCC's 
 Of the candidates left, the first that has a software directory, =$EESSI_PREFIX/software/$EESSI_OS_TYPE/<candidate>/software=, is this node's CPU target.
 When the waitpkg rule removed the candidate that the EESSI module's own walk would choose, the reload pins the module to the guard's choice with =EESSI_SOFTWARE_SUBDIR_OVERRIDE=.
 [[file:../reference/cpu-flags.org][CPU flags]] lists the targets the rule covers.
-[[py:eessi_arch_guard.probe_cpu]] and [[zig:eessi-arch-guard.guard.probeCpu]] make this choice in the two builds.
+[[zig:eessi-arch-guard.guard.probeCpu]] makes this choice.
 
 *** This node's accelerator
 
@@ -57,7 +57,7 @@ When the waitpkg rule removed the candidate that the EESSI module's own walk wou
 A nonzero exit status or empty output means no accelerator, which the EESSI module records as an empty =EESSI_ACCEL_SUBDIR=.
 The guard compares the string as it is printed.
 The fallback from a compute capability such as =cc86= to the directory of its major version, =cc80=, stays in the EESSI module, which runs it during the reload.
-[[py:eessi_arch_guard.probe_accel]] and [[zig:eessi-arch-guard.guard.probeAccel]] run the detection.
+[[zig:eessi-arch-guard.guard.probeAccel]] runs the detection.
 
 *** Match, reload or failure
 
@@ -72,7 +72,7 @@ The prolog prints the difference between the task's environment and the one the 
 A reload that cannot be made, or made safely, changes nothing but =EESSI_ARCH_GUARD_FAILED=, and the =print= line says why.
 The prolog exits 0 in that case too, because Slurm kills a task whose =TaskProlog= exits nonzero: a job that would have run on the wrong tree still runs.
 With =--strict=, a failed decision exits 78 instead.
-[[py:eessi_arch_guard.decide]] and [[zig:eessi-arch-guard.guard.decide]] make the whole decision.
+[[zig:eessi-arch-guard.guard.decide]] makes the whole decision.
 
 ** What was considered and turned down
 

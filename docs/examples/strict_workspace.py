@@ -28,7 +28,7 @@ def main() -> int:
         env["TMPDIR"] = "/tmp"
         proc = support.run(env, ("--strict", "--shell"))
         print("case: strict-no-workspace")
-        print("command: python3 -I src/eessi_arch_guard.py --strict --shell")
+        print("command: eessi-arch-guard --strict --shell")
         support.show(proc, site.root)
         if proc.returncode != 78 or "->restore-failed'" not in proc.stdout:
             print("--strict did not fail the reload with exit 78", file=sys.stderr)

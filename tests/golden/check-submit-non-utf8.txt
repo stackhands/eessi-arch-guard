@@ -1,0 +1,96 @@
+=== default: invalid byte in stderr
+rc: 2
+--- stdout
+{"constraint": null, "exit": 2, "exit_semantic": "invalid", "kind": "check-submit", "loaded": 1, "message": "eb-stack failed: bad \udcff byte", "missing": [], "partition": null, "schema_version": 1, "target": "x86_64/amd/zen4"}
+--- stderr
+eessi-arch-guard: check-submit: eb-stack failed: bad ? byte
+
+--- end
+=== default: invalid byte alone in stderr
+rc: 2
+--- stdout
+{"constraint": null, "exit": 2, "exit_semantic": "invalid", "kind": "check-submit", "loaded": 1, "message": "eb-stack failed: \udcff", "missing": [], "partition": null, "schema_version": 1, "target": "x86_64/amd/zen4"}
+--- stderr
+eessi-arch-guard: check-submit: eb-stack failed: ?
+
+--- end
+=== default: cut multibyte character in stderr
+rc: 2
+--- stdout
+{"constraint": null, "exit": 2, "exit_semantic": "invalid", "kind": "check-submit", "loaded": 1, "message": "eb-stack failed: caf\udcc3", "missing": [], "partition": null, "schema_version": 1, "target": "x86_64/amd/zen4"}
+--- stderr
+eessi-arch-guard: check-submit: eb-stack failed: caf?
+
+--- end
+=== default: invalid byte in stdout
+rc: 2
+--- stdout
+{"constraint": null, "exit": 2, "exit_semantic": "invalid", "kind": "check-submit", "loaded": 1, "message": "eb-stack failed: \udcfe out", "missing": [], "partition": null, "schema_version": 1, "target": "x86_64/amd/zen4"}
+--- stderr
+eessi-arch-guard: check-submit: eb-stack failed: ? out
+
+--- end
+=== default: valid text in stderr
+rc: 2
+--- stdout
+{"constraint": null, "exit": 2, "exit_semantic": "invalid", "kind": "check-submit", "loaded": 1, "message": "eb-stack failed: caf\u00e9", "missing": [], "partition": null, "schema_version": 1, "target": "x86_64/amd/zen4"}
+--- stderr
+eessi-arch-guard: check-submit: eb-stack failed: caf\xe9
+
+--- end
+=== default: invalid line beside a flagged module
+rc: 1
+--- stdout
+{"constraint": null, "exit": 1, "exit_semantic": "missing", "kind": "check-submit", "loaded": 1, "message": null, "missing": ["R/4.4.2"], "partition": null, "schema_version": 1, "target": "x86_64/amd/zen4"}
+--- stderr
+eessi-arch-guard: check-submit: loaded module absent from x86_64/amd/zen4: R/4.4.2
+
+--- end
+=== strict: invalid byte in stderr
+rc: 2
+--- stdout
+{"constraint": null, "exit": 2, "exit_semantic": "invalid", "kind": "check-submit", "loaded": 1, "message": "eb-stack failed: bad \udcff byte", "missing": [], "partition": null, "schema_version": 1, "target": "x86_64/amd/zen4"}
+--- stderr
+eessi-arch-guard: check-submit: eb-stack failed: bad ? byte
+
+--- end
+=== strict: invalid byte alone in stderr
+rc: 2
+--- stdout
+{"constraint": null, "exit": 2, "exit_semantic": "invalid", "kind": "check-submit", "loaded": 1, "message": "eb-stack failed: \udcff", "missing": [], "partition": null, "schema_version": 1, "target": "x86_64/amd/zen4"}
+--- stderr
+eessi-arch-guard: check-submit: eb-stack failed: ?
+
+--- end
+=== strict: cut multibyte character in stderr
+rc: 2
+--- stdout
+{"constraint": null, "exit": 2, "exit_semantic": "invalid", "kind": "check-submit", "loaded": 1, "message": "eb-stack failed: caf\udcc3", "missing": [], "partition": null, "schema_version": 1, "target": "x86_64/amd/zen4"}
+--- stderr
+eessi-arch-guard: check-submit: eb-stack failed: caf?
+
+--- end
+=== strict: invalid byte in stdout
+rc: 2
+--- stdout
+{"constraint": null, "exit": 2, "exit_semantic": "invalid", "kind": "check-submit", "loaded": 1, "message": "eb-stack failed: \udcfe out", "missing": [], "partition": null, "schema_version": 1, "target": "x86_64/amd/zen4"}
+--- stderr
+eessi-arch-guard: check-submit: eb-stack failed: ? out
+
+--- end
+=== strict: valid text in stderr
+rc: 2
+--- stdout
+{"constraint": null, "exit": 2, "exit_semantic": "invalid", "kind": "check-submit", "loaded": 1, "message": "eb-stack failed: caf\u00e9", "missing": [], "partition": null, "schema_version": 1, "target": "x86_64/amd/zen4"}
+--- stderr
+eessi-arch-guard: check-submit: eb-stack failed: caf\xe9
+
+--- end
+=== strict: invalid line beside a flagged module
+rc: 1
+--- stdout
+{"constraint": null, "exit": 1, "exit_semantic": "missing", "kind": "check-submit", "loaded": 1, "message": null, "missing": ["R/4.4.2"], "partition": null, "schema_version": 1, "target": "x86_64/amd/zen4"}
+--- stderr
+eessi-arch-guard: check-submit: loaded module absent from x86_64/amd/zen4: R/4.4.2
+
+--- end

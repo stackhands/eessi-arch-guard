@@ -1,0 +1,1 @@
+`COMPAT.md` lists U+1171E, the Ahom consonant sign medial ra, beside U+1734: Unicode 16.0.0 (Python 3.14) stopped counting it as case-ignorable, so a capital sigma after it lower-cases as medial `σ` there and as final `ς` in the guard, which keeps Unicode 13.0.0. `tests/test_pylower_table.py` expects that difference on 3.14.

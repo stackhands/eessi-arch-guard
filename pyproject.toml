@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "eessi-arch-guard"
 version = "0.3.1"
-description = "Reload an EESSI module environment when a Slurm task lands on another CPU or GPU target."
+description = "Reload an EESSI module environment when a Slurm task lands on another CPU or GPU target. Ships the static eessi-arch-guard binary."
 readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]
@@ -16,25 +16,27 @@ classifiers = [
     "Environment :: Console",
     "Operating System :: POSIX :: Linux",
     "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: Free Threading :: 3 - Stable",
 ]
 dependencies = []
-
-[project.optional-dependencies]
-docs = [
-    "shtab==1.7.2",
-    "argparse-manpage==4.6",
-]
 
 [project.scripts]
 eessi-arch-guard = "eessi_arch_guard:main"
 
 [tool.setuptools]
-py-modules = ["eessi_arch_guard"]
 package-dir = { "" = "src" }
+packages = ["eessi_arch_guard"]
+include-package-data = false
+
+[tool.setuptools.package-data]
+eessi_arch_guard = ["bin/eessi-arch-guard"]
 
 [tool.setuptools.data-files]
-"share/eessi-arch-guard" = ["share/sitepath.py", "share/cvmfsrev.py", "share/_regular_file.py"]
+"share/eessi-arch-guard" = ["share/sitepath.py", "share/cvmfsrev.py"]
 "share/eessi-arch-guard/lmod" = ["share/lmod/SitePackage.lua"]
+"share/bash-completion/completions" = ["share/completions/eessi-arch-guard"]
+"share/zsh/site-functions" = ["share/completions/_eessi-arch-guard"]
+"share/man/man1" = ["share/man/eessi-arch-guard.1"]
 
 [tool.ruff]
 target-version = "py39"
@@ -44,31 +46,12 @@ src = ["src", "tests"]
 [tool.ruff.lint]
 select = ["E", "F", "W", "I"]
 
-[tool.towncrier]
-package = "eessi_arch_guard"
-package_dir = "src"
-filename = "CHANGELOG.md"
-directory = "changelog.d"
-title_format = "## [{version}] - {project_date}"
-underlines = ["", "", ""]
-issue_format = ""
-
-[[tool.towncrier.type]]
-directory = "feature"
-name = "Features"
-showcontent = true
-
-[[tool.towncrier.type]]
-directory = "bugfix"
-name = "Bugfixes"
-showcontent = true
-
-[[tool.towncrier.type]]
-directory = "doc"
-name = "Docs"
-showcontent = true
-
-[[tool.towncrier.type]]
-directory = "misc"
-name = "Misc"
-showcontent = true
+[tool.cibuildwheel]
+# One abi3 wheel from CPython 3.9 for every GIL CPython, and one wheel per
+# free-threaded CPython, which takes no abi3 wheel.
+build = ["cp39-manylinux_*", "cp313t-manylinux_*", "cp314t-manylinux_*"]
+enable = ["cpython-freethreading"]
+archs = ["native"]
+manylinux-x86_64-image = "manylinux2014"
+manylinux-aarch64-image = "manylinux2014"
+test-command = "eessi-arch-guard --version"

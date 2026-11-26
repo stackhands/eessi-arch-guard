@@ -1,0 +1,80 @@
+=== control 'flags'
+rc: 0
+--- stdout
+{"cached": false, "cause": null, "decision": "reloaded", "detail": null, "exit": 0, "exit_semantic": "ok", "kind": "decision", "message": "eessi-arch-guard: reloaded modules for x86_64/intel/icelake (loaded for x86_64/generic)", "now": "x86_64/intel/icelake", "reload_needed": true, "schema_version": 1, "shell": false, "strict": false, "was": "x86_64/generic"}
+
+--- stderr
+
+--- end
+=== control 'flag\u017f'
+rc: 0
+--- stdout
+{"cached": false, "cause": null, "decision": "reloaded", "detail": null, "exit": 0, "exit_semantic": "ok", "kind": "decision", "message": "eessi-arch-guard: reloaded modules for x86_64/intel/icelake (loaded for x86_64/generic)", "now": "x86_64/intel/icelake", "reload_needed": true, "schema_version": 1, "shell": false, "strict": false, "was": "x86_64/generic"}
+
+--- stderr
+
+--- end
+=== waitpkg under 'flags'
+rc: 0
+--- stdout
+{"cached": false, "cause": null, "decision": "reloaded", "detail": null, "exit": 0, "exit_semantic": "ok", "kind": "decision", "message": "eessi-arch-guard: reloaded modules for x86_64/intel/sapphirerapids (loaded for x86_64/generic)", "now": "x86_64/intel/sapphirerapids", "reload_needed": true, "schema_version": 1, "shell": false, "strict": false, "was": "x86_64/generic"}
+
+--- stderr
+
+--- end
+=== waitpkg under 'FLAGS'
+rc: 0
+--- stdout
+{"cached": false, "cause": null, "decision": "reloaded", "detail": null, "exit": 0, "exit_semantic": "ok", "kind": "decision", "message": "eessi-arch-guard: reloaded modules for x86_64/intel/sapphirerapids (loaded for x86_64/generic)", "now": "x86_64/intel/sapphirerapids", "reload_needed": true, "schema_version": 1, "shell": false, "strict": false, "was": "x86_64/generic"}
+
+--- stderr
+
+--- end
+=== waitpkg under 'flag\u017f'
+rc: 0
+--- stdout
+{"cached": false, "cause": null, "decision": "reloaded", "detail": null, "exit": 0, "exit_semantic": "ok", "kind": "decision", "message": "eessi-arch-guard: reloaded modules for x86_64/intel/sapphirerapids (loaded for x86_64/generic)", "now": "x86_64/intel/sapphirerapids", "reload_needed": true, "schema_version": 1, "shell": false, "strict": false, "was": "x86_64/generic"}
+
+--- stderr
+
+--- end
+=== waitpkg under 'FLAG\u017f'
+rc: 0
+--- stdout
+{"cached": false, "cause": null, "decision": "reloaded", "detail": null, "exit": 0, "exit_semantic": "ok", "kind": "decision", "message": "eessi-arch-guard: reloaded modules for x86_64/intel/sapphirerapids (loaded for x86_64/generic)", "now": "x86_64/intel/sapphirerapids", "reload_needed": true, "schema_version": 1, "shell": false, "strict": false, "was": "x86_64/generic"}
+
+--- stderr
+
+--- end
+=== waitpkg under 'Flag\u017f'
+rc: 0
+--- stdout
+{"cached": false, "cause": null, "decision": "reloaded", "detail": null, "exit": 0, "exit_semantic": "ok", "kind": "decision", "message": "eessi-arch-guard: reloaded modules for x86_64/intel/sapphirerapids (loaded for x86_64/generic)", "now": "x86_64/intel/sapphirerapids", "reload_needed": true, "schema_version": 1, "shell": false, "strict": false, "was": "x86_64/generic"}
+
+--- stderr
+
+--- end
+=== processor with two long s
+rc: 0
+--- stdout
+{"cached": false, "cause": null, "decision": "reloaded", "detail": null, "exit": 0, "exit_semantic": "ok", "kind": "decision", "message": "eessi-arch-guard: reloaded modules for x86_64/intel/icelake (loaded for x86_64/generic)", "now": "x86_64/intel/icelake", "reload_needed": true, "schema_version": 1, "shell": false, "strict": false, "was": "x86_64/generic"}
+
+--- stderr
+
+--- end
+=== processor with one long s
+rc: 0
+--- stdout
+{"cached": false, "cause": null, "decision": "reloaded", "detail": null, "exit": 0, "exit_semantic": "ok", "kind": "decision", "message": "eessi-arch-guard: reloaded modules for x86_64/intel/icelake (loaded for x86_64/generic)", "now": "x86_64/intel/icelake", "reload_needed": true, "schema_version": 1, "shell": false, "strict": false, "was": "x86_64/generic"}
+
+--- stderr
+
+--- end
+=== upper case processor with a long s
+rc: 0
+--- stdout
+{"cached": false, "cause": null, "decision": "reloaded", "detail": null, "exit": 0, "exit_semantic": "ok", "kind": "decision", "message": "eessi-arch-guard: reloaded modules for x86_64/intel/icelake (loaded for x86_64/generic)", "now": "x86_64/intel/icelake", "reload_needed": true, "schema_version": 1, "shell": false, "strict": false, "was": "x86_64/generic"}
+
+--- stderr
+
+--- end

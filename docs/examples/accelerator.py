@@ -42,7 +42,7 @@ def mismatch() -> int:
     try:
         proc = support.run(env)
         print("case: accelerator-mismatch")
-        print("command: python3 -I src/eessi_arch_guard.py")
+        print("command: eessi-arch-guard")
         support.show(proc, site.root)
         marker = (
             "EESSI_ARCH_GUARD_RELOADED="
@@ -65,7 +65,7 @@ def missing_module() -> int:
     try:
         proc = support.run(env)
         print("case: accelerator-missing-module")
-        print("command: python3 -I src/eessi_arch_guard.py")
+        print("command: eessi-arch-guard")
         support.show(proc, site.root)
         text = proc.stdout
         if proc.returncode != 0:

@@ -14,21 +14,22 @@ This check changes nothing. It reads the mount table and =MODULEPATH= and prints
 - The EESSI client on this node, as [[file:install-the-prolog.org][Install the prolog]] expects of a compute node.
 - A shell in which EESSI and the site tree are loaded, so =EESSI_SOFTWARE_PATH= and =EESSI_SITE_SOFTWARE_PATH= are set.
   [[https://www.eessi.io/docs/training-events/2025/tutorial-best-practices-cvmfs-hpc/eessi/using-eessi/][Using EESSI]] is the init that prepends the architecture-specific =modules/all=.
-- Python 3.9 or newer. The script uses the standard library.
+- The =eessi-arch-guard= binary, as [[file:install-the-prolog.org][Install the prolog]] puts it on the node.
 
 ** Steps
 
-1. Ask, from a checkout of this repository (after `pip install .`, the same script sits at `$PREFIX/share/eessi-arch-guard/sitepath.py`, where `PREFIX` is `sys.prefix`):
+1. Ask:
 
    #+begin_src bash
-   python3 share/sitepath.py \
+   eessi-arch-guard --check-mount \
      --site "$EESSI_SITE_SOFTWARE_PATH/modules/all" \
      --eessi "$EESSI_SOFTWARE_PATH/modules/all"
    #+end_src
 
+   =share/sitepath.py= takes the same options and runs this command, for a site whose scripts call it by that name.
    =--repo= defaults to =EESSI_CVMFS_REPO=, or =/cvmfs/software.eessi.io=.
    The mount table is =/proc/self/mountinfo= (overridden by =--mountinfo=). =MODULEPATH= comes from the environment (overridden by =--modulepath=).
-   With no =--site= or =--eessi=, the script reads =EESSI_SITE_SOFTWARE_PATH= and =EESSI_SOFTWARE_PATH= and appends =/modules/all= when a value does not already end with that suffix.
+   With no =--site= or =--eessi=, the command reads =EESSI_SITE_SOFTWARE_PATH= and =EESSI_SOFTWARE_PATH= and appends =/modules/all= when a value does not already end with that suffix.
    In the shell, an unset =EESSI_SITE_SOFTWARE_PATH= in ="$EESSI_SITE_SOFTWARE_PATH/modules/all"= still expands to =/modules/all=, and the check runs against that placeholder unless the variables are set.
    Optional =--require-input= exits 2 instead of treating =/modules/all= alone as a real path.
    When both checks pass, the exit status is 0 and the lines start with =ok=:
@@ -46,12 +47,12 @@ This check changes nothing. It reads the mount table and =MODULEPATH= and prints
 
 | Message | Cause | What to do |
 |---|---|---|
-| =sitepath.py: need --site and --eessi= | Neither flag was given and the two install variables are unset (exit 2). | Pass the two =modules/all= directories, or load EESSI and the site tree first. |
-| =sitepath.py: --require-input: install paths are missing= | =--require-input= and a path is =/modules/all= alone from an unset variable in the command above. | Set both install variables, or pass explicit =--site= and =--eessi= (exit 2). |
+| =eessi-arch-guard: --check-mount needs --site and --eessi= | Neither flag was given and the two install variables are unset (exit 2). | Pass the two =modules/all= directories, or load EESSI and the site tree first. |
+| =eessi-arch-guard: --require-input: install paths are missing= | =--require-input= and a path is =/modules/all= alone from an unset variable in the command above. | Set both install variables, or pass explicit =--site= and =--eessi= (exit 2). |
 | =FAIL REPO is not on a cvmfs mount= | The path is absent from the mount table, or the mount that holds it is not CVMFS. | Mount the EESSI client repository. A directory on the root disk does not count. |
 | =FAIL site modules PATH are not on MODULEPATH= | The site directory is not an entry. | Prepend it, which the site install's module does. |
 | =FAIL site modules PATH are behind= the EESSI directory | The site entry comes later. | Prepend the site directory so it is the earlier entry. |
-| =sitepath.py: cannot read PATH= | The mount table cannot be opened. | Pass =--mountinfo= with a copy of the table, or run where =/proc= is mounted. |
+| =eessi-arch-guard: cannot read PATH: ...= | The mount table cannot be opened. | Pass =--mountinfo= with a copy of the table, or run where =/proc= is mounted. |
 
 ** Related
 

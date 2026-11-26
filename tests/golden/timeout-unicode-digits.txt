@@ -1,0 +1,401 @@
+=== --timeout \u0663 --dry-run --json
+rc: 0
+--- stdout
+{"announce": true, "cache": {"cached_kind": null, "hit": false, "path": null}, "cached": false, "cause": null, "chain": {"path": null, "source": "none", "status": "none"}, "compare_accel": true, "config": {"path": null, "status": "none", "warning": null}, "decision": "noop", "detail": "target already matches this node", "eessi": null, "exit": 0, "exit_semantic": "ok", "job": {"id": null, "localid": null, "step": null}, "kind": "decision", "marker": null, "message": null, "mode": "prolog", "modules": [], "now": "x86_64/amd/zen4", "now_accel": null, "pin": null, "reload_needed": false, "schema_version": 1, "shell": false, "strict": false, "syslog": {"all": false, "pen": "32473", "target": null}, "timeout": 3.0, "was": "x86_64/amd/zen4", "was_accel": null}
+
+--- stderr
+
+--- end
+=== --timeout=\u0663 --dry-run --json
+rc: 0
+--- stdout
+{"announce": true, "cache": {"cached_kind": null, "hit": false, "path": null}, "cached": false, "cause": null, "chain": {"path": null, "source": "none", "status": "none"}, "compare_accel": true, "config": {"path": null, "status": "none", "warning": null}, "decision": "noop", "detail": "target already matches this node", "eessi": null, "exit": 0, "exit_semantic": "ok", "job": {"id": null, "localid": null, "step": null}, "kind": "decision", "marker": null, "message": null, "mode": "prolog", "modules": [], "now": "x86_64/amd/zen4", "now_accel": null, "pin": null, "reload_needed": false, "schema_version": 1, "shell": false, "strict": false, "syslog": {"all": false, "pen": "32473", "target": null}, "timeout": 3.0, "was": "x86_64/amd/zen4", "was_accel": null}
+
+--- stderr
+
+--- end
+=== --timeout \u0663 --dry-run
+rc: 0
+--- stdout
+mode: prolog
+strict: false
+announce: true
+config: none
+chain: none
+timeout: 3
+syslog: none
+syslog_all: false
+syslog_pen: 32473
+job: none
+step: none
+localid: unset
+cache: none
+decision: noop
+was: x86_64/amd/zen4
+now: x86_64/amd/zen4
+was_accel: none
+now_accel: none
+compare_accel: true
+pin: none
+eessi: none
+modules: none
+marker: none
+detail: target already matches this node
+message: none
+exit: 0
+
+--- stderr
+
+--- end
+=== --timeout \uff15 --dry-run --json
+rc: 0
+--- stdout
+{"announce": true, "cache": {"cached_kind": null, "hit": false, "path": null}, "cached": false, "cause": null, "chain": {"path": null, "source": "none", "status": "none"}, "compare_accel": true, "config": {"path": null, "status": "none", "warning": null}, "decision": "noop", "detail": "target already matches this node", "eessi": null, "exit": 0, "exit_semantic": "ok", "job": {"id": null, "localid": null, "step": null}, "kind": "decision", "marker": null, "message": null, "mode": "prolog", "modules": [], "now": "x86_64/amd/zen4", "now_accel": null, "pin": null, "reload_needed": false, "schema_version": 1, "shell": false, "strict": false, "syslog": {"all": false, "pen": "32473", "target": null}, "timeout": 5.0, "was": "x86_64/amd/zen4", "was_accel": null}
+
+--- stderr
+
+--- end
+=== --timeout=\uff15 --dry-run --json
+rc: 0
+--- stdout
+{"announce": true, "cache": {"cached_kind": null, "hit": false, "path": null}, "cached": false, "cause": null, "chain": {"path": null, "source": "none", "status": "none"}, "compare_accel": true, "config": {"path": null, "status": "none", "warning": null}, "decision": "noop", "detail": "target already matches this node", "eessi": null, "exit": 0, "exit_semantic": "ok", "job": {"id": null, "localid": null, "step": null}, "kind": "decision", "marker": null, "message": null, "mode": "prolog", "modules": [], "now": "x86_64/amd/zen4", "now_accel": null, "pin": null, "reload_needed": false, "schema_version": 1, "shell": false, "strict": false, "syslog": {"all": false, "pen": "32473", "target": null}, "timeout": 5.0, "was": "x86_64/amd/zen4", "was_accel": null}
+
+--- stderr
+
+--- end
+=== --timeout \uff15 --dry-run
+rc: 0
+--- stdout
+mode: prolog
+strict: false
+announce: true
+config: none
+chain: none
+timeout: 5
+syslog: none
+syslog_all: false
+syslog_pen: 32473
+job: none
+step: none
+localid: unset
+cache: none
+decision: noop
+was: x86_64/amd/zen4
+now: x86_64/amd/zen4
+was_accel: none
+now_accel: none
+compare_accel: true
+pin: none
+eessi: none
+modules: none
+marker: none
+detail: target already matches this node
+message: none
+exit: 0
+
+--- stderr
+
+--- end
+=== --timeout \u0663.\u0665 --dry-run --json
+rc: 0
+--- stdout
+{"announce": true, "cache": {"cached_kind": null, "hit": false, "path": null}, "cached": false, "cause": null, "chain": {"path": null, "source": "none", "status": "none"}, "compare_accel": true, "config": {"path": null, "status": "none", "warning": null}, "decision": "noop", "detail": "target already matches this node", "eessi": null, "exit": 0, "exit_semantic": "ok", "job": {"id": null, "localid": null, "step": null}, "kind": "decision", "marker": null, "message": null, "mode": "prolog", "modules": [], "now": "x86_64/amd/zen4", "now_accel": null, "pin": null, "reload_needed": false, "schema_version": 1, "shell": false, "strict": false, "syslog": {"all": false, "pen": "32473", "target": null}, "timeout": 3.5, "was": "x86_64/amd/zen4", "was_accel": null}
+
+--- stderr
+
+--- end
+=== --timeout=\u0663.\u0665 --dry-run --json
+rc: 0
+--- stdout
+{"announce": true, "cache": {"cached_kind": null, "hit": false, "path": null}, "cached": false, "cause": null, "chain": {"path": null, "source": "none", "status": "none"}, "compare_accel": true, "config": {"path": null, "status": "none", "warning": null}, "decision": "noop", "detail": "target already matches this node", "eessi": null, "exit": 0, "exit_semantic": "ok", "job": {"id": null, "localid": null, "step": null}, "kind": "decision", "marker": null, "message": null, "mode": "prolog", "modules": [], "now": "x86_64/amd/zen4", "now_accel": null, "pin": null, "reload_needed": false, "schema_version": 1, "shell": false, "strict": false, "syslog": {"all": false, "pen": "32473", "target": null}, "timeout": 3.5, "was": "x86_64/amd/zen4", "was_accel": null}
+
+--- stderr
+
+--- end
+=== --timeout \u0663.\u0665 --dry-run
+rc: 0
+--- stdout
+mode: prolog
+strict: false
+announce: true
+config: none
+chain: none
+timeout: 3.5
+syslog: none
+syslog_all: false
+syslog_pen: 32473
+job: none
+step: none
+localid: unset
+cache: none
+decision: noop
+was: x86_64/amd/zen4
+now: x86_64/amd/zen4
+was_accel: none
+now_accel: none
+compare_accel: true
+pin: none
+eessi: none
+modules: none
+marker: none
+detail: target already matches this node
+message: none
+exit: 0
+
+--- stderr
+
+--- end
+=== --timeout \uff15.\uff15 --dry-run --json
+rc: 0
+--- stdout
+{"announce": true, "cache": {"cached_kind": null, "hit": false, "path": null}, "cached": false, "cause": null, "chain": {"path": null, "source": "none", "status": "none"}, "compare_accel": true, "config": {"path": null, "status": "none", "warning": null}, "decision": "noop", "detail": "target already matches this node", "eessi": null, "exit": 0, "exit_semantic": "ok", "job": {"id": null, "localid": null, "step": null}, "kind": "decision", "marker": null, "message": null, "mode": "prolog", "modules": [], "now": "x86_64/amd/zen4", "now_accel": null, "pin": null, "reload_needed": false, "schema_version": 1, "shell": false, "strict": false, "syslog": {"all": false, "pen": "32473", "target": null}, "timeout": 5.5, "was": "x86_64/amd/zen4", "was_accel": null}
+
+--- stderr
+
+--- end
+=== --timeout=\uff15.\uff15 --dry-run --json
+rc: 0
+--- stdout
+{"announce": true, "cache": {"cached_kind": null, "hit": false, "path": null}, "cached": false, "cause": null, "chain": {"path": null, "source": "none", "status": "none"}, "compare_accel": true, "config": {"path": null, "status": "none", "warning": null}, "decision": "noop", "detail": "target already matches this node", "eessi": null, "exit": 0, "exit_semantic": "ok", "job": {"id": null, "localid": null, "step": null}, "kind": "decision", "marker": null, "message": null, "mode": "prolog", "modules": [], "now": "x86_64/amd/zen4", "now_accel": null, "pin": null, "reload_needed": false, "schema_version": 1, "shell": false, "strict": false, "syslog": {"all": false, "pen": "32473", "target": null}, "timeout": 5.5, "was": "x86_64/amd/zen4", "was_accel": null}
+
+--- stderr
+
+--- end
+=== --timeout \uff15.\uff15 --dry-run
+rc: 0
+--- stdout
+mode: prolog
+strict: false
+announce: true
+config: none
+chain: none
+timeout: 5.5
+syslog: none
+syslog_all: false
+syslog_pen: 32473
+job: none
+step: none
+localid: unset
+cache: none
+decision: noop
+was: x86_64/amd/zen4
+now: x86_64/amd/zen4
+was_accel: none
+now_accel: none
+compare_accel: true
+pin: none
+eessi: none
+modules: none
+marker: none
+detail: target already matches this node
+message: none
+exit: 0
+
+--- stderr
+
+--- end
+=== --timeout 1_\u0660 --dry-run --json
+rc: 0
+--- stdout
+{"announce": true, "cache": {"cached_kind": null, "hit": false, "path": null}, "cached": false, "cause": null, "chain": {"path": null, "source": "none", "status": "none"}, "compare_accel": true, "config": {"path": null, "status": "none", "warning": null}, "decision": "noop", "detail": "target already matches this node", "eessi": null, "exit": 0, "exit_semantic": "ok", "job": {"id": null, "localid": null, "step": null}, "kind": "decision", "marker": null, "message": null, "mode": "prolog", "modules": [], "now": "x86_64/amd/zen4", "now_accel": null, "pin": null, "reload_needed": false, "schema_version": 1, "shell": false, "strict": false, "syslog": {"all": false, "pen": "32473", "target": null}, "timeout": 10.0, "was": "x86_64/amd/zen4", "was_accel": null}
+
+--- stderr
+
+--- end
+=== --timeout=1_\u0660 --dry-run --json
+rc: 0
+--- stdout
+{"announce": true, "cache": {"cached_kind": null, "hit": false, "path": null}, "cached": false, "cause": null, "chain": {"path": null, "source": "none", "status": "none"}, "compare_accel": true, "config": {"path": null, "status": "none", "warning": null}, "decision": "noop", "detail": "target already matches this node", "eessi": null, "exit": 0, "exit_semantic": "ok", "job": {"id": null, "localid": null, "step": null}, "kind": "decision", "marker": null, "message": null, "mode": "prolog", "modules": [], "now": "x86_64/amd/zen4", "now_accel": null, "pin": null, "reload_needed": false, "schema_version": 1, "shell": false, "strict": false, "syslog": {"all": false, "pen": "32473", "target": null}, "timeout": 10.0, "was": "x86_64/amd/zen4", "was_accel": null}
+
+--- stderr
+
+--- end
+=== --timeout 1_\u0660 --dry-run
+rc: 0
+--- stdout
+mode: prolog
+strict: false
+announce: true
+config: none
+chain: none
+timeout: 10
+syslog: none
+syslog_all: false
+syslog_pen: 32473
+job: none
+step: none
+localid: unset
+cache: none
+decision: noop
+was: x86_64/amd/zen4
+now: x86_64/amd/zen4
+was_accel: none
+now_accel: none
+compare_accel: true
+pin: none
+eessi: none
+modules: none
+marker: none
+detail: target already matches this node
+message: none
+exit: 0
+
+--- stderr
+
+--- end
+=== --timeout \xb2 --dry-run --json
+rc: 0
+--- stdout
+{"announce": true, "cache": {"cached_kind": null, "hit": false, "path": null}, "cached": false, "cause": null, "chain": {"path": null, "source": "none", "status": "none"}, "compare_accel": true, "config": {"path": null, "status": "none", "warning": null}, "decision": "noop", "detail": "target already matches this node", "eessi": null, "exit": 0, "exit_semantic": "ok", "job": {"id": null, "localid": null, "step": null}, "kind": "decision", "marker": null, "message": null, "mode": "prolog", "modules": [], "now": "x86_64/amd/zen4", "now_accel": null, "pin": null, "reload_needed": false, "schema_version": 1, "shell": false, "strict": false, "syslog": {"all": false, "pen": "32473", "target": null}, "timeout": 60.0, "was": "x86_64/amd/zen4", "was_accel": null}
+
+--- stderr
+eessi-arch-guard: --timeout is not a positive number of seconds at most 2147483.647
+
+--- end
+=== --timeout=\xb2 --dry-run --json
+rc: 0
+--- stdout
+{"announce": true, "cache": {"cached_kind": null, "hit": false, "path": null}, "cached": false, "cause": null, "chain": {"path": null, "source": "none", "status": "none"}, "compare_accel": true, "config": {"path": null, "status": "none", "warning": null}, "decision": "noop", "detail": "target already matches this node", "eessi": null, "exit": 0, "exit_semantic": "ok", "job": {"id": null, "localid": null, "step": null}, "kind": "decision", "marker": null, "message": null, "mode": "prolog", "modules": [], "now": "x86_64/amd/zen4", "now_accel": null, "pin": null, "reload_needed": false, "schema_version": 1, "shell": false, "strict": false, "syslog": {"all": false, "pen": "32473", "target": null}, "timeout": 60.0, "was": "x86_64/amd/zen4", "was_accel": null}
+
+--- stderr
+eessi-arch-guard: --timeout is not a positive number of seconds at most 2147483.647
+
+--- end
+=== --timeout \xb2 --dry-run
+rc: 0
+--- stdout
+mode: prolog
+strict: false
+announce: true
+config: none
+chain: none
+timeout: 60
+syslog: none
+syslog_all: false
+syslog_pen: 32473
+job: none
+step: none
+localid: unset
+cache: none
+decision: noop
+was: x86_64/amd/zen4
+now: x86_64/amd/zen4
+was_accel: none
+now_accel: none
+compare_accel: true
+pin: none
+eessi: none
+modules: none
+marker: none
+detail: target already matches this node
+message: none
+exit: 0
+
+--- stderr
+eessi-arch-guard: --timeout is not a positive number of seconds at most 2147483.647
+
+--- end
+=== --timeout \u2460 --dry-run --json
+rc: 0
+--- stdout
+{"announce": true, "cache": {"cached_kind": null, "hit": false, "path": null}, "cached": false, "cause": null, "chain": {"path": null, "source": "none", "status": "none"}, "compare_accel": true, "config": {"path": null, "status": "none", "warning": null}, "decision": "noop", "detail": "target already matches this node", "eessi": null, "exit": 0, "exit_semantic": "ok", "job": {"id": null, "localid": null, "step": null}, "kind": "decision", "marker": null, "message": null, "mode": "prolog", "modules": [], "now": "x86_64/amd/zen4", "now_accel": null, "pin": null, "reload_needed": false, "schema_version": 1, "shell": false, "strict": false, "syslog": {"all": false, "pen": "32473", "target": null}, "timeout": 60.0, "was": "x86_64/amd/zen4", "was_accel": null}
+
+--- stderr
+eessi-arch-guard: --timeout is not a positive number of seconds at most 2147483.647
+
+--- end
+=== --timeout=\u2460 --dry-run --json
+rc: 0
+--- stdout
+{"announce": true, "cache": {"cached_kind": null, "hit": false, "path": null}, "cached": false, "cause": null, "chain": {"path": null, "source": "none", "status": "none"}, "compare_accel": true, "config": {"path": null, "status": "none", "warning": null}, "decision": "noop", "detail": "target already matches this node", "eessi": null, "exit": 0, "exit_semantic": "ok", "job": {"id": null, "localid": null, "step": null}, "kind": "decision", "marker": null, "message": null, "mode": "prolog", "modules": [], "now": "x86_64/amd/zen4", "now_accel": null, "pin": null, "reload_needed": false, "schema_version": 1, "shell": false, "strict": false, "syslog": {"all": false, "pen": "32473", "target": null}, "timeout": 60.0, "was": "x86_64/amd/zen4", "was_accel": null}
+
+--- stderr
+eessi-arch-guard: --timeout is not a positive number of seconds at most 2147483.647
+
+--- end
+=== --timeout \u2460 --dry-run
+rc: 0
+--- stdout
+mode: prolog
+strict: false
+announce: true
+config: none
+chain: none
+timeout: 60
+syslog: none
+syslog_all: false
+syslog_pen: 32473
+job: none
+step: none
+localid: unset
+cache: none
+decision: noop
+was: x86_64/amd/zen4
+now: x86_64/amd/zen4
+was_accel: none
+now_accel: none
+compare_accel: true
+pin: none
+eessi: none
+modules: none
+marker: none
+detail: target already matches this node
+message: none
+exit: 0
+
+--- stderr
+eessi-arch-guard: --timeout is not a positive number of seconds at most 2147483.647
+
+--- end
+=== --timeout \u0663x --dry-run --json
+rc: 0
+--- stdout
+{"announce": true, "cache": {"cached_kind": null, "hit": false, "path": null}, "cached": false, "cause": null, "chain": {"path": null, "source": "none", "status": "none"}, "compare_accel": true, "config": {"path": null, "status": "none", "warning": null}, "decision": "noop", "detail": "target already matches this node", "eessi": null, "exit": 0, "exit_semantic": "ok", "job": {"id": null, "localid": null, "step": null}, "kind": "decision", "marker": null, "message": null, "mode": "prolog", "modules": [], "now": "x86_64/amd/zen4", "now_accel": null, "pin": null, "reload_needed": false, "schema_version": 1, "shell": false, "strict": false, "syslog": {"all": false, "pen": "32473", "target": null}, "timeout": 60.0, "was": "x86_64/amd/zen4", "was_accel": null}
+
+--- stderr
+eessi-arch-guard: --timeout is not a positive number of seconds at most 2147483.647
+
+--- end
+=== --timeout=\u0663x --dry-run --json
+rc: 0
+--- stdout
+{"announce": true, "cache": {"cached_kind": null, "hit": false, "path": null}, "cached": false, "cause": null, "chain": {"path": null, "source": "none", "status": "none"}, "compare_accel": true, "config": {"path": null, "status": "none", "warning": null}, "decision": "noop", "detail": "target already matches this node", "eessi": null, "exit": 0, "exit_semantic": "ok", "job": {"id": null, "localid": null, "step": null}, "kind": "decision", "marker": null, "message": null, "mode": "prolog", "modules": [], "now": "x86_64/amd/zen4", "now_accel": null, "pin": null, "reload_needed": false, "schema_version": 1, "shell": false, "strict": false, "syslog": {"all": false, "pen": "32473", "target": null}, "timeout": 60.0, "was": "x86_64/amd/zen4", "was_accel": null}
+
+--- stderr
+eessi-arch-guard: --timeout is not a positive number of seconds at most 2147483.647
+
+--- end
+=== --timeout \u0663x --dry-run
+rc: 0
+--- stdout
+mode: prolog
+strict: false
+announce: true
+config: none
+chain: none
+timeout: 60
+syslog: none
+syslog_all: false
+syslog_pen: 32473
+job: none
+step: none
+localid: unset
+cache: none
+decision: noop
+was: x86_64/amd/zen4
+now: x86_64/amd/zen4
+was_accel: none
+now_accel: none
+compare_accel: true
+pin: none
+eessi: none
+modules: none
+marker: none
+detail: target already matches this node
+message: none
+exit: 0
+
+--- stderr
+eessi-arch-guard: --timeout is not a positive number of seconds at most 2147483.647
+
+--- end

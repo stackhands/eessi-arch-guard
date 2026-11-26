@@ -12,8 +12,8 @@ This reads text. It does not remount, and it does not change a repository.
 
 - A file that holds the output of =cvmfs_config stat REPO=, or the same lines saved from the client.
   The revision is the line =Revision: N=. Some clients print =Catalog revision: N= or =Repository revision: N=.
-- Python 3.9 or newer. The script uses the standard library.
-- A checkout of this repository, or a `pip install .`, which installs the script at `$PREFIX/share/eessi-arch-guard/cvmfsrev.py` (`PREFIX` is `sys.prefix`).
+- The =eessi-arch-guard= binary, as [[file:install-the-prolog.org][Install the prolog]] puts it on the node.
+  =share/cvmfsrev.py= takes the same options and runs the same command.
 
 ** Steps
 
@@ -21,29 +21,29 @@ This reads text. It does not remount, and it does not change a repository.
 
    #+begin_src bash
    cvmfs_config stat software.eessi.io > /tmp/cvmfs-stat.txt
-   python3 share/cvmfsrev.py --stat /tmp/cvmfs-stat.txt
+   eessi-arch-guard --check-revision --stat /tmp/cvmfs-stat.txt
    #+end_src
 
-   With no =--min=, the script prints =revision N= and exits 0, whatever N is.
+   With no =--min=, the command prints =revision N= and exits 0, whatever N is.
    That is the whole of the default. Nothing is compared.
 
 2. Gate a job on a revision you just published:
 
    #+begin_src bash
-   python3 share/cvmfsrev.py --stat /tmp/cvmfs-stat.txt --min 1200
+   eessi-arch-guard --check-revision --stat /tmp/cvmfs-stat.txt --min 1200
    #+end_src
 
    Exit 0 when the client is at 1200 or newer. Exit 1 when it is older, and the line says =behind=.
-   Refresh the client, then read the status again. The script does not refresh it.
+   Refresh the client, then read the status again. The command does not refresh it.
 
 ** If it fails
 
 | Message | Cause | What to do |
 |---|---|---|
-| =cvmfsrev.py: no revision in the stat output= | The file has none of the three revision lines. | Point =--stat= at the output of =cvmfs_config stat=. |
+| =eessi-arch-guard: no revision in the stat output= | The file has none of the three revision lines. | Point =--stat= at the output of =cvmfs_config stat=. |
 | =behind revision N is older than M= | The client catalog is older than =--min=. | Refresh the client and take a new stat file. |
-| =cvmfsrev.py: cannot read PATH= | The stat file is missing. | Write it first. The script does not run =cvmfs_config= itself. |
-| =cvmfsrev.py: --min must be zero or more= | =--min= was negative. | Pass the revision you published, which is zero or more. |
+| =eessi-arch-guard: cannot read PATH: ...= | The stat file is missing. | Write it first. The command does not run =cvmfs_config= itself. |
+| =eessi-arch-guard: --min must be zero or more= | =--min= was negative. | Pass the revision you published, which is zero or more. |
 
 ** Related
 

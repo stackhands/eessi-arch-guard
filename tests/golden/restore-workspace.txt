@@ -1,0 +1,51 @@
+=== guard plain
+rc: 0
+--- stdout
+export EESSI_ARCH_GUARD_FAILED=x86_64/amd/zen4->restore-failed
+print eessi-arch-guard: restore failed (restore workspace unavailable: [Errno 13] Permission denied: '@WORK@/workbase/RND'); environment left as it was
+
+--- stderr
+
+--- end
+=== guard --json
+rc: 0
+--- stdout
+{"cached": false, "cause": "restore-failed", "decision": "failed", "detail": null, "exit": 0, "exit_semantic": "ok", "kind": "decision", "message": "eessi-arch-guard: restore failed (restore workspace unavailable: [Errno 13] Permission denied: '@WORK@/workbase/RND'); environment left as it was", "now": null, "reload_needed": true, "schema_version": 1, "shell": false, "strict": false, "was": "x86_64/amd/zen4"}
+
+--- stderr
+
+--- end
+=== guard --shell
+rc: 0
+--- stdout
+export EESSI_ARCH_GUARD_FAILED='x86_64/amd/zen4->restore-failed'
+
+--- stderr
+eessi-arch-guard: restore failed (restore workspace unavailable: [Errno 13] Permission denied: '@WORK@/workbase/RND'); environment left as it was
+
+--- end
+=== guard --strict
+rc: 78
+--- stdout
+export EESSI_ARCH_GUARD_FAILED=x86_64/amd/zen4->restore-failed
+print eessi-arch-guard: restore failed (restore workspace unavailable: [Errno 13] Permission denied: '@WORK@/workbase/RND'); environment left as it was
+
+--- stderr
+
+--- end
+=== guard --strict --json
+rc: 78
+--- stdout
+{"cached": false, "cause": "restore-failed", "decision": "failed", "detail": null, "exit": 78, "exit_semantic": "strict-failure", "kind": "decision", "message": "eessi-arch-guard: restore failed (restore workspace unavailable: [Errno 13] Permission denied: '@WORK@/workbase/RND'); environment left as it was", "now": null, "reload_needed": true, "schema_version": 1, "shell": false, "strict": true, "was": "x86_64/amd/zen4"}
+
+--- stderr
+
+--- end
+=== helper
+rc: 1
+--- stdout
+
+--- stderr
+eessi-arch-guard: restore failed: [Errno 13] Permission denied: '@WORK@/workbase/RND'
+
+--- end

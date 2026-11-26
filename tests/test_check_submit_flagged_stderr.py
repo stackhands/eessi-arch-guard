@@ -8,9 +8,9 @@ line on standard output does not make a missing-module result: check-submit
 reports the failure of eb-stack, taking standard error ahead of standard
 output.
 
-Python alone is checked first, and then the two guards are compared through
-the stub planner runner of the shared harness module. The comparison skips
-when TOOL_BIN is unset.
+The explicit expectations come first, and then the whole output of each exit
+status is pinned in ``golden/check-submit-flagged-stderr.txt``. The stub
+planner runner of the shared harness module stands in for eb-stack.
 """
 
 from __future__ import annotations
@@ -22,15 +22,16 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import harness  # noqa: E402
+import retire_b_support as support  # noqa: E402
 
-PYTHON_ARGV = [sys.executable, "-I", str(harness.GUARD)]
+PROGRAM = harness.GUARD_ARGV
 FAILED_LINE = b"eessi-arch-guard: check-submit: eb-stack failed: warn\n"
 
 
 class CheckSubmitFlaggedStderrTests(unittest.TestCase):
     def test_status_one_reports_the_flagged_module_despite_stderr(self) -> None:
         code, payload, err = harness.run_check_submit_stub(
-            PYTHON_ARGV, b"warn\n", b"head\n", status=1, flagged=True
+            PROGRAM, b"warn\n", b"head\n", status=1, flagged=True
         )
         absent_line = (
             f"eessi-arch-guard: check-submit: loaded module absent from "
@@ -48,7 +49,7 @@ class CheckSubmitFlaggedStderrTests(unittest.TestCase):
         for status in (2, 3):
             with self.subTest(status=status):
                 code, payload, err = harness.run_check_submit_stub(
-                    PYTHON_ARGV, b"warn\n", b"head\n", status=status, flagged=True
+                    PROGRAM, b"warn\n", b"head\n", status=status, flagged=True
                 )
                 self.assertEqual(code, 2, err)
                 assert payload is not None
@@ -60,7 +61,7 @@ class CheckSubmitFlaggedStderrTests(unittest.TestCase):
 
     def test_status_zero_ignores_stderr_and_flagged_lines(self) -> None:
         code, payload, err = harness.run_check_submit_stub(
-            PYTHON_ARGV, b"warn\n", b"head\n", status=0, flagged=True
+            PROGRAM, b"warn\n", b"head\n", status=0, flagged=True
         )
         self.assertEqual(code, 0, err)
         assert payload is not None
@@ -72,28 +73,21 @@ class CheckSubmitFlaggedStderrTests(unittest.TestCase):
         )
         self.assertEqual(err, b"")
 
-    def test_programs_agree(self) -> None:
-        harness.skip_unless_tool_bin(self)
-        program = [str(harness.PROGRAM)]
+    def test_output_of_each_status(self) -> None:
+        sheet = support.sheet(self, "check-submit-flagged-stderr")
         for status in (0, 1, 2, 3):
             with self.subTest(status=status, flagged=True):
-                self.assertEqual(
-                    harness.run_check_submit_stub(
-                        program, b"warn\n", b"head\n", status=status, flagged=True
-                    ),
-                    harness.run_check_submit_stub(
-                        PYTHON_ARGV, b"warn\n", b"head\n", status=status, flagged=True
-                    ),
+                result = harness.run_check_submit_stub(
+                    PROGRAM, b"warn\n", b"head\n", status=status, flagged=True
+                )
+                sheet.check(
+                    self, "status %d flagged" % status, support.render_stub(*result)
                 )
         with self.subTest(status=1, flagged=False):
-            self.assertEqual(
-                harness.run_check_submit_stub(
-                    program, b"warn\n", b"head\n", status=1, flagged=False
-                ),
-                harness.run_check_submit_stub(
-                    PYTHON_ARGV, b"warn\n", b"head\n", status=1, flagged=False
-                ),
+            result = harness.run_check_submit_stub(
+                PROGRAM, b"warn\n", b"head\n", status=1, flagged=False
             )
+            sheet.check(self, "status 1 not flagged", support.render_stub(*result))
 
 
 if __name__ == "__main__":

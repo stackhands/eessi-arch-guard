@@ -9,8 +9,6 @@ import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
-import eessi_arch_guard as guard  # noqa: E402
 import harness  # noqa: E402
 from slurm_model import apply_task_prolog  # noqa: E402
 
@@ -30,30 +28,6 @@ ZEN4 = "x86_64/amd/zen4"
 
 
 class YearModuleTests(unittest.TestCase):
-    def test_only_four_ascii_digits_extend_unversioned_grammar(self):
-        for name in ("2026", "1999"):
-            self.assertTrue(guard.module_name_ok(name), name)
-        for name in (
-            "GCC",
-            "EESSI",
-            "202",
-            "20261",
-            "year2026",
-            "\uff12\uff10\uff12\uff16",
-            "2026/",
-            "2026//x",
-            "/2026",
-        ):
-            self.assertFalse(guard.module_name_ok(name), name)
-        for name in ("GCC/15.2.0", "Compiler/GCCcore/15.2.0"):
-            self.assertTrue(guard.module_name_ok(name), name)
-
-    def test_year_keeps_loaded_module_order(self):
-        result = guard.parse_loaded_modules({"LOADEDMODULES": "EESSI/2026.06:2026:GCC/15.2.0"})
-        self.assertFalse(result.error)
-        self.assertEqual(result.eessi, "EESSI/2026.06")
-        self.assertEqual(result.others, ("2026", "GCC/15.2.0"))
-
     @unittest.skipUnless(LMOD.is_file(), "Lmod libexec is not installed")
     def test_real_lmod_restores_year_and_versioned_module_on_new_cpu(self):
         with tempfile.TemporaryDirectory(prefix="eessi-year-module-") as temporary:

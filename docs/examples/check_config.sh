@@ -1,10 +1,11 @@
 #!/bin/bash
-# Exercise the root-owned config beside a copy of the prolog.
+# Exercise the root-owned config beside a copy of the binary.
 # Prints a transcript with the temporary directory rewritten as $WORK.
 # Removes the temporary directory, including root-owned files, on exit.
 set -euo pipefail
 
 root=$(CDPATH='' cd -- "$(dirname -- "$0")/../.." && pwd)
+binary=${TOOL_BIN:-$root/zig-out/bin/eessi-arch-guard}
 parent=$(mktemp -d /tmp/eessi-arch-guard-conf.XXXXXX)
 cleanup() {
     sudo -n rm -rf "$parent"
@@ -51,7 +52,7 @@ prepare() {
     local name=$1
     local work=$parent/$name
     mkdir -p "$work"
-    cp "$root/src/eessi_arch_guard.py" "$work/eessi-arch-guard"
+    cp "$binary" "$work/eessi-arch-guard"
     chmod 755 "$work/eessi-arch-guard"
     printf '%s\n' '#!/bin/sh' "printf '%s\n' 'export SITE_PROLOG=1'" >"$work/site.sh"
     chmod 755 "$work/site.sh"
@@ -147,7 +148,7 @@ chmod 755 "$work/site.sh"
 cat >"$work/wrapper.sh" <<EOF
 #!/bin/sh
 $work/site.sh || exit \$?
-exec /usr/bin/python3 -I $work/eessi-arch-guard
+exec $work/eessi-arch-guard
 EOF
 chmod 755 "$work/wrapper.sh"
 run_any "$work/wrapper.sh"
@@ -160,7 +161,7 @@ chmod 755 "$work/site.sh"
 cat >"$work/wrapper.sh" <<EOF
 #!/bin/sh
 $work/site.sh || exit \$?
-exec /usr/bin/python3 -I $work/eessi-arch-guard
+exec $work/eessi-arch-guard
 EOF
 chmod 755 "$work/wrapper.sh"
 run_any "$work/wrapper.sh"

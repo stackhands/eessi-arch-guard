@@ -39,7 +39,7 @@ Slurm starts a =TaskProlog= with no arguments, so these settings come from a con
    #+begin_src sh
    #!/bin/sh
    /etc/slurm/task_prolog.site || exit $?
-   exec /usr/bin/python3 -I /usr/local/sbin/eessi-arch-guard
+   exec /usr/local/sbin/eessi-arch-guard
    #+end_src
 
    Keep the =|| exit $?=: in =if site; then exec guard; fi=, an =if= whose test fails has status 0, so a failed site prolog would look like success.

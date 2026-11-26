@@ -1,0 +1,40 @@
+=== dot slash, runs
+rc: 0
+--- stdout
+eessi-arch-guard: check-submit: 1 loaded module(s) available for x86_64/amd/zen4
+
+--- stderr
+
+--- end
+=== plain relative, runs
+rc: 0
+--- stdout
+eessi-arch-guard: check-submit: 1 loaded module(s) available for x86_64/amd/zen4
+
+--- stderr
+
+--- end
+=== dot slash, bad format
+rc: 2
+--- stdout
+
+--- stderr
+eessi-arch-guard: check-submit: could not run eb-stack: [Errno 8] Exec format error: './tools/eb-garbage'
+
+--- end
+=== plain relative, bad format
+rc: 2
+--- stdout
+
+--- stderr
+eessi-arch-guard: check-submit: could not run eb-stack: [Errno 8] Exec format error: 'tools/eb-garbage'
+
+--- end
+=== plain relative, no shebang
+rc: 2
+--- stdout
+
+--- stderr
+eessi-arch-guard: check-submit: could not run eb-stack: [Errno 2] No such file or directory: 'tools/eb-shebang'
+
+--- end

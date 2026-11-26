@@ -13,7 +13,6 @@ import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 import harness  # noqa: E402
 
@@ -256,65 +255,39 @@ class SyslogTests(unittest.TestCase):
             sock.close()
 
     def test_tcp_octet_counting_and_udp(self):
-        from unittest import mock
-
-        import eessi_arch_guard as guard
-
-        target_tcp = guard.SyslogTarget("rfc5424-tcp", "inprocess", 0)
-        server, client = socket.socketpair(socket.AF_UNIX, socket.SOCK_STREAM)
+        tcp = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        tcp.bind(("127.0.0.1", 0))
+        tcp.listen(1)
+        tcp.settimeout(2.0)
+        tcp_port = tcp.getsockname()[1]
         try:
-            with mock.patch("socket.create_connection", return_value=client):
-                guard._send_syslog(
-                    target_tcp, 5, "EESSI_ARCH_RELOAD", [("kind", "reloaded")], "reloaded"
-                )
-            frame = server.recv(65536).decode("utf-8")
+            # The kernel completes the connection into the backlog, so the
+            # guard sends its frame and exits before this side accepts.
+            env = self._cpu_env(ZEN4, "zen2")
+            p_tcp = harness.run_guard(env, [f"--syslog=tcp://127.0.0.1:{tcp_port}"])
+            self.assertEqual(p_tcp.returncode, 0)
+            conn, _ = tcp.accept()
+            with conn:
+                conn.settimeout(2.0)
+                frame = conn.recv(65536).decode("utf-8")
             length_s, msg = frame.split(" ", 1)
             self.assertEqual(int(length_s), len(msg.encode("utf-8")))
             self.assertIsNotNone(RFC5424_RE.fullmatch(msg), msg)
         finally:
-            server.close()
-            client.close()
+            tcp.close()
 
-        captured: list[bytes] = []
-
-        class _Datagram:
-            def __init__(self, *_args, **_kwargs):
-                pass
-
-            def settimeout(self, _timeout):
-                return None
-
-            def sendto(self, data, _addr):
-                captured.append(data)
-                return len(data)
-
-            def close(self):
-                return None
-
-            def __enter__(self):
-                return self
-
-            def __exit__(self, *_args):
-                return False
-
-        real_socket = socket.socket
-
-        def _socket(family, kind, *args, **kwargs):
-            if kind == socket.SOCK_DGRAM:
-                return _Datagram()
-            return real_socket(family, kind, *args, **kwargs)
-
-        target_udp = guard.SyslogTarget("rfc5424-udp", "inprocess", 0)
-        fake_addr = [(socket.AF_UNIX, socket.SOCK_DGRAM, 0, "", ("inprocess", 0))]
-        with (
-            mock.patch("socket.getaddrinfo", return_value=fake_addr),
-            mock.patch("socket.socket", side_effect=_socket),
-        ):
-            guard._send_syslog(
-                target_udp, 5, "EESSI_ARCH_RELOAD", [("kind", "reloaded")], "reloaded"
-            )
-        self.assertEqual(len(captured), 1)
-        self.assertIsNotNone(RFC5424_RE.fullmatch(captured[0].decode("utf-8")), captured[0])
+        udp = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        udp.bind(("127.0.0.1", 0))
+        udp.settimeout(2.0)
+        udp_port = udp.getsockname()[1]
+        try:
+            env = self._cpu_env(ZEN4, "zen2")
+            p_udp = harness.run_guard(env, [f"--syslog=udp://127.0.0.1:{udp_port}"])
+            self.assertEqual(p_udp.returncode, 0)
+            raw = udp.recv(65536).decode("utf-8")
+            self.assertIsNotNone(RFC5424_RE.fullmatch(raw), raw)
+        finally:
+            udp.close()
 
     def test_syslog_failure_never_breaks_prolog_or_pollutes_stdout(self):
         env = self._cpu_env(ZEN4, "zen2")
@@ -329,26 +302,18 @@ class SyslogTests(unittest.TestCase):
         self.assertIn("syslog", bad.stderr.lower())
 
     def test_custom_syslog_pen_from_env_and_config_and_invalid_pen_warns(self):
-        import eessi_arch_guard as guard  # noqa: E402
-
-        self.assertEqual(guard.DEFAULT_SYSLOG_PEN, "32473")
-        pen, warn = guard.resolve_syslog_pen(
-            {"EESSI_ARCH_GUARD_SYSLOG_PEN": "49152"},
-            {"syslog_pen": "12345"},
-        )
-        self.assertEqual(pen, "49152")
-        self.assertIsNone(warn)
-
-        pen_cfg, warn_cfg = guard.resolve_syslog_pen({}, {"syslog_pen": "12345"})
-        self.assertEqual(pen_cfg, "12345")
-        self.assertIsNone(warn_cfg)
-
-        pen_bad, warn_bad = guard.resolve_syslog_pen(
-            {"EESSI_ARCH_GUARD_SYSLOG_PEN": "0"},
-            {"syslog_pen": "12345"},
-        )
-        self.assertEqual(pen_bad, "12345")
-        self.assertIsNotNone(warn_bad)
+        for pen_env, want_pen, want_warning in (
+            (None, "32473", False),
+            ("49152", "49152", False),
+            ("0", "32473", True),
+        ):
+            extra = {} if pen_env is None else {"EESSI_ARCH_GUARD_SYSLOG_PEN": pen_env}
+            dry = harness.run_guard(
+                self._cpu_env(ZEN4, "zen2", extra), ["--dry-run", "--json"]
+            )
+            self.assertEqual(dry.returncode, 0, dry.stderr)
+            self.assertEqual(json.loads(dry.stdout)["syslog"]["pen"], want_pen)
+            self.assertEqual("syslog_pen" in dry.stderr.lower(), want_warning, dry.stderr)
 
         sock, path = self._dgram_server("pen.sock")
         try:

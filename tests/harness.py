@@ -7,7 +7,6 @@ import os
 import re
 import shutil
 import subprocess
-import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -15,26 +14,16 @@ from pathlib import Path
 import private_tmp  # noqa: F401
 
 ROOT = Path(__file__).resolve().parents[1]
-GUARD = ROOT / "src" / "eessi_arch_guard.py"
-# TOOL_BIN runs the tests that start the guard as a program against another
-# build of it; unset, they run src/eessi_arch_guard.py with this interpreter.
-# Tests that read GUARD's source or import it test the Python guard either way.
-# A test whose only job is to compare the two builds calls skip_unless_tool_bin
-# so an unset TOOL_BIN is reported as a skip.
+# The program under test is the static binary: TOOL_BIN names it, and unset
+# it is the one `zig build -Drelease=true` leaves in zig-out/bin.
 TOOL_BIN = os.environ.get("TOOL_BIN", "")
-PROGRAM = Path(TOOL_BIN).resolve() if TOOL_BIN else GUARD
-GUARD_ARGV = [str(PROGRAM)] if TOOL_BIN else [sys.executable, "-I", str(GUARD)]
-
-
-def skip_unless_tool_bin(case: unittest.TestCase) -> None:
-    """Skip a binary comparison when ``TOOL_BIN`` is unset.
-
-    Parity tests call this instead of returning. Unittest then counts a
-    skip with a reason. Assertions on the Python guard belong before this
-    call, and they still run when the comparison is skipped.
-    """
-    if not TOOL_BIN:
-        case.skipTest("TOOL_BIN is unset; the binary comparison was not run")
+PROGRAM = Path(TOOL_BIN or ROOT / "zig-out" / "bin" / "eessi-arch-guard").resolve()
+GUARD_ARGV = [str(PROGRAM)]
+if not PROGRAM.is_file():
+    raise RuntimeError(
+        "the program under test %s does not exist; run `zig build -Drelease=true` "
+        "or set TOOL_BIN" % PROGRAM
+    )
 
 
 STUBS = Path(__file__).resolve().parent / "stubs"
@@ -194,6 +183,9 @@ def base_env(
         "MODULEPATH": ":".join(modulepath),
         "LMOD_CMD": site.lmod,
         "EESSI_TEST_GPU": gpu,
+        # The stub's own nvidia-smi, so a host nvidia-smi on a PATH the test
+        # replaces never answers for the site.
+        "EESSI_TEST_NVIDIA_SMI": os.path.join(site.bindir, "nvidia-smi"),
         "EESSI_TEST_GPU_CC": gpu_cc,
         # Survives a purge the way /usr/bin does, so nvidia-smi is still found
         # when the reloaded EESSI module runs archdetect.
