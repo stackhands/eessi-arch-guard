@@ -29,8 +29,15 @@ With Zig 0.17.1, from the top of the repository:
 #+begin_src bash
 zig build test
 zig build -Drelease=true
+python3 -m pip install setuptools
+python3 setup.py build_ext --inplace
 TOOL_BIN="$PWD/zig-out/bin/eessi-arch-guard" python3 -m unittest discover -s tests
 #+end_src
+
+The tests import =eessi_arch_guard= from =src/=, and the package needs its C extension =_launch=: =python3 setup.py build_ext --inplace= compiles it into =src/eessi_arch_guard/=.
+Run it again for each Python you test with, and after a change to =_launch.c=.
+On a free-threaded Python it builds a plain extension; on any other it builds against the limited API.
+=docs/examples/check_install.sh= builds a wheel for =$PYTHON=, installs it, and runs the entry points; =tools/check_wheel.py --local= checks it, accepting the =linux_ARCH= platform tag of a wheel built outside a manylinux image.
 
 =zig build test= runs the unit tests of the binary. The suite under =tests/= is Python 3.9 or newer and runs the binary as a black box; =zig build suite= builds the binary and runs it.
 A test that pins a whole output compares it with a file under =tests/golden/=; =RECORD=1= rewrites those files from the binary, and the diff is the review.

@@ -5,8 +5,9 @@ static Zig binaries for x86_64 and aarch64, runs the Zig tests and the Python
 test suite against each binary on its own architecture, builds with
 `-Dcommit` set to the tagged commit, checks that the binary's `--version`
 names the tag's version and that commit and that the Python package's
-`__version__` agrees, builds a wheel that carries each binary, and opens a
-draft release with the binaries, the wheels, the completion files and man
+`__version__` agrees, builds the wheels for each architecture with cibuildwheel in the manylinux2014
+image (one `cp39-abi3`, one `cp313t`, one `cp314t`, each carrying the binary),
+and opens a draft release with the binaries, the wheels, the completion files and man
 page, `SHA256SUMS` and build provenance attestations. Release builds are reproducible: the same commit
 built with Zig 0.17.1 and the same `-Dcommit` gives the same sha256.
 
@@ -29,7 +30,7 @@ leaves to a person.
    `git tag -s -f vX.Y.Z -m "eessi-arch-guard X.Y.Z" 'vX.Y.Z^{}' && git push origin vX.Y.Z`.
 6. CI on `main` is green on both architectures, the real-Lmod tests ran (a
    skip counts as a failure), and the root-owned configuration tests ran.
-7. Check the draft release: two binaries, two wheels, `SHA256SUMS`, attestations
+7. Check the draft release: two binaries, six wheels, `SHA256SUMS`, attestations
    (`gh attestation verify FILE --repo stackhands/eessi-arch-guard`), and a
    local build of the tag with the same sha256
    (`zig build -Drelease=true -Dtarget=ARCH-linux-musl -Dcommit=SHA`, where
