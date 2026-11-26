@@ -42,7 +42,7 @@ Build once per node type, and pick the build on the node that runs it.
 3. Without the guard as a task prolog, run its shell mode in the task first:
 
    #+begin_src bash
-   srun bash -c 'eval "$(/usr/bin/python3 -I /usr/local/sbin/eessi-arch-guard --shell)" && exec "$HOME/opt/prog/$EESSI_SOFTWARE_SUBDIR/bin/prog"'
+   srun bash -c 'eval "$(/usr/local/sbin/eessi-arch-guard --shell)" && exec "$HOME/opt/prog/$EESSI_SOFTWARE_SUBDIR/bin/prog"'
    #+end_src
 
 4. To stop at once on a node type with no build:

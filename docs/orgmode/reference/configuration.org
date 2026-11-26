@@ -13,8 +13,8 @@
 | =/etc/eessi-arch-guard.conf=                            | First.                                                 |
 | =eessi-arch-guard.conf= in the directory of the program | Only when =/etc/eessi-arch-guard.conf= does not exist. |
 
-- The directory of the program is that of the path Python ran the file by, or the Zig build was started by, without following a symbolic link: started by name through =PATH=, the directory in which =PATH= found it.
-  A guard installed with =pip= reads the one beside the module in =site-packages=.
+- The directory of the program is that of the path the binary was started by, without following a symbolic link: started by name through =PATH=, the directory in which =PATH= found it.
+  A guard started through the Python launcher is started by the path of the bundled binary, so it reads the file beside =eessi_arch_guard/bin/eessi-arch-guard= in =site-packages=.
 - A symbolic link at =/etc/eessi-arch-guard.conf= (even one whose target is missing) counts as an existing candidate, is ignored with =is a symlink and is ignored=, and does not fall through to the beside-program file.
 - The first file that exists is the only one read, even when it is ignored.
 
@@ -64,4 +64,3 @@ timeout = 60
 
 - [[file:../howto/configure.org][Configure the guard]], with the transcripts of each case
 - [[file:cli.org][The eessi-arch-guard command]]
-- [[py:eessi_arch_guard.site_config]] and [[py:eessi_arch_guard.parse_config_bytes]]

@@ -45,18 +45,18 @@ These were read in =src/slurmd/slurmstepd/task.c= on Slurm's =master= branch, an
 
 *** A helper does the reload
 
-The reload runs in a second process: the same file, started again by the same Python with =-I -X utf8 FILE --restore=, or the Zig binary started again with =--restore=.
+The reload runs in a second process: the binary started again with =--restore=.
 Its environment holds only =PATH=/usr/bin:/bin=, =LANG=C=, =LC_ALL=C=, and =HOME=, =TMPDIR= and =EESSI_ARCH_GUARD_WORKDIR=, which name a new private directory.
-The task's environment reaches it as data on stdin, each byte as one Latin-1 character, and =-X utf8= turns that text back into the same bytes for Lmod, so a path that is not UTF-8 stays the path Lmod opens.
+The task's environment reaches it as data on stdin, each byte as one Latin-1 character, and the helper turns that text back into the same bytes for Lmod, so a path that is not UTF-8 stays the path Lmod opens.
 The module names go to =LMOD_CMD= as arguments, after they pass the check in [[file:../reference/environment.org][Environment variables]], never as text in a shell command.
 Its shell is =bash --noprofile --norc=, started without =BASH_ENV=, =ENV=, =SHELLOPTS=, =BASHOPTS=, =BASH_XTRACEFD= and =PS4=, and it reports the environment it ends with as =env -0=, never as text the prolog prints.
-[[py:eessi_arch_guard.call_restore]] starts the helper, and [[py:eessi_arch_guard.restore_main]] is the helper.
+[[zig:eessi-arch-guard.guard.restoreMain]] is the helper.
 
 *** The prolog prints the difference
 
 The guard compares the environment the helper ends with to the task's, and prints only the names whose values changed, apart from the names it never touches.
 Every value has to fit a prolog line; one that does not fails the whole reload, so the task never gets half of the new environment.
-[[file:output-modes.org][Prolog lines and shell lines]] describes those rules, and [[py:eessi_arch_guard.environment_delta]] computes the difference.
+[[file:output-modes.org][Prolog lines and shell lines]] describes those rules.
 
 *** A failure is loud, and the task still starts
 

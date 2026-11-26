@@ -1,7 +1,8 @@
 """Shared setup for the documentation examples.
 
 The examples build a temporary prefix with the archdetect stub and the
-LMOD_CMD stand-in from the test suite, then run ``src/eessi_arch_guard.py``.
+LMOD_CMD stand-in from the test suite, then run the binary (``TOOL_BIN``, or
+``zig-out/bin/eessi-arch-guard``).
 """
 
 from __future__ import annotations
@@ -11,12 +12,10 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "tests"))
-sys.path.insert(0, str(ROOT / "src"))
 
 import harness  # noqa: E402
 import slurm_model  # noqa: E402
 
-GUARD = ROOT / "src" / "eessi_arch_guard.py"
 ZEN2 = "x86_64/amd/zen2"
 ZEN4 = "x86_64/amd/zen4"
 CC90 = "accel/nvidia/cc90"

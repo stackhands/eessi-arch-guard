@@ -18,7 +18,7 @@ def main() -> int:
     try:
         proc = support.run(env, ("--shell",))
         print("case: shell")
-        print("command: python3 -I src/eessi_arch_guard.py --shell")
+        print("command: eessi-arch-guard --shell")
         support.show(proc, site.root)
         if proc.returncode != 0 or "print " in proc.stdout:
             print("shell mode printed a prolog line", file=sys.stderr)

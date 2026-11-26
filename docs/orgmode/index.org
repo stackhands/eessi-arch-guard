@@ -8,7 +8,7 @@ eessi-arch-guard is a Slurm =TaskProlog= that reloads a module stack of the Euro
 The EESSI module picks that target once, on the machine where it is loaded, and Slurm copies the choice into every job submitted from there.
 On the compute node, before the task's program starts, the guard asks EESSI's own detection which target fits the processors and GPUs the task can use; when that is another target, it loads the same modules again for this node and hands the changed environment to Slurm.
 A task on a node of the recorded type is left as it is, and a reload that cannot be made changes nothing and says why.
-The prolog is one Python file that needs only the standard library; a static Zig build of the same program is in the repository too.
+The prolog is one static binary written in Zig. A Python package carries the same binary in its wheel, for logins and virtual environments.
 
 New here?
 [[file:tutorials/first-guarded-job.org][See the guard reload EESSI for another CPU]] runs the guard on one Linux machine, against a stand-in for EESSI loaded for another CPU, and ends with a reload, a run that changes nothing, and a reload that fails safely.
