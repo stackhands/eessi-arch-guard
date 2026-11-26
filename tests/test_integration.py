@@ -1014,9 +1014,9 @@ class IntegrationTests(unittest.TestCase):
         query = Path(self.site.bindir, "nvidia-smi")
         query.write_text(
             "#!/bin/sh\n"
+            'printf \'%s\\n\' "$$" > "$EESSI_TEST_HANG_PID"\n'
             'exec 9> "$EESSI_TEST_ALIVE_FIFO"\n'
             "printf x >&9\n"
-            'printf \'%s\\n\' "$$" > "$EESSI_TEST_HANG_PID"\n'
             'exec flock "$EESSI_TEST_GPU_LOCK" true\n',
             encoding="ascii",
         )
