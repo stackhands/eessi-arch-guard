@@ -27,7 +27,7 @@ from email.parser import Parser
 from pathlib import Path
 
 ARCH = r"(?:x86_64|aarch64)"
-MANYLINUX = rf"manylinux(?:2014|_2_\d+)_{ARCH}"
+MANYLINUX = rf"manylinux(?:1|2010|2014|_\d+_\d+)_{ARCH}"
 LOCAL = rf"linux_{ARCH}"
 FREE_THREADING = "Programming Language :: Python :: Free Threading :: 3 - Stable"
 BINARY = "eessi_arch_guard/bin/eessi-arch-guard"
