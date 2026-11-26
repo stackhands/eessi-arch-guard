@@ -16,6 +16,7 @@ classifiers = [
     "Environment :: Console",
     "Operating System :: POSIX :: Linux",
     "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: Free Threading :: 3 - Stable",
 ]
 dependencies = []
 

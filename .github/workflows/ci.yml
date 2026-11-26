@@ -96,6 +96,37 @@ jobs:
       - name: build the wheel, install it, run the entry points
         run: bash docs/examples/check_install.sh
 
+  free-threading:
+    # The same wheel on a free-threaded CPython: it installs, importing the
+    # launcher keeps the GIL off, and calls from many threads agree.
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.13t", "3.14t"]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        id: python
+        with:
+          python-version: ${{ matrix.python-version }}
+      - uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2.2.1
+        with:
+          version: 0.17.1
+      - run: zig build -Drelease=true
+      - name: build the wheel, install it, run the entry points and the thread probe
+        env:
+          PYTHON: ${{ steps.python.outputs.python-path }}
+        run: |
+          "$PYTHON" -c "import sysconfig, sys; assert sysconfig.get_config_var('Py_GIL_DISABLED'), sys.version"
+          bash docs/examples/check_install.sh
+      - name: the launcher tests on this Python
+        working-directory: tests
+        run: TOOL_BIN="$GITHUB_WORKSPACE/zig-out/bin/eessi-arch-guard" "${{ steps.python.outputs.python-path }}" -m unittest -v test_free_threading test_package
+
   real-eb-stack:
     # The tests that read EB_STACK_BIN skip without it, and no other job sets
     # it. This one gives them the released eb-stack.
