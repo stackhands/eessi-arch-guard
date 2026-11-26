@@ -1,4 +1,3 @@
-zig/policy_test.zig
 //! Tests of the rules that keep a value, a name or a message from becoming a
 //! second directive: the grammar of module names and subdirectories, the
 //! delta and the text that publishes it, the message cut, the timeout rules,
