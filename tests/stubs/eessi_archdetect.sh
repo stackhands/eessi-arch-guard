@@ -113,10 +113,11 @@ accelpath)
         printf '%s\n' "$EESSI_ACCELERATOR_TARGET_OVERRIDE"
         exit 0
     fi
-    if ! command -v nvidia-smi >/dev/null 2>&1; then
+    smi=${EESSI_TEST_NVIDIA_SMI:-nvidia-smi}
+    if ! command -v "$smi" >/dev/null 2>&1; then
         exit 2
     fi
-    out=$(nvidia-smi --query-gpu=gpu_name,count,driver_version,compute_cap --format=csv,noheader) || exit 3
+    out=$("$smi" --query-gpu=gpu_name,count,driver_version,compute_cap --format=csv,noheader) || exit 3
     cc=$(printf '%s\n' "$out" | head -n 1 | sed 's/, /,/g' | cut -d, -f4 | tr -d '.')
     if [ -z "$cc" ]; then
         exit 3

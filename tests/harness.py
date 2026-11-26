@@ -183,6 +183,9 @@ def base_env(
         "MODULEPATH": ":".join(modulepath),
         "LMOD_CMD": site.lmod,
         "EESSI_TEST_GPU": gpu,
+        # The stub's own nvidia-smi, so a host nvidia-smi on a PATH the test
+        # replaces never answers for the site.
+        "EESSI_TEST_NVIDIA_SMI": os.path.join(site.bindir, "nvidia-smi"),
         "EESSI_TEST_GPU_CC": gpu_cc,
         # Survives a purge the way /usr/bin does, so nvidia-smi is still found
         # when the reloaded EESSI module runs archdetect.
