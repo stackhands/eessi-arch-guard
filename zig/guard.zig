@@ -36,7 +36,7 @@ pub const key_fields = [_][]const u8{
     "EESSI_INIT_PREFIX",     "EESSI_PROC_CPUINFO", "PATH",
 };
 
-const waitpkg_marches = [_][]const u8{
+pub const waitpkg_marches = [_][]const u8{
     "alderlake",     "arrowlake",      "arrowlake_s",   "clearwaterforest", "diamondrapids",
     "emeraldrapids", "grandridge",     "graniterapids", "graniterapids_d",  "novalake",
     "pantherlake",   "sapphirerapids", "sierraforest",  "tremont",
@@ -375,7 +375,7 @@ fn parseCpuLine(arena: Allocator, stdout: []const u8) Allocator.Error!?[]const [
 }
 
 /// read_cpu_flags: the flags every `flags:` line of a cpuinfo file shares.
-fn readCpuFlags(arena: Allocator, path: []const u8) []const []const u8 {
+pub fn readCpuFlags(arena: Allocator, path: []const u8) []const []const u8 {
     if (path.len == 0) return &.{};
     const fd = sys.openat(fsx.cwd, path, .{ .NONBLOCK = true }, 0) catch return &.{};
     defer sys.close(fd);
@@ -408,7 +408,7 @@ fn readCpuFlags(arena: Allocator, path: []const u8) []const []const u8 {
     return if (common_set) |cs| cs.keys() else &.{};
 }
 
-fn candidateSupportsCpu(candidate: []const u8, flags: []const []const u8) bool {
+pub fn candidateSupportsCpu(candidate: []const u8, flags: []const []const u8) bool {
     const leaf = candidate[if (std.mem.findScalarLast(u8, candidate, '/')) |i| i + 1 else 0..];
     var buf: [128]u8 = undefined;
     if (leaf.len > buf.len) return true;
@@ -429,34 +429,34 @@ fn line1(c: *Ctx, s: []const u8, limit: usize) []const u8 {
 // sched_getaffinity and cpuset lists name processors in this range. A bind
 // mask with a bit past it is not a CPU set: applying the low bits alone
 // would hide a processor the mask named.
-const cpu_id_max: usize = 4096;
+pub const cpu_id_max: usize = 4096;
 
-const CpuSet = struct {
+pub const CpuSet = struct {
     words: [cpu_id_max / 64]u64 = std.mem.zeroes([cpu_id_max / 64]u64),
 
-    fn add(s: *CpuSet, cpu: usize) void {
+    pub fn add(s: *CpuSet, cpu: usize) void {
         if (cpu >= cpu_id_max) return;
         s.words[cpu / 64] |= @as(u64, 1) << @intCast(cpu % 64);
     }
 
-    fn has(s: CpuSet, cpu: usize) bool {
+    pub fn has(s: CpuSet, cpu: usize) bool {
         if (cpu >= cpu_id_max) return false;
         return s.words[cpu / 64] & (@as(u64, 1) << @intCast(cpu % 64)) != 0;
     }
 
-    fn bitAnd(a: CpuSet, b: CpuSet) CpuSet {
+    pub fn bitAnd(a: CpuSet, b: CpuSet) CpuSet {
         var out: CpuSet = .{};
         for (a.words, 0..) |word, i| out.words[i] = word & b.words[i];
         return out;
     }
 
-    fn count(s: CpuSet) usize {
+    pub fn count(s: CpuSet) usize {
         var n: usize = 0;
         for (s.words) |w| n += @popCount(w);
         return n;
     }
 
-    fn eql(a: CpuSet, b: CpuSet) bool {
+    pub fn eql(a: CpuSet, b: CpuSet) bool {
         return std.mem.eql(u64, &a.words, &b.words);
     }
 
@@ -555,7 +555,7 @@ fn addHexMask(set: *CpuSet, tail: []const u8) bool {
 /// parse_cpu_spec: a hex mask, a 0-3,8 list, or a cpu[0-3] hostlist.
 /// A comma-separated list of hex masks is their union, which is the string
 /// Slurm stores for --cpu-bind=mask_cpu.
-fn parseCpuSpec(spec: []const u8) ?CpuSet {
+pub fn parseCpuSpec(spec: []const u8) ?CpuSet {
     const raw = text.pyStrip(spec);
     if (raw.len == 0) return null;
     if (std.mem.startsWith(u8, raw, "0x") or std.mem.startsWith(u8, raw, "0X")) {
@@ -897,7 +897,7 @@ fn cgroupCpusMounted(
     return null;
 }
 
-fn cgroupCpusFrom(arena: Allocator, proc_cgroup_path: []const u8, cgroup_root: []const u8) ?CpuSet {
+pub fn cgroupCpusFrom(arena: Allocator, proc_cgroup_path: []const u8, cgroup_root: []const u8) ?CpuSet {
     const trimmed_root = std.mem.trimEnd(u8, cgroup_root, "/");
     const root = if (trimmed_root.len == 0) "/" else trimmed_root;
     const cgroup_text = readFile(arena, proc_cgroup_path, 1 << 20) orelse return null;
@@ -939,7 +939,7 @@ fn schedCpus() ?CpuSet {
     return set;
 }
 
-fn bindCpus(env: Map) ?CpuSet {
+pub fn bindCpus(env: Map) ?CpuSet {
     const listed = text.pyStrip(env.get("SLURM_CPU_BIND_LIST") orelse "");
     if (listed.len > 0) return parseCpuSpec(listed);
     const verbose = text.pyStrip(env.get("SLURM_CPU_BIND") orelse "");
@@ -947,9 +947,9 @@ fn bindCpus(env: Map) ?CpuSet {
     return parseCpuSpec(text.pyStrip(verbose[colon + 1 ..]));
 }
 
-const TaskCpuBounds = struct { allowed: ?CpuSet, base_cpus: ?CpuSet };
+pub const TaskCpuBounds = struct { allowed: ?CpuSet, base_cpus: ?CpuSet };
 
-fn taskCpuBounds(env: Map, affinity: ?CpuSet, cgroup: ?CpuSet) TaskCpuBounds {
+pub fn taskCpuBounds(env: Map, affinity: ?CpuSet, cgroup: ?CpuSet) TaskCpuBounds {
     const base_cpus: ?CpuSet = cgroup orelse affinity;
     const bind = bindCpus(env);
     var allowed = affinity orelse cgroup orelse bind orelse return .{ .allowed = null, .base_cpus = null };
@@ -1117,7 +1117,7 @@ fn resolveLxcfsLogicalIds(arena: Allocator, blocks: []const CpuBlock, base_cpus:
 }
 
 /// scope_cpuinfo: null when the text is already the allowed processors.
-fn scopeCpuinfoWithBase(arena: Allocator, cpuinfo: []const u8, allowed: CpuSet, base_cpus: ?CpuSet) ?[]const u8 {
+pub fn scopeCpuinfoWithBase(arena: Allocator, cpuinfo: []const u8, allowed: CpuSet, base_cpus: ?CpuSet) ?[]const u8 {
     var blocks: std.ArrayList(CpuBlock) = .empty;
     var cur_id: ?ProcessorId = null;
     var cur: std.ArrayList(CpuField) = .empty;
@@ -1202,7 +1202,7 @@ fn scopeCpuinfoWithBase(arena: Allocator, cpuinfo: []const u8, allowed: CpuSet, 
     return out.toOwnedSlice(arena) catch null;
 }
 
-fn scopeCpuinfo(arena: Allocator, cpuinfo: []const u8, allowed: CpuSet) ?[]const u8 {
+pub fn scopeCpuinfo(arena: Allocator, cpuinfo: []const u8, allowed: CpuSet) ?[]const u8 {
     return scopeCpuinfoWithBase(arena, cpuinfo, allowed, null);
 }
 
@@ -2069,7 +2069,7 @@ fn gpuScopeKey(arena: Allocator, env: Map) []const u8 {
     return out.toOwnedSlice(arena) catch "";
 }
 
-fn cacheDigest(c: *Ctx, env: Map) []const u8 {
+pub fn cacheDigest(c: *Ctx, env: Map) []const u8 {
     var h = std.crypto.hash.sha2.Sha256.init(.{});
     for (key_fields, 0..) |k, i| {
         if (i > 0) h.update("\x00");
@@ -2093,7 +2093,7 @@ fn safeComponent(c: *Ctx, s: []const u8) []const u8 {
     return c.arena.dupe(u8, hex[0..16]) catch "0000000000000000";
 }
 
-fn cacheDirectory(c: *Ctx, env: Map) ?[]const u8 {
+pub fn cacheDirectory(c: *Ctx, env: Map) ?[]const u8 {
     if (c.strict) {
         var why: []const u8 = "";
         return restoreWorkBase(c, env, &why) catch null;

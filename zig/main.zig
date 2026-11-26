@@ -31,11 +31,11 @@ const tool = "eessi-arch-guard";
 /// The Python guard's bare version, then this build (COMPAT.md).
 const version_text = cli.versionLine(tool, version, build_options.commit)[tool.len + 1 ..];
 const strict_failure_exit: u8 = 78;
-const default_timeout: f64 = 60.0;
+pub const default_timeout: f64 = 60.0;
 /// TIMEOUT_MAX, as Python prints it: the Python guard's subprocess waits
 /// with poll(), whose timeout is a C int of milliseconds.
-const timeout_max: f64 = 2147483.647;
-const timeout_max_text = "2147483.647";
+pub const timeout_max: f64 = 2147483.647;
+pub const timeout_max_text = "2147483.647";
 
 const help_text =
     \\usage: eessi-arch-guard [--shell] [--strict] [--dry-run] [--json]
@@ -422,7 +422,7 @@ fn pyFloat(arena: Allocator, input: []const u8) ?f64 {
 }
 
 /// parse_timeout: a positive number of seconds at most TIMEOUT_MAX.
-fn parseTimeout(arena: Allocator, s: []const u8) ?f64 {
+pub fn parseTimeout(arena: Allocator, s: []const u8) ?f64 {
     const v = pyFloat(arena, s) orelse return null;
     if (std.math.isNan(v) or v <= 0 or v > timeout_max) return null;
     return v;
@@ -430,9 +430,9 @@ fn parseTimeout(arena: Allocator, s: []const u8) ?f64 {
 
 // ---- the site configuration --------------------------------------------
 
-const Settings = std.StringArrayHashMapUnmanaged([]const u8);
+pub const Settings = std.StringArrayHashMapUnmanaged([]const u8);
 
-const Config = struct {
+pub const Config = struct {
     path: ?[]const u8 = null,
     settings: ?Settings = null,
     warning: ?[]const u8 = null,
@@ -445,7 +445,7 @@ fn pyStripBytes(s: []const u8) []const u8 {
 /// parse_config_bytes: KEY = VALUE lines; '#' comments; a key that is not
 /// UTF-8 is skipped; a value that is not UTF-8 is kept as its bytes and
 /// named in the returned list.
-fn parseConfigBytes(arena: Allocator, blob: []const u8, bad: *std.ArrayList([]const u8)) Allocator.Error!Settings {
+pub fn parseConfigBytes(arena: Allocator, blob: []const u8, bad: *std.ArrayList([]const u8)) Allocator.Error!Settings {
     var settings: Settings = .empty;
     var i: usize = 0;
     while (i < blob.len) {
@@ -478,7 +478,7 @@ fn lstatRaw(path: []const u8, x: *linux.Statx) linux.E {
 }
 
 /// _config_untrusted: the reason a config path is not trusted, or null.
-fn configUntrusted(arena: Allocator, path: []const u8) ?[]const u8 {
+pub fn configUntrusted(arena: Allocator, path: []const u8) ?[]const u8 {
     var x: linux.Statx = undefined;
     const e = lstatRaw(path, &x);
     if (e != .SUCCESS) return arena.print("{s} ({s})", .{ path, osErrorText(arena, e, path) }) catch path;
@@ -503,6 +503,33 @@ fn configReadWarning(arena: Allocator, path: []const u8, err: anyerror) ?[]const
     return arena.print("eessi-arch-guard: config ignored: {s}: {t}", .{ path, err }) catch null;
 }
 
+/// Whether an open config file is still one to trust: owned by root and not
+/// writable by group or others. It is asked of the open descriptor, after the
+/// path passed `configUntrusted`, so a swap in between is caught.
+pub fn configDescriptorTrusted(uid: u32, mode: u32) bool {
+    return uid == 0 and mode & 0o022 == 0;
+}
+
+/// The config at `path`, read through a descriptor opened without following a
+/// link and checked again there. `siteConfig` calls it once `configUntrusted`
+/// accepted the path.
+pub fn readConfigFile(arena: Allocator, path: []const u8) Config {
+    const f = fsx.openRegular(fsx.cwd, path, false) catch |err|
+        return .{ .path = path, .warning = configReadWarning(arena, path, err) };
+    defer sys.close(f.fd);
+    if (!configDescriptorTrusted(f.stat.uid, f.stat.mode))
+        return .{ .path = path, .warning = arena.print("eessi-arch-guard: config ignored: {s} changed while it was read", .{path}) catch null };
+    const blob = fsx.readAll(arena, f.fd, 1 << 20) catch |err|
+        return .{ .path = path, .warning = configReadWarning(arena, path, err) };
+    var bad: std.ArrayList([]const u8) = .empty;
+    const settings = parseConfigBytes(arena, blob, &bad) catch return .{ .path = path };
+    if (bad.items.len > 0) {
+        const shown = std.mem.join(arena, " ", bad.items) catch "";
+        return .{ .path = path, .settings = settings, .warning = arena.print("eessi-arch-guard: config value kept with its original bytes: {s}", .{shown}) catch null };
+    }
+    return .{ .path = path, .settings = settings };
+}
+
 /// site_config: /etc/eessi-arch-guard.conf, else the file beside the
 /// program as it was invoked; the first that exists decides.
 fn siteConfig(arena: Allocator, invoked: []const u8) Config {
@@ -511,21 +538,7 @@ fn siteConfig(arena: Allocator, invoked: []const u8) Config {
         if (!exists(path)) continue;
         if (configUntrusted(arena, path)) |reason|
             return .{ .path = path, .warning = arena.print("eessi-arch-guard: config ignored: {s}", .{reason}) catch null };
-        // Checked again on the open file, without following a link.
-        const f = fsx.openRegular(fsx.cwd, path, false) catch |err|
-            return .{ .path = path, .warning = configReadWarning(arena, path, err) };
-        defer sys.close(f.fd);
-        if (f.stat.uid != 0 or f.stat.mode & 0o022 != 0)
-            return .{ .path = path, .warning = arena.print("eessi-arch-guard: config ignored: {s} changed while it was read", .{path}) catch null };
-        const blob = fsx.readAll(arena, f.fd, 1 << 20) catch |err|
-            return .{ .path = path, .warning = configReadWarning(arena, path, err) };
-        var bad: std.ArrayList([]const u8) = .empty;
-        const settings = parseConfigBytes(arena, blob, &bad) catch return .{ .path = path };
-        if (bad.items.len > 0) {
-            const shown = std.mem.join(arena, " ", bad.items) catch "";
-            return .{ .path = path, .settings = settings, .warning = arena.print("eessi-arch-guard: config value kept with its original bytes: {s}", .{shown}) catch null };
-        }
-        return .{ .path = path, .settings = settings };
+        return readConfigFile(arena, path);
     }
     return .{};
 }
@@ -535,7 +548,7 @@ fn chainPathOk(path: []const u8) bool {
     return guard.lmodInvocable(path);
 }
 
-fn resolveTimeout(arena: Allocator, cli_text: ?[]const u8, settings: ?Settings) struct { value: f64, warning: ?[]const u8 } {
+pub fn resolveTimeout(arena: Allocator, cli_text: ?[]const u8, settings: ?Settings) struct { value: f64, warning: ?[]const u8 } {
     var chosen = default_timeout;
     var warnings: std.ArrayList([]const u8) = .empty;
     if (settings) |s| if (s.get("timeout")) |t| {
@@ -1611,6 +1624,8 @@ test {
     _ = guard;
     _ = syslog;
     _ = @import("pydecode.zig");
+    _ = @import("cpuscope_test.zig");
+    _ = @import("policy_test.zig");
 }
 
 test "parseArgs" {
