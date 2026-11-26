@@ -37,7 +37,9 @@ FREE_THREADED = {"cp313t": "cp313-cp313t", "cp314t": "cp314-cp314t"}
 def expand(tag: str) -> set[str]:
     """The tags a compressed ``py.abi.plat`` triple stands for, as in PEP 425."""
     python, abi, plat = tag.split("-")
-    return {f"{p}-{a}-{t}" for p in python.split(".") for a in abi.split(".") for t in plat.split(".")}
+    return {
+        f"{p}-{a}-{t}" for p in python.split(".") for a in abi.split(".") for t in plat.split(".")
+    }
 
 
 def check(path: Path, local: bool = False) -> list[str]:
@@ -68,7 +70,9 @@ def check(path: Path, local: bool = False) -> list[str]:
         if set(tags) != expand(file_tag):
             problems.append(f"WHEEL Tag lines {tags}, expected {sorted(expand(file_tag))}")
         if meta.get("Root-Is-Purelib") != "false":
-            problems.append("WHEEL Root-Is-Purelib is not false; the wheel carries a compiled extension")
+            problems.append(
+                "WHEEL Root-Is-Purelib is not false; the wheel carries a compiled extension"
+            )
         extensions = [n for n in names if re.search(r"\.(so|pyd|dylib)$", n)]
         tail = "" if suffix == "abi3" else "-[^/]+"
         wanted = re.compile(rf"eessi_arch_guard/_launch\.{re.escape(suffix)}{tail}\.so")

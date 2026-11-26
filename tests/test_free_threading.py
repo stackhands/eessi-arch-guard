@@ -35,7 +35,9 @@ class FreeThreadingTests(unittest.TestCase):
             env = {k: v for k, v in os.environ.items() if k != "PYTHON_GIL"}
             env["PATH"] = str(bindir)
             env["PYTHONPATH"] = str(harness.ROOT / "src")
-            done = harness.run_with_timeout([sys.executable, str(PROBE)], env=env, timeout=60.0, cwd=tmp)
+            done = harness.run_with_timeout(
+                [sys.executable, str(PROBE)], env=env, timeout=60.0, cwd=tmp
+            )
             self.assertEqual(done.returncode, 0, done.stderr)
             report = json.loads(done.stdout)
             version = harness.run_with_timeout([str(binary), "--version"]).stdout
