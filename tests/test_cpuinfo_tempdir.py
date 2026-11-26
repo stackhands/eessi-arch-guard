@@ -1,24 +1,23 @@
-"""The Python and Zig guards must treat the scoped cpuinfo copy alike.
+"""The scoped cpuinfo copy is written to a temporary directory, or the run reports it.
 
-When a task may use only some of the node's processors, the guard writes the
-cpuinfo of those processors to a temporary file for the CPU detection. The
-file goes in the directory tempfile.gettempdir chooses, which is found by
-creating and writing a probe file in each candidate directory. When none of
-them takes a file, Python raises FileNotFoundError from that call and the
-guard reports "skipped" with the text. When the probe passes and the copy is
-written short, Python goes on with the short file, because os.write is not
-looped.
+When a task may use only some of the node's processors, the binary writes the
+cpuinfo of those processors to a temporary file for the CPU detection. When no
+candidate directory takes a file, the binary reports "skipped" with the text
+"No usable temporary directory found in [" and the class FileNotFoundError.
+When the probe passes and the copy is written short, the binary goes on with
+the short file.
 
-The cases make a real write fail without privileges: each program runs on a
-fresh site under the shared size limiter, so the kernel answers with EFBIG,
-or with a short write, instead of a signal. The programs are compared on
-exit status, standard output, and standard error in each output mode. The
-comparison skips when TOOL_BIN is unset.
+The cases make a real write fail without privileges: each run uses a fresh
+site under a file-size limit, so the kernel answers with EFBIG, or with a
+short write, instead of a signal. Exit status, standard output, and standard
+error of each output mode are pinned in tests/golden/cpuinfo-tempdir-none.txt
+and tests/golden/cpuinfo-tempdir-short.txt.
 """
 
 from __future__ import annotations
 
 import re
+import os
 import sys
 import unittest
 from pathlib import Path
@@ -28,6 +27,7 @@ from unittest import mock
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import differential  # noqa: E402
+import golden  # noqa: E402
 import harness  # noqa: E402
 
 CPU = "x86_64/intel/sapphirerapids"
@@ -57,28 +57,28 @@ def build(site: harness.Site) -> Dict[str, str]:
     return env
 
 
-class CpuinfoTempdirParityTests(unittest.TestCase):
-    def _compare(self, limit: int) -> None:
-        for mode in MODES:
-            with self.subTest(limit=limit, mode=" ".join(mode)):
-                differential.assert_agree(self, build, mode, limit)
-
-    def test_python_guard_skips_when_no_directory_takes_a_file(self) -> None:
+class CpuinfoTempdirTests(unittest.TestCase):
+    def test_the_binary_skips_when_no_directory_takes_a_file(self) -> None:
+        sheet = golden.Sheet("cpuinfo-tempdir-none")
+        self.addCleanup(sheet.finish)
         for mode in MODES:
             with self.subTest(mode=" ".join(mode)):
-                run = differential.run_fresh(differential.python_guard(), build, mode, 0)
+                run = differential.assert_golden(
+                    self, sheet, " ".join(mode) or "text", build, mode, 0
+                )
                 text = run.stdout + run.stderr
                 self.assertIn(SKIP_TEXT, text)
                 self.assertIn("FileNotFoundError", text)
 
-    def test_programs_agree_when_no_directory_takes_a_file(self) -> None:
-        harness.skip_unless_tool_bin(self)
-        self._compare(0)
-
-    def test_programs_agree_when_the_copy_is_written_short(self) -> None:
-        harness.skip_unless_tool_bin(self)
-        self._compare(4)
-        self._compare(300)
+    def test_the_binary_goes_on_when_the_copy_is_written_short(self) -> None:
+        sheet = golden.Sheet("cpuinfo-tempdir-short")
+        self.addCleanup(sheet.finish)
+        for limit in (4, 300):
+            for mode in MODES:
+                with self.subTest(limit=limit, mode=" ".join(mode)):
+                    differential.assert_golden(
+                        self, sheet, "limit %d %s" % (limit, " ".join(mode) or "text"), build, mode, limit
+                    )
 
 
 class OnTaskCpusTests(unittest.TestCase):
@@ -109,6 +109,12 @@ class OnTaskCpusTests(unittest.TestCase):
     def test_a_mask_too_small_for_the_bind_list_skips(self) -> None:
         with self.assertRaises(unittest.SkipTest):
             self._renumber({12}, 2)
+
+
+def setUpModule() -> None:
+    """Run from the tests directory: the temporary directory candidates and PWD name it."""
+    unittest.addModuleCleanup(os.chdir, os.getcwd())
+    os.chdir(Path(__file__).resolve().parent)
 
 
 if __name__ == "__main__":

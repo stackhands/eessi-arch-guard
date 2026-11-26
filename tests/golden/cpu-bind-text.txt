@@ -1,0 +1,600 @@
+=== control ignored
+rc: 0
+--- stdout
+{"cached": false, "cause": null, "decision": "reloaded", "detail": null, "exit": 0, "exit_semantic": "ok", "kind": "decision", "message": "eessi-arch-guard: reloaded modules for x86_64/generic (loaded for x86_64/amd/zen4)", "now": "x86_64/generic", "reload_needed": true, "schema_version": 1, "shell": false, "strict": false, "was": "x86_64/amd/zen4"}
+
+--- stderr
+
+--- end
+=== read: list before VT
+rc: 0
+--- stdout
+{"cached": false, "cause": null, "decision": "reloaded", "detail": null, "exit": 0, "exit_semantic": "ok", "kind": "decision", "message": "eessi-arch-guard: reloaded modules for x86_64/intel/icelake (loaded for x86_64/amd/zen4)", "now": "x86_64/intel/icelake", "reload_needed": true, "schema_version": 1, "shell": false, "strict": false, "was": "x86_64/amd/zen4"}
+
+--- stderr
+
+--- end
+=== read: list after VT
+rc: 0
+--- stdout
+{"cached": false, "cause": null, "decision": "reloaded", "detail": null, "exit": 0, "exit_semantic": "ok", "kind": "decision", "message": "eessi-arch-guard: reloaded modules for x86_64/intel/icelake (loaded for x86_64/amd/zen4)", "now": "x86_64/intel/icelake", "reload_needed": true, "schema_version": 1, "shell": false, "strict": false, "was": "x86_64/amd/zen4"}
+
+--- stderr
+
+--- end
+=== read: verbose after VT
+rc: 0
+--- stdout
+{"cached": false, "cause": null, "decision": "reloaded", "detail": null, "exit": 0, "exit_semantic": "ok", "kind": "decision", "message": "eessi-arch-guard: reloaded modules for x86_64/intel/icelake (loaded for x86_64/amd/zen4)", "now": "x86_64/intel/icelake", "reload_needed": true, "schema_version": 1, "shell": false, "strict": false, "was": "x86_64/amd/zen4"}
+
+--- stderr
+
+--- end
+=== read: mask before comma VT
+rc: 0
+--- stdout
+{"cached": false, "cause": null, "decision": "reloaded", "detail": null, "exit": 0, "exit_semantic": "ok", "kind": "decision", "message": "eessi-arch-guard: reloaded modules for x86_64/intel/icelake (loaded for x86_64/amd/zen4)", "now": "x86_64/intel/icelake", "reload_needed": true, "schema_version": 1, "shell": false, "strict": false, "was": "x86_64/amd/zen4"}
+
+--- stderr
+
+--- end
+=== read: list before FF
+rc: 0
+--- stdout
+{"cached": false, "cause": null, "decision": "reloaded", "detail": null, "exit": 0, "exit_semantic": "ok", "kind": "decision", "message": "eessi-arch-guard: reloaded modules for x86_64/intel/icelake (loaded for x86_64/amd/zen4)", "now": "x86_64/intel/icelake", "reload_needed": true, "schema_version": 1, "shell": false, "strict": false, "was": "x86_64/amd/zen4"}
+
+--- stderr
+
+--- end
+=== read: list after FF
+rc: 0
+--- stdout
+{"cached": false, "cause": null, "decision": "reloaded", "detail": null, "exit": 0, "exit_semantic": "ok", "kind": "decision", "message": "eessi-arch-guard: reloaded modules for x86_64/intel/icelake (loaded for x86_64/amd/zen4)", "now": "x86_64/intel/icelake", "reload_needed": true, "schema_version": 1, "shell": false, "strict": false, "was": "x86_64/amd/zen4"}
+
+--- stderr
+
+--- end
+=== read: verbose after FF
+rc: 0
+--- stdout
+{"cached": false, "cause": null, "decision": "reloaded", "detail": null, "exit": 0, "exit_semantic": "ok", "kind": "decision", "message": "eessi-arch-guard: reloaded modules for x86_64/intel/icelake (loaded for x86_64/amd/zen4)", "now": "x86_64/intel/icelake", "reload_needed": true, "schema_version": 1, "shell": false, "strict": false, "was": "x86_64/amd/zen4"}
+
+--- stderr
+
+--- end
+=== read: mask before comma FF
+rc: 0
+--- stdout
+{"cached": false, "cause": null, "decision": "reloaded", "detail": null, "exit": 0, "exit_semantic": "ok", "kind": "decision", "message": "eessi-arch-guard: reloaded modules for x86_64/intel/icelake (loaded for x86_64/amd/zen4)", "now": "x86_64/intel/icelake", "reload_needed": true, "schema_version": 1, "shell": false, "strict": false, "was": "x86_64/amd/zen4"}
+
+--- stderr
+
+--- end
+=== read: list before FS
+rc: 0
+--- stdout
+{"cached": false, "cause": null, "decision": "reloaded", "detail": null, "exit": 0, "exit_semantic": "ok", "kind": "decision", "message": "eessi-arch-guard: reloaded modules for x86_64/intel/icelake (loaded for x86_64/amd/zen4)", "now": "x86_64/intel/icelake", "reload_needed": true, "schema_version": 1, "shell": false, "strict": false, "was": "x86_64/amd/zen4"}
+
+--- stderr
+
+--- end
+=== read: list after FS
+rc: 0
+--- stdout
+{"cached": false, "cause": null, "decision": "reloaded", "detail": null, "exit": 0, "exit_semantic": "ok", "kind": "decision", "message": "eessi-arch-guard: reloaded modules for x86_64/intel/icelake (loaded for x86_64/amd/zen4)", "now": "x86_64/intel/icelake", "reload_needed": true, "schema_version": 1, "shell": false, "strict": false, "was": "x86_64/amd/zen4"}
+
+--- stderr
+
+--- end
+=== read: verbose after FS
+rc: 0
+--- stdout
+{"cached": false, "cause": null, "decision": "reloaded", "detail": null, "exit": 0, "exit_semantic": "ok", "kind": "decision", "message": "eessi-arch-guard: reloaded modules for x86_64/intel/icelake (loaded for x86_64/amd/zen4)", "now": "x86_64/intel/icelake", "reload_needed": true, "schema_version": 1, "shell": false, "strict": false, "was": "x86_64/amd/zen4"}
+
+--- stderr
+
+--- end
+=== read: list before GS
+rc: 0
+--- stdout
+{"cached": false, "cause": null, "decision": "reloaded", "detail": null, "exit": 0, "exit_semantic": "ok", "kind": "decision", "message": "eessi-arch-guard: reloaded modules for x86_64/intel/icelake (loaded for x86_64/amd/zen4)", "now": "x86_64/intel/icelake", "reload_needed": true, "schema_version": 1, "shell": false, "strict": false, "was": "x86_64/amd/zen4"}
+
+--- stderr
+
+--- end
+=== read: list after GS
+rc: 0
+--- stdout
+{"cached": false, "cause": null, "decision": "reloaded", "detail": null, "exit": 0, "exit_semantic": "ok", "kind": "decision", "message": "eessi-arch-guard: reloaded modules for x86_64/intel/icelake (loaded for x86_64/amd/zen4)", "now": "x86_64/intel/icelake", "reload_needed": true, "schema_version": 1, "shell": false, "strict": false, "was": "x86_64/amd/zen4"}
+
+--- stderr
+
+--- end
+=== read: verbose after GS
+rc: 0
+--- stdout
+{"cached": false, "cause": null, "decision": "reloaded", "detail": null, "exit": 0, "exit_semantic": "ok", "kind": "decision", "message": "eessi-arch-guard: reloaded modules for x86_64/intel/icelake (loaded for x86_64/amd/zen4)", "now": "x86_64/intel/icelake", "reload_needed": true, "schema_version": 1, "shell": false, "strict": false, "was": "x86_64/amd/zen4"}
+
+--- stderr
+
+--- end
+=== read: list before RS
+rc: 0
+--- stdout
+{"cached": false, "cause": null, "decision": "reloaded", "detail": null, "exit": 0, "exit_semantic": "ok", "kind": "decision", "message": "eessi-arch-guard: reloaded modules for x86_64/intel/icelake (loaded for x86_64/amd/zen4)", "now": "x86_64/intel/icelake", "reload_needed": true, "schema_version": 1, "shell": false, "strict": false, "was": "x86_64/amd/zen4"}
+
+--- stderr
+
+--- end
+=== read: list after RS
+rc: 0
+--- stdout
+{"cached": false, "cause": null, "decision": "reloaded", "detail": null, "exit": 0, "exit_semantic": "ok", "kind": "decision", "message": "eessi-arch-guard: reloaded modules for x86_64/intel/icelake (loaded for x86_64/amd/zen4)", "now": "x86_64/intel/icelake", "reload_needed": true, "schema_version": 1, "shell": false, "strict": false, "was": "x86_64/amd/zen4"}
+
+--- stderr
+
+--- end
+=== read: verbose after RS
+rc: 0
+--- stdout
+{"cached": false, "cause": null, "decision": "reloaded", "detail": null, "exit": 0, "exit_semantic": "ok", "kind": "decision", "message": "eessi-arch-guard: reloaded modules for x86_64/intel/icelake (loaded for x86_64/amd/zen4)", "now": "x86_64/intel/icelake", "reload_needed": true, "schema_version": 1, "shell": false, "strict": false, "was": "x86_64/amd/zen4"}
+
+--- stderr
+
+--- end
+=== read: list before US
+rc: 0
+--- stdout
+{"cached": false, "cause": null, "decision": "reloaded", "detail": null, "exit": 0, "exit_semantic": "ok", "kind": "decision", "message": "eessi-arch-guard: reloaded modules for x86_64/intel/icelake (loaded for x86_64/amd/zen4)", "now": "x86_64/intel/icelake", "reload_needed": true, "schema_version": 1, "shell": false, "strict": false, "was": "x86_64/amd/zen4"}
+
+--- stderr
+
+--- end
+=== read: list after US
+rc: 0
+--- stdout
+{"cached": false, "cause": null, "decision": "reloaded", "detail": null, "exit": 0, "exit_semantic": "ok", "kind": "decision", "message": "eessi-arch-guard: reloaded modules for x86_64/intel/icelake (loaded for x86_64/amd/zen4)", "now": "x86_64/intel/icelake", "reload_needed": true, "schema_version": 1, "shell": false, "strict": false, "was": "x86_64/amd/zen4"}
+
+--- stderr
+
+--- end
+=== read: verbose after US
+rc: 0
+--- stdout
+{"cached": false, "cause": null, "decision": "reloaded", "detail": null, "exit": 0, "exit_semantic": "ok", "kind": "decision", "message": "eessi-arch-guard: reloaded modules for x86_64/intel/icelake (loaded for x86_64/amd/zen4)", "now": "x86_64/intel/icelake", "reload_needed": true, "schema_version": 1, "shell": false, "strict": false, "was": "x86_64/amd/zen4"}
+
+--- stderr
+
+--- end
+=== read: list before NEL
+rc: 0
+--- stdout
+{"cached": false, "cause": null, "decision": "reloaded", "detail": null, "exit": 0, "exit_semantic": "ok", "kind": "decision", "message": "eessi-arch-guard: reloaded modules for x86_64/intel/icelake (loaded for x86_64/amd/zen4)", "now": "x86_64/intel/icelake", "reload_needed": true, "schema_version": 1, "shell": false, "strict": false, "was": "x86_64/amd/zen4"}
+
+--- stderr
+
+--- end
+=== read: list after NEL
+rc: 0
+--- stdout
+{"cached": false, "cause": null, "decision": "reloaded", "detail": null, "exit": 0, "exit_semantic": "ok", "kind": "decision", "message": "eessi-arch-guard: reloaded modules for x86_64/intel/icelake (loaded for x86_64/amd/zen4)", "now": "x86_64/intel/icelake", "reload_needed": true, "schema_version": 1, "shell": false, "strict": false, "was": "x86_64/amd/zen4"}
+
+--- stderr
+
+--- end
+=== read: verbose after NEL
+rc: 0
+--- stdout
+{"cached": false, "cause": null, "decision": "reloaded", "detail": null, "exit": 0, "exit_semantic": "ok", "kind": "decision", "message": "eessi-arch-guard: reloaded modules for x86_64/intel/icelake (loaded for x86_64/amd/zen4)", "now": "x86_64/intel/icelake", "reload_needed": true, "schema_version": 1, "shell": false, "strict": false, "was": "x86_64/amd/zen4"}
+
+--- stderr
+
+--- end
+=== read: mask before comma NEL
+rc: 0
+--- stdout
+{"cached": false, "cause": null, "decision": "reloaded", "detail": null, "exit": 0, "exit_semantic": "ok", "kind": "decision", "message": "eessi-arch-guard: reloaded modules for x86_64/intel/icelake (loaded for x86_64/amd/zen4)", "now": "x86_64/intel/icelake", "reload_needed": true, "schema_version": 1, "shell": false, "strict": false, "was": "x86_64/amd/zen4"}
+
+--- stderr
+
+--- end
+=== read: list before NBSP
+rc: 0
+--- stdout
+{"cached": false, "cause": null, "decision": "reloaded", "detail": null, "exit": 0, "exit_semantic": "ok", "kind": "decision", "message": "eessi-arch-guard: reloaded modules for x86_64/intel/icelake (loaded for x86_64/amd/zen4)", "now": "x86_64/intel/icelake", "reload_needed": true, "schema_version": 1, "shell": false, "strict": false, "was": "x86_64/amd/zen4"}
+
+--- stderr
+
+--- end
+=== read: list after NBSP
+rc: 0
+--- stdout
+{"cached": false, "cause": null, "decision": "reloaded", "detail": null, "exit": 0, "exit_semantic": "ok", "kind": "decision", "message": "eessi-arch-guard: reloaded modules for x86_64/intel/icelake (loaded for x86_64/amd/zen4)", "now": "x86_64/intel/icelake", "reload_needed": true, "schema_version": 1, "shell": false, "strict": false, "was": "x86_64/amd/zen4"}
+
+--- stderr
+
+--- end
+=== read: verbose after NBSP
+rc: 0
+--- stdout
+{"cached": false, "cause": null, "decision": "reloaded", "detail": null, "exit": 0, "exit_semantic": "ok", "kind": "decision", "message": "eessi-arch-guard: reloaded modules for x86_64/intel/icelake (loaded for x86_64/amd/zen4)", "now": "x86_64/intel/icelake", "reload_needed": true, "schema_version": 1, "shell": false, "strict": false, "was": "x86_64/amd/zen4"}
+
+--- stderr
+
+--- end
+=== read: mask before comma NBSP
+rc: 0
+--- stdout
+{"cached": false, "cause": null, "decision": "reloaded", "detail": null, "exit": 0, "exit_semantic": "ok", "kind": "decision", "message": "eessi-arch-guard: reloaded modules for x86_64/intel/icelake (loaded for x86_64/amd/zen4)", "now": "x86_64/intel/icelake", "reload_needed": true, "schema_version": 1, "shell": false, "strict": false, "was": "x86_64/amd/zen4"}
+
+--- stderr
+
+--- end
+=== read: list before OGHAM
+rc: 0
+--- stdout
+{"cached": false, "cause": null, "decision": "reloaded", "detail": null, "exit": 0, "exit_semantic": "ok", "kind": "decision", "message": "eessi-arch-guard: reloaded modules for x86_64/intel/icelake (loaded for x86_64/amd/zen4)", "now": "x86_64/intel/icelake", "reload_needed": true, "schema_version": 1, "shell": false, "strict": false, "was": "x86_64/amd/zen4"}
+
+--- stderr
+
+--- end
+=== read: list after OGHAM
+rc: 0
+--- stdout
+{"cached": false, "cause": null, "decision": "reloaded", "detail": null, "exit": 0, "exit_semantic": "ok", "kind": "decision", "message": "eessi-arch-guard: reloaded modules for x86_64/intel/icelake (loaded for x86_64/amd/zen4)", "now": "x86_64/intel/icelake", "reload_needed": true, "schema_version": 1, "shell": false, "strict": false, "was": "x86_64/amd/zen4"}
+
+--- stderr
+
+--- end
+=== read: verbose after OGHAM
+rc: 0
+--- stdout
+{"cached": false, "cause": null, "decision": "reloaded", "detail": null, "exit": 0, "exit_semantic": "ok", "kind": "decision", "message": "eessi-arch-guard: reloaded modules for x86_64/intel/icelake (loaded for x86_64/amd/zen4)", "now": "x86_64/intel/icelake", "reload_needed": true, "schema_version": 1, "shell": false, "strict": false, "was": "x86_64/amd/zen4"}
+
+--- stderr
+
+--- end
+=== read: mask before comma OGHAM
+rc: 0
+--- stdout
+{"cached": false, "cause": null, "decision": "reloaded", "detail": null, "exit": 0, "exit_semantic": "ok", "kind": "decision", "message": "eessi-arch-guard: reloaded modules for x86_64/intel/icelake (loaded for x86_64/amd/zen4)", "now": "x86_64/intel/icelake", "reload_needed": true, "schema_version": 1, "shell": false, "strict": false, "was": "x86_64/amd/zen4"}
+
+--- stderr
+
+--- end
+=== read: list before EN
+rc: 0
+--- stdout
+{"cached": false, "cause": null, "decision": "reloaded", "detail": null, "exit": 0, "exit_semantic": "ok", "kind": "decision", "message": "eessi-arch-guard: reloaded modules for x86_64/intel/icelake (loaded for x86_64/amd/zen4)", "now": "x86_64/intel/icelake", "reload_needed": true, "schema_version": 1, "shell": false, "strict": false, "was": "x86_64/amd/zen4"}
+
+--- stderr
+
+--- end
+=== read: list after EN
+rc: 0
+--- stdout
+{"cached": false, "cause": null, "decision": "reloaded", "detail": null, "exit": 0, "exit_semantic": "ok", "kind": "decision", "message": "eessi-arch-guard: reloaded modules for x86_64/intel/icelake (loaded for x86_64/amd/zen4)", "now": "x86_64/intel/icelake", "reload_needed": true, "schema_version": 1, "shell": false, "strict": false, "was": "x86_64/amd/zen4"}
+
+--- stderr
+
+--- end
+=== read: verbose after EN
+rc: 0
+--- stdout
+{"cached": false, "cause": null, "decision": "reloaded", "detail": null, "exit": 0, "exit_semantic": "ok", "kind": "decision", "message": "eessi-arch-guard: reloaded modules for x86_64/intel/icelake (loaded for x86_64/amd/zen4)", "now": "x86_64/intel/icelake", "reload_needed": true, "schema_version": 1, "shell": false, "strict": false, "was": "x86_64/amd/zen4"}
+
+--- stderr
+
+--- end
+=== read: mask before comma EN
+rc: 0
+--- stdout
+{"cached": false, "cause": null, "decision": "reloaded", "detail": null, "exit": 0, "exit_semantic": "ok", "kind": "decision", "message": "eessi-arch-guard: reloaded modules for x86_64/intel/icelake (loaded for x86_64/amd/zen4)", "now": "x86_64/intel/icelake", "reload_needed": true, "schema_version": 1, "shell": false, "strict": false, "was": "x86_64/amd/zen4"}
+
+--- stderr
+
+--- end
+=== read: list before LS
+rc: 0
+--- stdout
+{"cached": false, "cause": null, "decision": "reloaded", "detail": null, "exit": 0, "exit_semantic": "ok", "kind": "decision", "message": "eessi-arch-guard: reloaded modules for x86_64/intel/icelake (loaded for x86_64/amd/zen4)", "now": "x86_64/intel/icelake", "reload_needed": true, "schema_version": 1, "shell": false, "strict": false, "was": "x86_64/amd/zen4"}
+
+--- stderr
+
+--- end
+=== read: list after LS
+rc: 0
+--- stdout
+{"cached": false, "cause": null, "decision": "reloaded", "detail": null, "exit": 0, "exit_semantic": "ok", "kind": "decision", "message": "eessi-arch-guard: reloaded modules for x86_64/intel/icelake (loaded for x86_64/amd/zen4)", "now": "x86_64/intel/icelake", "reload_needed": true, "schema_version": 1, "shell": false, "strict": false, "was": "x86_64/amd/zen4"}
+
+--- stderr
+
+--- end
+=== read: verbose after LS
+rc: 0
+--- stdout
+{"cached": false, "cause": null, "decision": "reloaded", "detail": null, "exit": 0, "exit_semantic": "ok", "kind": "decision", "message": "eessi-arch-guard: reloaded modules for x86_64/intel/icelake (loaded for x86_64/amd/zen4)", "now": "x86_64/intel/icelake", "reload_needed": true, "schema_version": 1, "shell": false, "strict": false, "was": "x86_64/amd/zen4"}
+
+--- stderr
+
+--- end
+=== read: mask before comma LS
+rc: 0
+--- stdout
+{"cached": false, "cause": null, "decision": "reloaded", "detail": null, "exit": 0, "exit_semantic": "ok", "kind": "decision", "message": "eessi-arch-guard: reloaded modules for x86_64/intel/icelake (loaded for x86_64/amd/zen4)", "now": "x86_64/intel/icelake", "reload_needed": true, "schema_version": 1, "shell": false, "strict": false, "was": "x86_64/amd/zen4"}
+
+--- stderr
+
+--- end
+=== read: list before PS
+rc: 0
+--- stdout
+{"cached": false, "cause": null, "decision": "reloaded", "detail": null, "exit": 0, "exit_semantic": "ok", "kind": "decision", "message": "eessi-arch-guard: reloaded modules for x86_64/intel/icelake (loaded for x86_64/amd/zen4)", "now": "x86_64/intel/icelake", "reload_needed": true, "schema_version": 1, "shell": false, "strict": false, "was": "x86_64/amd/zen4"}
+
+--- stderr
+
+--- end
+=== read: list after PS
+rc: 0
+--- stdout
+{"cached": false, "cause": null, "decision": "reloaded", "detail": null, "exit": 0, "exit_semantic": "ok", "kind": "decision", "message": "eessi-arch-guard: reloaded modules for x86_64/intel/icelake (loaded for x86_64/amd/zen4)", "now": "x86_64/intel/icelake", "reload_needed": true, "schema_version": 1, "shell": false, "strict": false, "was": "x86_64/amd/zen4"}
+
+--- stderr
+
+--- end
+=== read: verbose after PS
+rc: 0
+--- stdout
+{"cached": false, "cause": null, "decision": "reloaded", "detail": null, "exit": 0, "exit_semantic": "ok", "kind": "decision", "message": "eessi-arch-guard: reloaded modules for x86_64/intel/icelake (loaded for x86_64/amd/zen4)", "now": "x86_64/intel/icelake", "reload_needed": true, "schema_version": 1, "shell": false, "strict": false, "was": "x86_64/amd/zen4"}
+
+--- stderr
+
+--- end
+=== read: mask before comma PS
+rc: 0
+--- stdout
+{"cached": false, "cause": null, "decision": "reloaded", "detail": null, "exit": 0, "exit_semantic": "ok", "kind": "decision", "message": "eessi-arch-guard: reloaded modules for x86_64/intel/icelake (loaded for x86_64/amd/zen4)", "now": "x86_64/intel/icelake", "reload_needed": true, "schema_version": 1, "shell": false, "strict": false, "was": "x86_64/amd/zen4"}
+
+--- stderr
+
+--- end
+=== read: list before NNBSP
+rc: 0
+--- stdout
+{"cached": false, "cause": null, "decision": "reloaded", "detail": null, "exit": 0, "exit_semantic": "ok", "kind": "decision", "message": "eessi-arch-guard: reloaded modules for x86_64/intel/icelake (loaded for x86_64/amd/zen4)", "now": "x86_64/intel/icelake", "reload_needed": true, "schema_version": 1, "shell": false, "strict": false, "was": "x86_64/amd/zen4"}
+
+--- stderr
+
+--- end
+=== read: list after NNBSP
+rc: 0
+--- stdout
+{"cached": false, "cause": null, "decision": "reloaded", "detail": null, "exit": 0, "exit_semantic": "ok", "kind": "decision", "message": "eessi-arch-guard: reloaded modules for x86_64/intel/icelake (loaded for x86_64/amd/zen4)", "now": "x86_64/intel/icelake", "reload_needed": true, "schema_version": 1, "shell": false, "strict": false, "was": "x86_64/amd/zen4"}
+
+--- stderr
+
+--- end
+=== read: verbose after NNBSP
+rc: 0
+--- stdout
+{"cached": false, "cause": null, "decision": "reloaded", "detail": null, "exit": 0, "exit_semantic": "ok", "kind": "decision", "message": "eessi-arch-guard: reloaded modules for x86_64/intel/icelake (loaded for x86_64/amd/zen4)", "now": "x86_64/intel/icelake", "reload_needed": true, "schema_version": 1, "shell": false, "strict": false, "was": "x86_64/amd/zen4"}
+
+--- stderr
+
+--- end
+=== read: mask before comma NNBSP
+rc: 0
+--- stdout
+{"cached": false, "cause": null, "decision": "reloaded", "detail": null, "exit": 0, "exit_semantic": "ok", "kind": "decision", "message": "eessi-arch-guard: reloaded modules for x86_64/intel/icelake (loaded for x86_64/amd/zen4)", "now": "x86_64/intel/icelake", "reload_needed": true, "schema_version": 1, "shell": false, "strict": false, "was": "x86_64/amd/zen4"}
+
+--- stderr
+
+--- end
+=== read: list before MMSP
+rc: 0
+--- stdout
+{"cached": false, "cause": null, "decision": "reloaded", "detail": null, "exit": 0, "exit_semantic": "ok", "kind": "decision", "message": "eessi-arch-guard: reloaded modules for x86_64/intel/icelake (loaded for x86_64/amd/zen4)", "now": "x86_64/intel/icelake", "reload_needed": true, "schema_version": 1, "shell": false, "strict": false, "was": "x86_64/amd/zen4"}
+
+--- stderr
+
+--- end
+=== read: list after MMSP
+rc: 0
+--- stdout
+{"cached": false, "cause": null, "decision": "reloaded", "detail": null, "exit": 0, "exit_semantic": "ok", "kind": "decision", "message": "eessi-arch-guard: reloaded modules for x86_64/intel/icelake (loaded for x86_64/amd/zen4)", "now": "x86_64/intel/icelake", "reload_needed": true, "schema_version": 1, "shell": false, "strict": false, "was": "x86_64/amd/zen4"}
+
+--- stderr
+
+--- end
+=== read: verbose after MMSP
+rc: 0
+--- stdout
+{"cached": false, "cause": null, "decision": "reloaded", "detail": null, "exit": 0, "exit_semantic": "ok", "kind": "decision", "message": "eessi-arch-guard: reloaded modules for x86_64/intel/icelake (loaded for x86_64/amd/zen4)", "now": "x86_64/intel/icelake", "reload_needed": true, "schema_version": 1, "shell": false, "strict": false, "was": "x86_64/amd/zen4"}
+
+--- stderr
+
+--- end
+=== read: mask before comma MMSP
+rc: 0
+--- stdout
+{"cached": false, "cause": null, "decision": "reloaded", "detail": null, "exit": 0, "exit_semantic": "ok", "kind": "decision", "message": "eessi-arch-guard: reloaded modules for x86_64/intel/icelake (loaded for x86_64/amd/zen4)", "now": "x86_64/intel/icelake", "reload_needed": true, "schema_version": 1, "shell": false, "strict": false, "was": "x86_64/amd/zen4"}
+
+--- stderr
+
+--- end
+=== read: list before IDEOGRAPHIC
+rc: 0
+--- stdout
+{"cached": false, "cause": null, "decision": "reloaded", "detail": null, "exit": 0, "exit_semantic": "ok", "kind": "decision", "message": "eessi-arch-guard: reloaded modules for x86_64/intel/icelake (loaded for x86_64/amd/zen4)", "now": "x86_64/intel/icelake", "reload_needed": true, "schema_version": 1, "shell": false, "strict": false, "was": "x86_64/amd/zen4"}
+
+--- stderr
+
+--- end
+=== read: list after IDEOGRAPHIC
+rc: 0
+--- stdout
+{"cached": false, "cause": null, "decision": "reloaded", "detail": null, "exit": 0, "exit_semantic": "ok", "kind": "decision", "message": "eessi-arch-guard: reloaded modules for x86_64/intel/icelake (loaded for x86_64/amd/zen4)", "now": "x86_64/intel/icelake", "reload_needed": true, "schema_version": 1, "shell": false, "strict": false, "was": "x86_64/amd/zen4"}
+
+--- stderr
+
+--- end
+=== read: verbose after IDEOGRAPHIC
+rc: 0
+--- stdout
+{"cached": false, "cause": null, "decision": "reloaded", "detail": null, "exit": 0, "exit_semantic": "ok", "kind": "decision", "message": "eessi-arch-guard: reloaded modules for x86_64/intel/icelake (loaded for x86_64/amd/zen4)", "now": "x86_64/intel/icelake", "reload_needed": true, "schema_version": 1, "shell": false, "strict": false, "was": "x86_64/amd/zen4"}
+
+--- stderr
+
+--- end
+=== read: mask before comma IDEOGRAPHIC
+rc: 0
+--- stdout
+{"cached": false, "cause": null, "decision": "reloaded", "detail": null, "exit": 0, "exit_semantic": "ok", "kind": "decision", "message": "eessi-arch-guard: reloaded modules for x86_64/intel/icelake (loaded for x86_64/amd/zen4)", "now": "x86_64/intel/icelake", "reload_needed": true, "schema_version": 1, "shell": false, "strict": false, "was": "x86_64/amd/zen4"}
+
+--- stderr
+
+--- end
+=== read: mask after a space and a tab
+rc: 0
+--- stdout
+{"cached": false, "cause": null, "decision": "reloaded", "detail": null, "exit": 0, "exit_semantic": "ok", "kind": "decision", "message": "eessi-arch-guard: reloaded modules for x86_64/intel/icelake (loaded for x86_64/amd/zen4)", "now": "x86_64/intel/icelake", "reload_needed": true, "schema_version": 1, "shell": false, "strict": false, "was": "x86_64/amd/zen4"}
+
+--- stderr
+
+--- end
+=== read: underscore after the prefix
+rc: 0
+--- stdout
+{"cached": false, "cause": null, "decision": "reloaded", "detail": null, "exit": 0, "exit_semantic": "ok", "kind": "decision", "message": "eessi-arch-guard: reloaded modules for x86_64/intel/icelake (loaded for x86_64/amd/zen4)", "now": "x86_64/intel/icelake", "reload_needed": true, "schema_version": 1, "shell": false, "strict": false, "was": "x86_64/amd/zen4"}
+
+--- stderr
+
+--- end
+=== read: underscore between digits
+rc: 0
+--- stdout
+{"cached": false, "cause": null, "decision": "reloaded", "detail": null, "exit": 0, "exit_semantic": "ok", "kind": "decision", "message": "eessi-arch-guard: reloaded modules for x86_64/intel/icelake (loaded for x86_64/amd/zen4)", "now": "x86_64/intel/icelake", "reload_needed": true, "schema_version": 1, "shell": false, "strict": false, "was": "x86_64/amd/zen4"}
+
+--- stderr
+
+--- end
+=== read: Arabic-Indic digit
+rc: 0
+--- stdout
+{"cached": false, "cause": null, "decision": "reloaded", "detail": null, "exit": 0, "exit_semantic": "ok", "kind": "decision", "message": "eessi-arch-guard: reloaded modules for x86_64/intel/icelake (loaded for x86_64/amd/zen4)", "now": "x86_64/intel/icelake", "reload_needed": true, "schema_version": 1, "shell": false, "strict": false, "was": "x86_64/amd/zen4"}
+
+--- stderr
+
+--- end
+=== read: fullwidth digit
+rc: 0
+--- stdout
+{"cached": false, "cause": null, "decision": "reloaded", "detail": null, "exit": 0, "exit_semantic": "ok", "kind": "decision", "message": "eessi-arch-guard: reloaded modules for x86_64/intel/icelake (loaded for x86_64/amd/zen4)", "now": "x86_64/intel/icelake", "reload_needed": true, "schema_version": 1, "shell": false, "strict": false, "was": "x86_64/amd/zen4"}
+
+--- stderr
+
+--- end
+=== read: mathematical digit
+rc: 0
+--- stdout
+{"cached": false, "cause": null, "decision": "reloaded", "detail": null, "exit": 0, "exit_semantic": "ok", "kind": "decision", "message": "eessi-arch-guard: reloaded modules for x86_64/intel/icelake (loaded for x86_64/amd/zen4)", "now": "x86_64/intel/icelake", "reload_needed": true, "schema_version": 1, "shell": false, "strict": false, "was": "x86_64/amd/zen4"}
+
+--- stderr
+
+--- end
+=== ignored: control before comma FS
+rc: 0
+--- stdout
+{"cached": false, "cause": null, "decision": "reloaded", "detail": null, "exit": 0, "exit_semantic": "ok", "kind": "decision", "message": "eessi-arch-guard: reloaded modules for x86_64/generic (loaded for x86_64/amd/zen4)", "now": "x86_64/generic", "reload_needed": true, "schema_version": 1, "shell": false, "strict": false, "was": "x86_64/amd/zen4"}
+
+--- stderr
+
+--- end
+=== ignored: control before comma GS
+rc: 0
+--- stdout
+{"cached": false, "cause": null, "decision": "reloaded", "detail": null, "exit": 0, "exit_semantic": "ok", "kind": "decision", "message": "eessi-arch-guard: reloaded modules for x86_64/generic (loaded for x86_64/amd/zen4)", "now": "x86_64/generic", "reload_needed": true, "schema_version": 1, "shell": false, "strict": false, "was": "x86_64/amd/zen4"}
+
+--- stderr
+
+--- end
+=== ignored: control before comma RS
+rc: 0
+--- stdout
+{"cached": false, "cause": null, "decision": "reloaded", "detail": null, "exit": 0, "exit_semantic": "ok", "kind": "decision", "message": "eessi-arch-guard: reloaded modules for x86_64/generic (loaded for x86_64/amd/zen4)", "now": "x86_64/generic", "reload_needed": true, "schema_version": 1, "shell": false, "strict": false, "was": "x86_64/amd/zen4"}
+
+--- stderr
+
+--- end
+=== ignored: control before comma US
+rc: 0
+--- stdout
+{"cached": false, "cause": null, "decision": "reloaded", "detail": null, "exit": 0, "exit_semantic": "ok", "kind": "decision", "message": "eessi-arch-guard: reloaded modules for x86_64/generic (loaded for x86_64/amd/zen4)", "now": "x86_64/generic", "reload_needed": true, "schema_version": 1, "shell": false, "strict": false, "was": "x86_64/amd/zen4"}
+
+--- stderr
+
+--- end
+=== ignored: control after a non-ASCII digit
+rc: 0
+--- stdout
+{"cached": false, "cause": null, "decision": "reloaded", "detail": null, "exit": 0, "exit_semantic": "ok", "kind": "decision", "message": "eessi-arch-guard: reloaded modules for x86_64/generic (loaded for x86_64/amd/zen4)", "now": "x86_64/generic", "reload_needed": true, "schema_version": 1, "shell": false, "strict": false, "was": "x86_64/amd/zen4"}
+
+--- stderr
+
+--- end
+=== ignored: refused '0x2_'
+rc: 0
+--- stdout
+{"cached": false, "cause": null, "decision": "reloaded", "detail": null, "exit": 0, "exit_semantic": "ok", "kind": "decision", "message": "eessi-arch-guard: reloaded modules for x86_64/generic (loaded for x86_64/amd/zen4)", "now": "x86_64/generic", "reload_needed": true, "schema_version": 1, "shell": false, "strict": false, "was": "x86_64/amd/zen4"}
+
+--- stderr
+
+--- end
+=== ignored: refused '0x__2'
+rc: 0
+--- stdout
+{"cached": false, "cause": null, "decision": "reloaded", "detail": null, "exit": 0, "exit_semantic": "ok", "kind": "decision", "message": "eessi-arch-guard: reloaded modules for x86_64/generic (loaded for x86_64/amd/zen4)", "now": "x86_64/generic", "reload_needed": true, "schema_version": 1, "shell": false, "strict": false, "was": "x86_64/amd/zen4"}
+
+--- stderr
+
+--- end
+=== ignored: refused '0x_'
+rc: 0
+--- stdout
+{"cached": false, "cause": null, "decision": "reloaded", "detail": null, "exit": 0, "exit_semantic": "ok", "kind": "decision", "message": "eessi-arch-guard: reloaded modules for x86_64/generic (loaded for x86_64/amd/zen4)", "now": "x86_64/generic", "reload_needed": true, "schema_version": 1, "shell": false, "strict": false, "was": "x86_64/amd/zen4"}
+
+--- stderr
+
+--- end
+=== ignored: refused '0x2__0'
+rc: 0
+--- stdout
+{"cached": false, "cause": null, "decision": "reloaded", "detail": null, "exit": 0, "exit_semantic": "ok", "kind": "decision", "message": "eessi-arch-guard: reloaded modules for x86_64/generic (loaded for x86_64/amd/zen4)", "now": "x86_64/generic", "reload_needed": true, "schema_version": 1, "shell": false, "strict": false, "was": "x86_64/amd/zen4"}
+
+--- stderr
+
+--- end
+=== ignored: refused '0x 2'
+rc: 0
+--- stdout
+{"cached": false, "cause": null, "decision": "reloaded", "detail": null, "exit": 0, "exit_semantic": "ok", "kind": "decision", "message": "eessi-arch-guard: reloaded modules for x86_64/generic (loaded for x86_64/amd/zen4)", "now": "x86_64/generic", "reload_needed": true, "schema_version": 1, "shell": false, "strict": false, "was": "x86_64/amd/zen4"}
+
+--- stderr
+
+--- end
+=== ignored: refused '0x\xa02'
+rc: 0
+--- stdout
+{"cached": false, "cause": null, "decision": "reloaded", "detail": null, "exit": 0, "exit_semantic": "ok", "kind": "decision", "message": "eessi-arch-guard: reloaded modules for x86_64/generic (loaded for x86_64/amd/zen4)", "now": "x86_64/generic", "reload_needed": true, "schema_version": 1, "shell": false, "strict": false, "was": "x86_64/amd/zen4"}
+
+--- stderr
+
+--- end
+=== ignored: refused '0x\udcff2'
+rc: 0
+--- stdout
+{"cached": false, "cause": null, "decision": "reloaded", "detail": null, "exit": 0, "exit_semantic": "ok", "kind": "decision", "message": "eessi-arch-guard: reloaded modules for x86_64/generic (loaded for x86_64/amd/zen4)", "now": "x86_64/generic", "reload_needed": true, "schema_version": 1, "shell": false, "strict": false, "was": "x86_64/amd/zen4"}
+
+--- stderr
+
+--- end

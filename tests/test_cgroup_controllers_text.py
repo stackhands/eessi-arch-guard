@@ -1,27 +1,26 @@
-"""The cgroup.controllers file is split as str.split() splits it.
+"""The cgroup.controllers file is split into words on Unicode whitespace.
 
-Python reads the file as text and asks whether the word cpuset is one of
-its words, so Unicode whitespace separates the words as ASCII whitespace
-does, and a character that is not whitespace joins them. The unit tests
-of the Zig guard hold the same cases, so both programs name the same
-cpuset for a directory.
+The binary reads the file as text and asks whether the word cpuset is one of
+its words, so Unicode whitespace separates the words as ASCII whitespace does,
+and a character that is not whitespace joins them. A bytes sequence that is not
+valid UTF-8 makes the file name no controller, and a missing file allows the
+directory. A cpuset.cpus.effective file of whitespace alone is skipped, and
+the walk goes on to the parent, and surrounding Unicode whitespace around a
+number does not stop it from being read.
 
-The programs read the cgroup of the process and the tree under the system
-root, so a whole-program run needs a private mount namespace. The test below
-starts each program under unshare with a user and mount namespace and binds
-a generated tree over the cgroup root. The tree holds the cgroup path of the
-test process itself, so every child the guard starts finds the same cgroup.
-The cgroup is a leaf whose controllers file separates cpuset from the other
-names with a no-break space, and its parents hold no cpuset. Python takes
-the leaf, which limits the task to the processor 1, and the guard chooses
-the Icelake directory that processor allows. A program that does not split
-the file as Python does turns the leaf away, finds no cpuset, and chooses
-another directory. Each program runs on a fresh site through the
-differential runner. The comparison skips when TOOL_BIN is unset. A host
-that cannot make the namespace, or does not use cgroup v2, fails both
-tests: they are the only check of the walk as each program runs it, and the
-CI and release workflows lift the AppArmor limit on user namespaces so they
-run there.
+The binary reads the cgroup of the process and the tree under the system
+root, so a whole-program run needs a private mount namespace. The test starts
+the binary under unshare with a user and mount namespace and binds a generated
+tree over the cgroup root. The tree holds the cgroup path of the test process
+itself, so every child the binary starts finds the same cgroup. The cgroup is
+a leaf whose parents hold no cpuset. When the leaf is taken, it limits the
+task to the processor 1, and the binary chooses the Icelake directory that
+processor allows; when it is turned away, the binary finds no cpuset and
+chooses another directory. The whole output of each run is pinned in
+tests/golden/cgroup-controllers-text.txt. A host that cannot make the
+namespace, or does not use cgroup v2, fails the tests: they are the only check
+of the walk as the binary runs it, and the CI and release workflows lift the
+AppArmor limit on user namespaces so they run there.
 """
 
 from __future__ import annotations
@@ -32,16 +31,14 @@ import re
 import shutil
 import subprocess
 import sys
-import tempfile
 import unittest
 from pathlib import Path
-from typing import List, Mapping, Sequence
+from typing import List, Mapping, Optional, Sequence, Tuple
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import differential  # noqa: E402
-import eessi_arch_guard as guard  # noqa: E402
+import golden  # noqa: E402
 import harness  # noqa: E402
 
 CASES = (
@@ -53,29 +50,23 @@ CASES = (
 )
 
 
-class ControllersTextTests(unittest.TestCase):
-    def test_controllers_are_split_on_unicode_whitespace(self) -> None:
-        for name, listed, allowed in CASES:
-            with self.subTest(case=name), tempfile.TemporaryDirectory(prefix="eag-ctl-") as tmp:
-                Path(tmp, "cgroup.controllers").write_text(listed, encoding="utf-8")
-                self.assertIs(guard._controllers_allow(tmp), allowed)
-
-    def test_invalid_bytes_do_not_make_a_controller(self) -> None:
-        with tempfile.TemporaryDirectory(prefix="eag-ctl-") as tmp:
-            Path(tmp, "cgroup.controllers").write_bytes(b"cpu cpuset\xff memory\n")
-            self.assertFalse(guard._controllers_allow(tmp))
-
-    def test_a_missing_file_allows_the_directory(self) -> None:
-        with tempfile.TemporaryDirectory(prefix="eag-ctl-") as tmp:
-            self.assertTrue(guard._controllers_allow(tmp))
-
-    def test_a_cpuset_file_of_whitespace_alone_is_skipped(self) -> None:
-        with tempfile.TemporaryDirectory(prefix="eag-ctl-") as tmp:
-            root = Path(tmp)
-            (root / "job").mkdir()
-            (root / "cpuset.cpus.effective").write_text("6\n", encoding="utf-8")
-            (root / "job" / "cpuset.cpus.effective").write_text("\u00a0\n\u3000", encoding="utf-8")
-            self.assertEqual(guard._walk_cpuset(str(root / "job"), str(root)), frozenset({6}))
+# Each case: label, bytes of the leaf's cgroup.controllers (None: no file),
+# bytes of the leaf's cpuset.cpus.effective, bytes of the parent's
+# cpuset.cpus.effective (None: the parent has no cpuset), and whether the
+# processor 1 is the one the task may use.
+CASES = (
+    ("joined", "cpu\u00a0cpuset\u2003memory\n".encode(), b"1\n", None, True),
+    ("padded", "\u3000cpuset\u1680\x1f\n".encode(), b"1\n", None, True),
+    ("glued", "cpuset\u200bmemory cpu\n".encode(), b"1\n", None, False),
+    ("suffixed", "cpu cpuset\ufffd memory\n".encode(), b"1\n", None, False),
+    ("absent", b"cpu memory\n", b"1\n", None, False),
+    ("invalid bytes", b"cpu cpuset\xff memory\n", b"1\n", None, False),
+    ("no controllers file", None, b"1\n", None, True),
+    ("number padded by whitespace", b"cpu cpuset\n", "\u00a01\u2003\n\u3000".encode(), None, True),
+    ("blank file falls to the parent", b"cpu cpuset\n", "\u00a0\n\u3000".encode(), b"1\n", True),
+    ("blank file and no parent file", b"cpu cpuset\n", "\u00a0\n\u3000".encode(), None, False),
+)
+Case = Tuple[str, Optional[bytes], bytes, Optional[bytes], bool]
 
 
 LOADED = "x86_64/amd/zen4"
@@ -137,23 +128,34 @@ def _in_namespace(program: Sequence[str]) -> List[str]:
     return ["unshare", "--map-root-user", "--mount", "sh", "-c", ENTER, "sh", *program]
 
 
-def _build(site: harness.Site) -> Mapping[str, str]:
-    for cpu in CPUS:
-        site.add_cpu(cpu)
-        site.add_module(cpu, "R/4.4.2")
-    Path(site.cpuinfo).write_text(_cpuinfo(), encoding="utf-8")
-    tree = Path(site.root) / "cgroup-tree"
-    leaf = tree / _own_cgroup().strip("/")
-    leaf.mkdir(parents=True, exist_ok=True)
-    for parent in leaf.parents:
-        if parent == tree.parent:
-            break
-        (parent / "cgroup.controllers").write_text("cpu memory\n", encoding="utf-8")
-    (leaf / "cgroup.controllers").write_text("cpu\u00a0cpuset\n", encoding="utf-8")
-    (leaf / "cpuset.cpus.effective").write_text("1\n", encoding="utf-8")
-    env = harness.base_env(site, LOADED, ["R/4.4.2"], gpu="none")
-    env["EAG_FAKE_TREE"] = str(tree)
-    return env
+def _build(case: Case) -> differential.Build:
+    _label, controllers, leaf_cpus, parent_cpus, _taken = case
+
+    def build(site: harness.Site) -> Mapping[str, str]:
+        for cpu in CPUS:
+            site.add_cpu(cpu)
+            site.add_module(cpu, "R/4.4.2")
+        Path(site.cpuinfo).write_text(_cpuinfo(), encoding="utf-8")
+        tree = Path(site.root) / "cgroup-tree"
+        leaf = tree / _own_cgroup().strip("/")
+        leaf.mkdir(parents=True, exist_ok=True)
+        for parent in leaf.parents:
+            if parent == tree.parent:
+                break
+            (parent / "cgroup.controllers").write_text("cpu memory\n", encoding="utf-8")
+        if parent_cpus is not None:
+            (leaf.parent / "cgroup.controllers").write_text("cpu cpuset\n", encoding="utf-8")
+            (leaf.parent / "cpuset.cpus.effective").write_bytes(parent_cpus)
+        if controllers is None:
+            (leaf / "cgroup.controllers").unlink(missing_ok=True)
+        else:
+            (leaf / "cgroup.controllers").write_bytes(controllers)
+        (leaf / "cpuset.cpus.effective").write_bytes(leaf_cpus)
+        env = harness.base_env(site, LOADED, ["R/4.4.2"], gpu="none")
+        env["EAG_FAKE_TREE"] = str(tree)
+        return env
+
+    return build
 
 
 class ControllersProgramTests(unittest.TestCase):
@@ -166,20 +168,22 @@ class ControllersProgramTests(unittest.TestCase):
                 + "; on Ubuntu run sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0"
             )
 
-    def test_python_takes_the_leaf_whose_controllers_use_a_no_break_space(self) -> None:
-        run = differential.run_fresh(
-            _in_namespace(differential.python_guard()), _build, ["--json"]
-        )
-        self.assertEqual(run.returncode, 0, run.stderr)
-        self.assertEqual(json.loads(run.stdout)["now"], ICELAKE)
-
-    def test_programs_agree_on_the_cpuset(self) -> None:
-        harness.skip_unless_tool_bin(self)
-        python = differential.run_fresh(
-            _in_namespace(differential.python_guard()), _build, ["--json"]
-        )
-        zig = differential.run_fresh(_in_namespace(differential.zig_program()), _build, ["--json"])
-        self.assertEqual(zig.observed(), python.observed())
+    def test_the_binary_splits_the_controllers_and_reads_the_cpuset(self) -> None:
+        sheet = golden.Sheet("cgroup-controllers-text")
+        self.addCleanup(sheet.finish)
+        for case in CASES:
+            label, _controllers, _leaf, _parent, taken = case
+            with self.subTest(case=label):
+                run = differential.run_fresh(
+                    _in_namespace(differential.zig_program()), _build(case), ["--json"]
+                )
+                sheet.check(self, label, golden.render(run.returncode, run.stdout, run.stderr))
+                self.assertEqual(run.returncode, 0, run.stderr)
+                chosen = json.loads(run.stdout)["now"]
+                if taken:
+                    self.assertEqual(chosen, ICELAKE)
+                else:
+                    self.assertNotEqual(chosen, ICELAKE)
 
 
 if __name__ == "__main__":

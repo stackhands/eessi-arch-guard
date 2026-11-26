@@ -1,0 +1,112 @@
+=== header at the colon NBSP
+rc: 0
+--- stdout
+{"cached": false, "cause": null, "decision": "reloaded", "detail": null, "exit": 0, "exit_semantic": "ok", "kind": "decision", "message": "eessi-arch-guard: reloaded modules for x86_64/generic (loaded for x86_64/amd/zen4)", "now": "x86_64/generic", "reload_needed": true, "schema_version": 1, "shell": false, "strict": false, "was": "x86_64/amd/zen4"}
+
+--- stderr
+
+--- end
+=== header after the colon NBSP
+rc: 0
+--- stdout
+{"cached": false, "cause": null, "decision": "reloaded", "detail": null, "exit": 0, "exit_semantic": "ok", "kind": "decision", "message": "eessi-arch-guard: reloaded modules for x86_64/generic (loaded for x86_64/amd/zen4)", "now": "x86_64/generic", "reload_needed": true, "schema_version": 1, "shell": false, "strict": false, "was": "x86_64/amd/zen4"}
+
+--- stderr
+
+--- end
+=== header at the colon OGHAM
+rc: 0
+--- stdout
+{"cached": false, "cause": null, "decision": "reloaded", "detail": null, "exit": 0, "exit_semantic": "ok", "kind": "decision", "message": "eessi-arch-guard: reloaded modules for x86_64/generic (loaded for x86_64/amd/zen4)", "now": "x86_64/generic", "reload_needed": true, "schema_version": 1, "shell": false, "strict": false, "was": "x86_64/amd/zen4"}
+
+--- stderr
+
+--- end
+=== header after the colon OGHAM
+rc: 0
+--- stdout
+{"cached": false, "cause": null, "decision": "reloaded", "detail": null, "exit": 0, "exit_semantic": "ok", "kind": "decision", "message": "eessi-arch-guard: reloaded modules for x86_64/generic (loaded for x86_64/amd/zen4)", "now": "x86_64/generic", "reload_needed": true, "schema_version": 1, "shell": false, "strict": false, "was": "x86_64/amd/zen4"}
+
+--- stderr
+
+--- end
+=== header at the colon EN
+rc: 0
+--- stdout
+{"cached": false, "cause": null, "decision": "reloaded", "detail": null, "exit": 0, "exit_semantic": "ok", "kind": "decision", "message": "eessi-arch-guard: reloaded modules for x86_64/generic (loaded for x86_64/amd/zen4)", "now": "x86_64/generic", "reload_needed": true, "schema_version": 1, "shell": false, "strict": false, "was": "x86_64/amd/zen4"}
+
+--- stderr
+
+--- end
+=== header after the colon EN
+rc: 0
+--- stdout
+{"cached": false, "cause": null, "decision": "reloaded", "detail": null, "exit": 0, "exit_semantic": "ok", "kind": "decision", "message": "eessi-arch-guard: reloaded modules for x86_64/generic (loaded for x86_64/amd/zen4)", "now": "x86_64/generic", "reload_needed": true, "schema_version": 1, "shell": false, "strict": false, "was": "x86_64/amd/zen4"}
+
+--- stderr
+
+--- end
+=== header at the colon NNBSP
+rc: 0
+--- stdout
+{"cached": false, "cause": null, "decision": "reloaded", "detail": null, "exit": 0, "exit_semantic": "ok", "kind": "decision", "message": "eessi-arch-guard: reloaded modules for x86_64/generic (loaded for x86_64/amd/zen4)", "now": "x86_64/generic", "reload_needed": true, "schema_version": 1, "shell": false, "strict": false, "was": "x86_64/amd/zen4"}
+
+--- stderr
+
+--- end
+=== header after the colon NNBSP
+rc: 0
+--- stdout
+{"cached": false, "cause": null, "decision": "reloaded", "detail": null, "exit": 0, "exit_semantic": "ok", "kind": "decision", "message": "eessi-arch-guard: reloaded modules for x86_64/generic (loaded for x86_64/amd/zen4)", "now": "x86_64/generic", "reload_needed": true, "schema_version": 1, "shell": false, "strict": false, "was": "x86_64/amd/zen4"}
+
+--- stderr
+
+--- end
+=== header at the colon MMSP
+rc: 0
+--- stdout
+{"cached": false, "cause": null, "decision": "reloaded", "detail": null, "exit": 0, "exit_semantic": "ok", "kind": "decision", "message": "eessi-arch-guard: reloaded modules for x86_64/generic (loaded for x86_64/amd/zen4)", "now": "x86_64/generic", "reload_needed": true, "schema_version": 1, "shell": false, "strict": false, "was": "x86_64/amd/zen4"}
+
+--- stderr
+
+--- end
+=== header after the colon MMSP
+rc: 0
+--- stdout
+{"cached": false, "cause": null, "decision": "reloaded", "detail": null, "exit": 0, "exit_semantic": "ok", "kind": "decision", "message": "eessi-arch-guard: reloaded modules for x86_64/generic (loaded for x86_64/amd/zen4)", "now": "x86_64/generic", "reload_needed": true, "schema_version": 1, "shell": false, "strict": false, "was": "x86_64/amd/zen4"}
+
+--- stderr
+
+--- end
+=== header at the colon IDEOGRAPHIC
+rc: 0
+--- stdout
+{"cached": false, "cause": null, "decision": "reloaded", "detail": null, "exit": 0, "exit_semantic": "ok", "kind": "decision", "message": "eessi-arch-guard: reloaded modules for x86_64/generic (loaded for x86_64/amd/zen4)", "now": "x86_64/generic", "reload_needed": true, "schema_version": 1, "shell": false, "strict": false, "was": "x86_64/amd/zen4"}
+
+--- stderr
+
+--- end
+=== header after the colon IDEOGRAPHIC
+rc: 0
+--- stdout
+{"cached": false, "cause": null, "decision": "reloaded", "detail": null, "exit": 0, "exit_semantic": "ok", "kind": "decision", "message": "eessi-arch-guard: reloaded modules for x86_64/generic (loaded for x86_64/amd/zen4)", "now": "x86_64/generic", "reload_needed": true, "schema_version": 1, "shell": false, "strict": false, "was": "x86_64/amd/zen4"}
+
+--- stderr
+
+--- end
+=== header at the colon US
+rc: 0
+--- stdout
+{"cached": false, "cause": null, "decision": "reloaded", "detail": null, "exit": 0, "exit_semantic": "ok", "kind": "decision", "message": "eessi-arch-guard: reloaded modules for x86_64/generic (loaded for x86_64/amd/zen4)", "now": "x86_64/generic", "reload_needed": true, "schema_version": 1, "shell": false, "strict": false, "was": "x86_64/amd/zen4"}
+
+--- stderr
+
+--- end
+=== header after the colon US
+rc: 0
+--- stdout
+{"cached": false, "cause": null, "decision": "reloaded", "detail": null, "exit": 0, "exit_semantic": "ok", "kind": "decision", "message": "eessi-arch-guard: reloaded modules for x86_64/generic (loaded for x86_64/amd/zen4)", "now": "x86_64/generic", "reload_needed": true, "schema_version": 1, "shell": false, "strict": false, "was": "x86_64/amd/zen4"}
+
+--- stderr
+
+--- end

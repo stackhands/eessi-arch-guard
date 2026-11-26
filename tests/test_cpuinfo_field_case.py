@@ -1,29 +1,28 @@
-"""The Python and Zig guards must tell two cpuinfo field names apart alike.
+"""A cpuinfo field is told from another by its lower-cased name.
 
-The guard writes a scoped cpuinfo copy only when the processors the task may
+The binary writes a scoped cpuinfo copy only when the processors the task may
 use do not all describe the same CPU. Two processors describe the same CPU
 when their fields, taken by lower-cased name, hold the same first values. A
 copy that is not needed is not written, so the case where a field is spelled
-with another case on another processor decides whether the guard goes on to
+with another case on another processor decides whether the binary goes on to
 the CPU detection or tries to place a copy.
 
-The cases run each program on a fresh site under the shared size limiter at
-zero. Placing the copy then fails with the error of tempfile.gettempdir, and
-the detection fails on its own file. The cause in the decision says which of
-the two happened. A field that two processors spell alike in the lower-cased
-name, such as ``key``, ``Key`` and ``KEY``, needs no copy. A field that only
-one processor has, or that holds another value, needs one. The programs are
-compared on exit status and on both output streams, and the Python guard is
-checked for the cause each case should give. The comparison skips when
-TOOL_BIN is unset.
+The cases run on a fresh site under a file-size limit of zero. Placing the
+copy then fails with a missing temporary directory, and the detection fails
+on its own file. The cause in the decision says which of the two happened. A
+field that two processors spell alike in the lower-cased name, such as
+``key``, ``Key`` and ``KEY``, needs no copy. A field that only one processor
+has, or that holds another value, needs one. The cause of each case is
+asserted, and the whole output of each run in each output mode is pinned in
+tests/golden/cpuinfo-field-case.txt and tests/golden/cpuinfo-field-values.txt.
 
-The names are lower-cased by str.lower(), which is not only for ASCII. U+212A,
-the Kelvin sign, has the lower case ``k``, so a processor that spells the name
+The names are lower-cased as full Unicode lower-casing does it. U+212A, the
+Kelvin sign, has the lower case ``k``, so a processor that spells the name
 with it and one that spells it ``key`` have the same field. U+0130 gives ``i``
 and U+0307; a capital letter of any other script gives its small letter; and a
 capital sigma gives U+03C2 at the end of a word and U+03C3 elsewhere. U+017F,
 the long s, is a small letter already and stays as it is, so it is not an s
-here, whatever a case-insensitive regular expression makes of it.
+here.
 """
 
 from __future__ import annotations
@@ -38,6 +37,7 @@ from typing import Callable, Dict, Sequence, Tuple
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import differential  # noqa: E402
+import golden  # noqa: E402
 import harness  # noqa: E402
 
 CPU = "x86_64/intel/sapphirerapids"
@@ -106,42 +106,49 @@ def cause_of(run: differential.Result) -> str:
     return json.loads(run.stdout.splitlines()[0])["cause"]
 
 
-class CpuinfoFieldCaseParityTests(unittest.TestCase):
+class CpuinfoFieldCaseTests(unittest.TestCase):
     def setUp(self) -> None:
         if len(os.sched_getaffinity(0)) < 3:
             self.skipTest("the cases need three processors in the affinity set")
 
-    def test_python_guard_places_a_copy_only_for_fields_that_differ(self) -> None:
+    def test_the_binary_places_a_copy_only_for_fields_that_differ(self) -> None:
+        sheet = golden.Sheet("cpuinfo-field-case")
+        self.addCleanup(sheet.finish)
         for label, names, cause in CASES:
-            with self.subTest(case=label):
-                run = differential.run_fresh(
-                    differential.python_guard(), builder(names, lambda _i: "x"), ("--json",), 0
-                )
-                self.assertEqual(cause_of(run), cause, run.stdout)
-
-    def test_python_guard_places_a_copy_when_the_values_differ(self) -> None:
-        run = differential.run_fresh(
-            differential.python_guard(),
-            builder(("key", "Key"), lambda index: "v%d" % index),
-            ("--json",),
-            0,
-        )
-        self.assertEqual(cause_of(run), COPY_FAILED, run.stdout)
-
-    def test_programs_agree_on_fields_spelled_in_another_case(self) -> None:
-        harness.skip_unless_tool_bin(self)
-        for label, names, _cause in CASES:
             for mode in ((), ("--json",)):
                 with self.subTest(case=label, mode=" ".join(mode)):
-                    differential.assert_agree(self, builder(names, lambda _i: "x"), mode, 0)
+                    run = differential.assert_golden(
+                        self,
+                        sheet,
+                        "%s [%s]" % (label, " ".join(mode) or "text"),
+                        builder(names, lambda _i: "x"),
+                        mode,
+                        0,
+                    )
+                    if mode:
+                        self.assertEqual(cause_of(run), cause, run.stdout)
 
-    def test_programs_agree_when_the_values_differ(self) -> None:
-        harness.skip_unless_tool_bin(self)
+    def test_the_binary_places_a_copy_when_the_values_differ(self) -> None:
+        sheet = golden.Sheet("cpuinfo-field-values")
+        self.addCleanup(sheet.finish)
         for mode in ((), ("--json",)):
             with self.subTest(mode=" ".join(mode)):
-                differential.assert_agree(
-                    self, builder(("key", "Key"), lambda index: "v%d" % index), mode, 0
+                run = differential.assert_golden(
+                    self,
+                    sheet,
+                    "key and Key with other values [%s]" % (" ".join(mode) or "text"),
+                    builder(("key", "Key"), lambda index: "v%d" % index),
+                    mode,
+                    0,
                 )
+                if mode:
+                    self.assertEqual(cause_of(run), COPY_FAILED, run.stdout)
+
+
+def setUpModule() -> None:
+    """Run from the tests directory: the temporary directory candidates and PWD name it."""
+    unittest.addModuleCleanup(os.chdir, os.getcwd())
+    os.chdir(Path(__file__).resolve().parent)
 
 
 if __name__ == "__main__":

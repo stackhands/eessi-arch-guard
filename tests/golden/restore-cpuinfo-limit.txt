@@ -1,0 +1,48 @@
+=== unlimited --json
+rc: 0
+--- stdout
+{"cached": false, "cause": null, "decision": "reloaded", "detail": null, "exit": 0, "exit_semantic": "ok", "kind": "decision", "message": "eessi-arch-guard: reloaded modules for x86_64/intel/icelake (loaded for x86_64/amd/zen4)", "now": "x86_64/intel/icelake", "reload_needed": true, "schema_version": 1, "shell": false, "strict": false, "was": "x86_64/amd/zen4"}
+
+--- stderr
+
+--- end
+=== limit 1000 --json
+rc: 0
+--- stdout
+{"cached": false, "cause": null, "decision": "reloaded", "detail": null, "exit": 0, "exit_semantic": "ok", "kind": "decision", "message": "eessi-arch-guard: reloaded modules for x86_64/generic (loaded for x86_64/amd/zen4)", "now": "x86_64/generic", "reload_needed": true, "schema_version": 1, "shell": false, "strict": false, "was": "x86_64/amd/zen4"}
+
+--- stderr
+
+--- end
+=== limit 1500 --json
+rc: 0
+--- stdout
+{"cached": false, "cause": null, "decision": "reloaded", "detail": null, "exit": 0, "exit_semantic": "ok", "kind": "decision", "message": "eessi-arch-guard: reloaded modules for x86_64/generic (loaded for x86_64/amd/zen4)", "now": "x86_64/generic", "reload_needed": true, "schema_version": 1, "shell": false, "strict": false, "was": "x86_64/amd/zen4"}
+
+--- stderr
+
+--- end
+=== unlimited --strict --json
+rc: 0
+--- stdout
+{"cached": false, "cause": null, "decision": "reloaded", "detail": null, "exit": 0, "exit_semantic": "ok", "kind": "decision", "message": "eessi-arch-guard: reloaded modules for x86_64/intel/icelake (loaded for x86_64/amd/zen4)", "now": "x86_64/intel/icelake", "reload_needed": true, "schema_version": 1, "shell": false, "strict": true, "was": "x86_64/amd/zen4"}
+
+--- stderr
+
+--- end
+=== limit 1000 --strict --json
+rc: 0
+--- stdout
+{"cached": false, "cause": null, "decision": "reloaded", "detail": null, "exit": 0, "exit_semantic": "ok", "kind": "decision", "message": "eessi-arch-guard: reloaded modules for x86_64/generic (loaded for x86_64/amd/zen4)", "now": "x86_64/generic", "reload_needed": true, "schema_version": 1, "shell": false, "strict": true, "was": "x86_64/amd/zen4"}
+
+--- stderr
+
+--- end
+=== limit 1500 --strict --json
+rc: 0
+--- stdout
+{"cached": false, "cause": null, "decision": "reloaded", "detail": null, "exit": 0, "exit_semantic": "ok", "kind": "decision", "message": "eessi-arch-guard: reloaded modules for x86_64/generic (loaded for x86_64/amd/zen4)", "now": "x86_64/generic", "reload_needed": true, "schema_version": 1, "shell": false, "strict": true, "was": "x86_64/amd/zen4"}
+
+--- stderr
+
+--- end

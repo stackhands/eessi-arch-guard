@@ -1,0 +1,100 @@
+=== limit 100 json
+rc: 0
+--- stdout
+{"cached": false, "cause": "x86_64/amd/zen2", "decision": "failed", "detail": "@WORK@/temp/RND/RND/fragment.sh: line 4: unexpected EOF while looking for matching `''", "exit": 0, "exit_semantic": "ok", "kind": "decision", "message": "eessi-arch-guard: this node is x86_64/amd/zen2, the modules were loaded for x86_64/amd/zen4; module load failed; environment left as it was", "now": null, "reload_needed": true, "schema_version": 1, "shell": false, "strict": false, "was": "x86_64/amd/zen4"}
+
+--- stderr
+
+--- end
+=== limit 100 plain
+rc: 0
+--- stdout
+export EESSI_ARCH_GUARD_FAILED=x86_64/amd/zen4->x86_64/amd/zen2
+print eessi-arch-guard: this node is x86_64/amd/zen2, the modules were loaded for x86_64/amd/zen4; module load failed; environment left as it was
+
+--- stderr
+
+--- end
+=== limit 100 strict
+rc: 78
+--- stdout
+{"cached": false, "cause": "x86_64/amd/zen2", "decision": "failed", "detail": "@WORK@/temp/RND/RND/fragment.sh: line 4: unexpected EOF while looking for matching `''", "exit": 78, "exit_semantic": "strict-failure", "kind": "decision", "message": "eessi-arch-guard: this node is x86_64/amd/zen2, the modules were loaded for x86_64/amd/zen4; module load failed; environment left as it was", "now": null, "reload_needed": true, "schema_version": 1, "shell": false, "strict": true, "was": "x86_64/amd/zen4"}
+
+--- stderr
+
+--- end
+=== limit 150 json
+rc: 0
+--- stdout
+{"cached": false, "cause": "x86_64/amd/zen2", "decision": "failed", "detail": "@WORK@/temp/RND/RND/fragment.sh: line 5: exp: command not found", "exit": 0, "exit_semantic": "ok", "kind": "decision", "message": "eessi-arch-guard: this node is x86_64/amd/zen2, the modules were loaded for x86_64/amd/zen4; module load failed; environment left as it was", "now": null, "reload_needed": true, "schema_version": 1, "shell": false, "strict": false, "was": "x86_64/amd/zen4"}
+
+--- stderr
+
+--- end
+=== limit 150 plain
+rc: 0
+--- stdout
+export EESSI_ARCH_GUARD_FAILED=x86_64/amd/zen4->x86_64/amd/zen2
+print eessi-arch-guard: this node is x86_64/amd/zen2, the modules were loaded for x86_64/amd/zen4; module load failed; environment left as it was
+
+--- stderr
+
+--- end
+=== limit 150 strict
+rc: 78
+--- stdout
+{"cached": false, "cause": "x86_64/amd/zen2", "decision": "failed", "detail": "@WORK@/temp/RND/RND/fragment.sh: line 5: exp: command not found", "exit": 78, "exit_semantic": "strict-failure", "kind": "decision", "message": "eessi-arch-guard: this node is x86_64/amd/zen2, the modules were loaded for x86_64/amd/zen4; module load failed; environment left as it was", "now": null, "reload_needed": true, "schema_version": 1, "shell": false, "strict": true, "was": "x86_64/amd/zen4"}
+
+--- stderr
+
+--- end
+=== limit 200 json
+rc: 0
+--- stdout
+{"cached": false, "cause": "x86_64/amd/zen2", "decision": "failed", "detail": "@WORK@/temp/RND/RND/fragment.sh: line 4: unexpected EOF while looking for matching `''", "exit": 0, "exit_semantic": "ok", "kind": "decision", "message": "eessi-arch-guard: this node is x86_64/amd/zen2, the modules were loaded for x86_64/amd/zen4; not available for this target: EESSI/2025.06; environment left as it was", "now": null, "reload_needed": true, "schema_version": 1, "shell": false, "strict": false, "was": "x86_64/amd/zen4"}
+
+--- stderr
+
+--- end
+=== limit 200 plain
+rc: 0
+--- stdout
+export EESSI_ARCH_GUARD_FAILED=x86_64/amd/zen4->x86_64/amd/zen2
+print eessi-arch-guard: this node is x86_64/amd/zen2, the modules were loaded for x86_64/amd/zen4; not available for this target: EESSI/2025.06; environment left as it was
+
+--- stderr
+
+--- end
+=== limit 200 strict
+rc: 78
+--- stdout
+{"cached": false, "cause": "x86_64/amd/zen2", "decision": "failed", "detail": "@WORK@/temp/RND/RND/fragment.sh: line 4: unexpected EOF while looking for matching `''", "exit": 78, "exit_semantic": "strict-failure", "kind": "decision", "message": "eessi-arch-guard: this node is x86_64/amd/zen2, the modules were loaded for x86_64/amd/zen4; not available for this target: EESSI/2025.06; environment left as it was", "now": null, "reload_needed": true, "schema_version": 1, "shell": false, "strict": true, "was": "x86_64/amd/zen4"}
+
+--- stderr
+
+--- end
+=== limit 300 json
+rc: 0
+--- stdout
+{"cached": false, "cause": "x86_64/amd/zen2", "decision": "failed", "detail": "Lmod has detected the following error: EESSI is not loaded", "exit": 0, "exit_semantic": "ok", "kind": "decision", "message": "eessi-arch-guard: this node is x86_64/amd/zen2, the modules were loaded for x86_64/amd/zen4; not available for this target: R/4.4.2; environment left as it was", "now": null, "reload_needed": true, "schema_version": 1, "shell": false, "strict": false, "was": "x86_64/amd/zen4"}
+
+--- stderr
+
+--- end
+=== limit 300 plain
+rc: 0
+--- stdout
+export EESSI_ARCH_GUARD_FAILED=x86_64/amd/zen4->x86_64/amd/zen2
+print eessi-arch-guard: this node is x86_64/amd/zen2, the modules were loaded for x86_64/amd/zen4; not available for this target: R/4.4.2; environment left as it was
+
+--- stderr
+
+--- end
+=== limit 300 strict
+rc: 78
+--- stdout
+{"cached": false, "cause": "x86_64/amd/zen2", "decision": "failed", "detail": "Lmod has detected the following error: EESSI is not loaded", "exit": 78, "exit_semantic": "strict-failure", "kind": "decision", "message": "eessi-arch-guard: this node is x86_64/amd/zen2, the modules were loaded for x86_64/amd/zen4; not available for this target: R/4.4.2; environment left as it was", "now": null, "reload_needed": true, "schema_version": 1, "shell": false, "strict": true, "was": "x86_64/amd/zen4"}
+
+--- stderr
+
+--- end
