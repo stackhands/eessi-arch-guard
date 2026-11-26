@@ -13,7 +13,7 @@ This reads text. It does not remount, and it does not change a repository.
 - A file that holds the output of =cvmfs_config stat REPO=, or the same lines saved from the client.
   The revision is the line =Revision: N=. Some clients print =Catalog revision: N= or =Repository revision: N=.
 - Python 3.9 or newer. The script uses the standard library.
-- A checkout of this repository.
+- A checkout of this repository, or a `pip install .`, which installs the script at `$PREFIX/share/eessi-arch-guard/cvmfsrev.py` (`PREFIX` is `sys.prefix`).
 
 ** Steps
 
