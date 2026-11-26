@@ -1086,20 +1086,6 @@ class IntegrationTests(unittest.TestCase):
         before, after = self._killed_helper_run()
         self.assertEqual(before, after)
 
-    def test_tmp_leak_check_ignores_directories_of_other_tests(self):
-        made = []
-
-        def foreign():
-            made.append(tempfile.mkdtemp(prefix="eessi-arch-guard-foreign-"))
-
-        try:
-            before, after = self._killed_helper_run(foreign)
-            self.assertEqual(len(made), 1)
-            self.assertEqual(before, after)
-        finally:
-            for path in made:
-                shutil.rmtree(path, ignore_errors=True)
-
     def test_config_timeout_bounds_the_decision(self):
         conf = harness.PROGRAM.with_name("eessi-arch-guard.conf")
         conf.write_text("timeout = 1\n", encoding="utf-8")

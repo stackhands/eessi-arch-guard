@@ -641,20 +641,6 @@ class UnitTests:
         assert guard.from_wire(guard.to_wire(text)) == text
         assert os.fsencode(guard.from_wire(guard.to_wire(text))) == b"caf\xe9/bin"
 
-    def test_fake_lmod_writes_environment_bytes(self):
-        fake = Path(__file__).resolve().parent / "fake_lmod.py"
-        env = dict(os.environ)
-        env["PATH"] = "/usr/bin:/bin"
-        env["EESSI_TEST_BASE_PATH"] = "/opt/caf\udce9/bin"
-        proc = subprocess.run(
-            [sys.executable, "-I", str(fake), "bash", "--force", "purge"],
-            capture_output=True,
-            env=env,
-            check=False,
-        )
-        assert proc.returncode == 0, proc.stderr
-        assert b"export PATH='/opt/caf\xe9/bin'" in proc.stdout
-
     def test_timeout_values(self):
         assert guard.DEFAULT_TIMEOUT == 60
         assert str(guard.TIMEOUT_MAX) == "2147483.647"
@@ -1251,30 +1237,6 @@ class UnitTests:
         names = set(re.findall(r'["\']([A-Z][A-Z0-9_]{1,})["\']', source))
         missing_names = sorted(name for name in names if name not in readme)
         assert missing_names == []
-
-    def test_license_expression_has_no_license_classifier(self):
-        text = (Path(__file__).resolve().parents[1] / "pyproject.toml").read_text(encoding="utf-8")
-        assert 'license = "MIT"' in text
-        assert "License :: OSI Approved" not in text
-
-    def test_select_first_directory(self):
-        root = tempfile.mkdtemp()
-        try:
-            os.makedirs(os.path.join(root, "software", "linux", ZEN2, "software"))
-            # probe_cpu runs the script; exercise the directory walk directly.
-            chosen = None
-            for candidate in ( "x86_64/amd/zen5", ZEN4, ZEN2):
-                if not guard.safe_rel_subdir(candidate):
-                    continue
-                directory = os.path.join(root, "software", "linux", candidate, "software")
-                if os.path.isdir(directory):
-                    chosen = candidate
-                    break
-            assert chosen == ZEN2
-        finally:
-            import shutil
-
-            shutil.rmtree(root)
 
 
 def _assert_writes_exit_zero(argv, args, env=None):

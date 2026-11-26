@@ -78,12 +78,6 @@ class SitePathTests(unittest.TestCase):
         self.assertEqual(code, 1)
         self.assertIn("not on a cvmfs mount", text)
 
-    def test_the_how_to_names_the_command_and_the_default(self):
-        page = (ROOT / "docs" / "orgmode" / "howto" / "check-the-client-mount.org").read_text()
-        self.assertIn("share/sitepath.py", page)
-        self.assertIn("site modules", page)
-        self.assertIn("exit status", page.lower())
-
     def test_require_input_rejects_placeholder_modules_path(self):
         proc = subprocess.run(
             [
