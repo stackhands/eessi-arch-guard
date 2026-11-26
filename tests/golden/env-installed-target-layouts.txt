@@ -1,168 +1,3 @@
-=== layout 'x86_64/amd/nosoft:x86_64/amd/zen2' --dry-run
-rc: 0
---- stdout
-mode: prolog
-strict: false
-announce: true
-config: none
-chain: none
-timeout: 60
-syslog: none
-syslog_all: false
-syslog_pen: 32473
-job: none
-step: none
-localid: unset
-cache: none
-decision: reloaded
-was: x86_64/amd/zen4
-now: x86_64/amd/zen2
-was_accel: none
-now_accel: none
-compare_accel: true
-pin: none
-eessi: EESSI/2025.06
-modules: R/4.4.2
-marker: x86_64/amd/zen4->x86_64/amd/zen2
-detail: none
-message: eessi-arch-guard: would reload modules for x86_64/amd/zen2 (loaded for x86_64/amd/zen4)
-exit: 0
-
---- stderr
-
---- end
-=== layout 'x86_64/amd/filesoft:x86_64/amd/zen2' --dry-run
-rc: 0
---- stdout
-mode: prolog
-strict: false
-announce: true
-config: none
-chain: none
-timeout: 60
-syslog: none
-syslog_all: false
-syslog_pen: 32473
-job: none
-step: none
-localid: unset
-cache: none
-decision: reloaded
-was: x86_64/amd/zen4
-now: x86_64/amd/zen2
-was_accel: none
-now_accel: none
-compare_accel: true
-pin: none
-eessi: EESSI/2025.06
-modules: R/4.4.2
-marker: x86_64/amd/zen4->x86_64/amd/zen2
-detail: none
-message: eessi-arch-guard: would reload modules for x86_64/amd/zen2 (loaded for x86_64/amd/zen4)
-exit: 0
-
---- stderr
-
---- end
-=== layout 'x86_64/amd/linkzen2' --dry-run
-rc: 0
---- stdout
-mode: prolog
-strict: false
-announce: true
-config: none
-chain: none
-timeout: 60
-syslog: none
-syslog_all: false
-syslog_pen: 32473
-job: none
-step: none
-localid: unset
-cache: none
-decision: reloaded
-was: x86_64/amd/zen4
-now: x86_64/amd/linkzen2
-was_accel: none
-now_accel: none
-compare_accel: true
-pin: none
-eessi: EESSI/2025.06
-modules: R/4.4.2
-marker: x86_64/amd/zen4->x86_64/amd/linkzen2
-detail: none
-message: eessi-arch-guard: would reload modules for x86_64/amd/linkzen2 (loaded for x86_64/amd/zen4)
-exit: 0
-
---- stderr
-
---- end
-=== layout 'x86_64/amd/linkzen2:x86_64/amd/zen2' --dry-run
-rc: 0
---- stdout
-mode: prolog
-strict: false
-announce: true
-config: none
-chain: none
-timeout: 60
-syslog: none
-syslog_all: false
-syslog_pen: 32473
-job: none
-step: none
-localid: unset
-cache: none
-decision: reloaded
-was: x86_64/amd/zen4
-now: x86_64/amd/linkzen2
-was_accel: none
-now_accel: none
-compare_accel: true
-pin: none
-eessi: EESSI/2025.06
-modules: R/4.4.2
-marker: x86_64/amd/zen4->x86_64/amd/linkzen2
-detail: none
-message: eessi-arch-guard: would reload modules for x86_64/amd/linkzen2 (loaded for x86_64/amd/zen4)
-exit: 0
-
---- stderr
-
---- end
-=== layout 'x86_64/amd/dangling:x86_64/generic' --dry-run
-rc: 0
---- stdout
-mode: prolog
-strict: false
-announce: true
-config: none
-chain: none
-timeout: 60
-syslog: none
-syslog_all: false
-syslog_pen: 32473
-job: none
-step: none
-localid: unset
-cache: none
-decision: reloaded
-was: x86_64/amd/zen4
-now: x86_64/generic
-was_accel: none
-now_accel: none
-compare_accel: true
-pin: none
-eessi: EESSI/2025.06
-modules: R/4.4.2
-marker: x86_64/amd/zen4->x86_64/generic
-detail: none
-message: eessi-arch-guard: would reload modules for x86_64/generic (loaded for x86_64/amd/zen4)
-exit: 0
-
---- stderr
-
---- end
 === layout 'x86_64/amd/nosoft' --dry-run
 rc: 0
 --- stdout
@@ -229,55 +64,7 @@ exit: 0
 --- stderr
 
 --- end
-=== layout 'x86_64/amd/nosoft:x86_64/amd/zen2' live
-rc: 0
---- stdout
-export EBROOTR=@WORK@/prefix/software/linux/x86_64/amd/zen2/software/R/4.4.2
-export EESSI_ACCEL_SUBDIR=
-export EESSI_ARCH_GUARD_RELOADED=x86_64/amd/zen4->x86_64/amd/zen2
-export EESSI_SOFTWARE_SUBDIR=x86_64/amd/zen2
-export MODULEPATH=@WORK@/prefix/software/linux/x86_64/amd/zen2/modules/all
-export PATH=@WORK@/prefix/software/linux/x86_64/amd/zen2/software/R/4.4.2/bin:@WORK@/prefix/software/linux/x86_64/amd/zen2/bin:@WORK@/bin:/usr/bin:/bin
-export _LMFILES_=
-export _ModuleTable001_=table-for-x86_64-amd-zen2
-print eessi-arch-guard: reloaded modules for x86_64/amd/zen2 (loaded for x86_64/amd/zen4)
-
---- stderr
-
---- end
-=== layout 'x86_64/amd/filesoft:x86_64/amd/zen2' live
-rc: 0
---- stdout
-export EBROOTR=@WORK@/prefix/software/linux/x86_64/amd/zen2/software/R/4.4.2
-export EESSI_ACCEL_SUBDIR=
-export EESSI_ARCH_GUARD_RELOADED=x86_64/amd/zen4->x86_64/amd/zen2
-export EESSI_SOFTWARE_SUBDIR=x86_64/amd/zen2
-export MODULEPATH=@WORK@/prefix/software/linux/x86_64/amd/zen2/modules/all
-export PATH=@WORK@/prefix/software/linux/x86_64/amd/zen2/software/R/4.4.2/bin:@WORK@/prefix/software/linux/x86_64/amd/zen2/bin:@WORK@/bin:/usr/bin:/bin
-export _LMFILES_=
-export _ModuleTable001_=table-for-x86_64-amd-zen2
-print eessi-arch-guard: reloaded modules for x86_64/amd/zen2 (loaded for x86_64/amd/zen4)
-
---- stderr
-
---- end
-=== layout 'x86_64/amd/linkzen2' live
-rc: 0
---- stdout
-export EBROOTR=@WORK@/prefix/software/linux/x86_64/amd/linkzen2/software/R/4.4.2
-export EESSI_ACCEL_SUBDIR=
-export EESSI_ARCH_GUARD_RELOADED=x86_64/amd/zen4->x86_64/amd/linkzen2
-export EESSI_SOFTWARE_SUBDIR=x86_64/amd/linkzen2
-export MODULEPATH=@WORK@/prefix/software/linux/x86_64/amd/linkzen2/modules/all
-export PATH=@WORK@/prefix/software/linux/x86_64/amd/linkzen2/software/R/4.4.2/bin:@WORK@/prefix/software/linux/x86_64/amd/linkzen2/bin:@WORK@/bin:/usr/bin:/bin
-export _LMFILES_=
-export _ModuleTable001_=table-for-x86_64-amd-linkzen2
-print eessi-arch-guard: reloaded modules for x86_64/amd/linkzen2 (loaded for x86_64/amd/zen4)
-
---- stderr
-
---- end
-=== layout override 'x86_64/amd/nosoft' --dry-run
+=== layout 'x86_64/amd/linkzen2' --dry-run
 rc: 0
 --- stdout
 mode: prolog
@@ -293,24 +80,24 @@ job: none
 step: none
 localid: unset
 cache: none
-decision: failed
+decision: reloaded
 was: x86_64/amd/zen4
-now: none
+now: x86_64/amd/linkzen2
 was_accel: none
 now_accel: none
 compare_accel: true
 pin: none
-eessi: none
-modules: none
-marker: x86_64/amd/zen4->invalid-environment
+eessi: EESSI/2025.06
+modules: R/4.4.2
+marker: x86_64/amd/zen4->x86_64/amd/linkzen2
 detail: none
-message: eessi-arch-guard: EESSI_SOFTWARE_SUBDIR_OVERRIDE is not an installed target: x86_64/amd/nosoft; environment left as it was
+message: eessi-arch-guard: would reload modules for x86_64/amd/linkzen2 (loaded for x86_64/amd/zen4)
 exit: 0
 
 --- stderr
 
 --- end
-=== layout override 'x86_64/amd/filesoft' --dry-run
+=== layout 'x86_64/amd/dangling:x86_64/generic' --dry-run
 rc: 0
 --- stdout
 mode: prolog
@@ -326,51 +113,18 @@ job: none
 step: none
 localid: unset
 cache: none
-decision: failed
+decision: reloaded
 was: x86_64/amd/zen4
-now: none
+now: x86_64/generic
 was_accel: none
 now_accel: none
 compare_accel: true
 pin: none
-eessi: none
-modules: none
-marker: x86_64/amd/zen4->invalid-environment
+eessi: EESSI/2025.06
+modules: R/4.4.2
+marker: x86_64/amd/zen4->x86_64/generic
 detail: none
-message: eessi-arch-guard: EESSI_SOFTWARE_SUBDIR_OVERRIDE is not an installed target: x86_64/amd/filesoft; environment left as it was
-exit: 0
-
---- stderr
-
---- end
-=== layout override 'x86_64/amd/linkzen2' --dry-run
-rc: 0
---- stdout
-mode: prolog
-strict: false
-announce: true
-config: none
-chain: none
-timeout: 60
-syslog: none
-syslog_all: false
-syslog_pen: 32473
-job: none
-step: none
-localid: unset
-cache: none
-decision: skip
-was: x86_64/amd/zen4
-now: none
-was_accel: none
-now_accel: none
-compare_accel: true
-pin: none
-eessi: none
-modules: none
-marker: none
-detail: EESSI_SOFTWARE_SUBDIR_OVERRIDE is set
-message: none
+message: eessi-arch-guard: would reload modules for x86_64/generic (loaded for x86_64/amd/zen4)
 exit: 0
 
 --- stderr
