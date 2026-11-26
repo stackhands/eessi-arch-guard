@@ -28,13 +28,11 @@ The guard runs once per task, so its own cost is per rank.
 
 | | cold, archdetect each run | warm, cached for the job step |
 |---|---|---|
-| Python prolog (`src/eessi_arch_guard.py`) | 46.3 ms | 37.8 ms |
-| Zig binary, ReleaseSafe | 3.5 ms | 0.17 ms |
+| Static binary, ReleaseSafe | 3.5 ms | 0.17 ms |
 
-Python's own start-up is 5.6 ms of that (`python3 -I -c pass`).
-At those times, 192 ranks on a node start the Python prolog 192 times, about 7 s of process time per step, against about 0.03 s for the binary.
+192 ranks on a node start the binary 192 times, about 0.03 s of process time per step.
 
-Documentation: <https://stackhands.github.io/eessi-arch-guard/>, built from the Org pages in `docs/orgmode/`: a tutorial, how-to guides, explanation, and a reference, including the API generated from the Python and Zig code.
+Documentation: <https://stackhands.github.io/eessi-arch-guard/>, built from the Org pages in `docs/orgmode/`: a tutorial, how-to guides, explanation, and a reference, including the API generated from the Zig code.
 
 ```console
 pixi run -e docs docbld
@@ -42,21 +40,11 @@ pixi run -e docs docbld
 
 The HTML is written to `docs/build/html`. `docs/orgmode/contributing.org` says how to write a page.
 
-Release archives include bash and zsh completion files plus a man page generated from `build_arg_parser` with pinned `shtab` and `argparse-manpage`. Fish output stays out because that toolchain does not emit fish completion scripts.
+Release archives include bash and zsh completion files plus a man page, kept in `share/completions` and `share/man`; `tests/test_cli_assets.py` checks that they name every option of `--help`. There is no fish completion.
 
 ## Install the prolog
 
-The Python guard is the default prolog: install `src/eessi_arch_guard.py` (shebang `#!/usr/bin/python3 -I`, Python 3.9 or newer, standard library only). It runs once per task and takes about 46 ms where the static binary takes about 3.5 ms ([When you need it](#when-you-need-it-and-when-you-do-not)).
-
-```bash
-sudo install -m 755 src/eessi_arch_guard.py /usr/local/sbin/eessi-arch-guard
-```
-
-```
-TaskProlog=/usr/local/sbin/eessi-arch-guard
-```
-
-The static binary has the same interface ([COMPAT.md](COMPAT.md)) and is opt-in until it has passed a shadow comparison on a partition ([Develop](#develop)). To try it, take it from a [release](https://github.com/stackhands/eessi-arch-guard/releases) and install it at the same path.
+The static binary is the prolog. It runs once per task, takes about 3.5 ms cold, and needs no Python or library on the node. Take it from a [release](https://github.com/stackhands/eessi-arch-guard/releases) and install it as root:
 
 ```bash
 v=0.3.1 arch=x86_64   # or aarch64
@@ -66,13 +54,19 @@ sha256sum --check --ignore-missing SHA256SUMS
 sudo install -m 755 "eessi-arch-guard-${v}-${arch}-linux-musl" /usr/local/sbin/eessi-arch-guard
 ```
 
-`pip install .` also installs a console script for `eessi-arch-guard --shell` on a login node. That generated script is started without `-I`. Point `TaskProlog` at the file. The worked install, the config file, and the failure messages are in `docs/`.
+```
+TaskProlog=/usr/local/sbin/eessi-arch-guard
+```
 
-Three optional site tools ship in `share/`, each with a how-to:
+To build it, run `zig build -Drelease=true` with Zig 0.17.1; the binary is `zig-out/bin/eessi-arch-guard`.
+
+The release also has a wheel per architecture. `pip install eessi_arch_guard-*.whl` installs a package that carries the same binary: the `eessi-arch-guard` console script and `python3 -m eessi_arch_guard` start it with the arguments they were given, replacing the Python process. The launcher looks for the bundled binary, then for an executable `eessi-arch-guard` on `PATH`, and otherwise exits 127 with a message. Point `TaskProlog` at the binary, not at the console script: the prolog then starts no interpreter. The worked install, the config file, and the failure messages are in `docs/`.
+
+Optional site tools ship in `share/`, each with a how-to:
 
 - The Lmod `SitePackage.lua` hooks warn at module load, track module usage and hide toolchain modules: [Warn at module load](docs/orgmode/howto/warn-at-module-load.org).
-- `share/sitepath.py` checks that the site module tree precedes the EESSI tree and that the repository sits on a cvmfs mount: [Check the client mount](docs/orgmode/howto/check-the-client-mount.org).
-- `share/cvmfsrev.py` reads the CVMFS client revision from `cvmfs_config stat` output and compares it with a minimum: [Check the client revision](docs/orgmode/howto/check-the-client-revision.org).
+- `eessi-arch-guard --check-mount` checks that the site module tree precedes the EESSI tree and that the repository sits on a cvmfs mount: [Check the client mount](docs/orgmode/howto/check-the-client-mount.org). `share/sitepath.py` takes the same options and runs it.
+- `eessi-arch-guard --check-revision --stat FILE [--min N]` reads the CVMFS client revision from `cvmfs_config stat` output and compares it with a minimum: [Check the client revision](docs/orgmode/howto/check-the-client-revision.org). `share/cvmfsrev.py` takes the same options and runs it.
 
 ## Flags and environment
 
@@ -80,11 +74,13 @@ Three optional site tools ship in `share/`, each with a how-to:
 eessi-arch-guard [--shell] [--strict] [--dry-run] [--json] [--chain PATH] [--timeout SEC] [--syslog TARGET] [--restore] [-h|--help] [--version]
 eessi-arch-guard --check-submit --partition NAME [--constraint NAME] [--eb-stack PATH] [--json]
 eessi-arch-guard --check-submit --target TARGET [--eb-stack PATH] [--json]
+eessi-arch-guard --check-mount [--repo PATH] [--site PATH] [--eessi PATH] [--modulepath PATH] [--mountinfo FILE] [--require-input]
+eessi-arch-guard --check-revision --stat FILE [--min N]
 ```
 
 `--shell` prints bash assignments. `--strict` returns status 78 for a failed decision or unexpected exception; successful reloads, no-ops and intentional skips return zero. The default TaskProlog failure policy is unchanged. `--dry-run` loads the configuration, validates `--chain`, inspects the cache read-only, probes CPU and accelerator targets, and prints the decision it would make for the current node and job environment without executing `--chain`, writing cache or state, sending syslog events, or changing the environment. `--check-submit` maps `--partition NAME` and optional `--constraint NAME` through the site configuration, or takes the CPU target itself from `--target TARGET` (for example `x86_64/amd/zen4`) with no site configuration, then uses `--eb-stack PATH` (or configured `eb_stack`) to check `LOADEDMODULES` against the target module tree without changing it. The trees EESSI-extend installs into count too: `EESSI_USER_INSTALL`, `EESSI_PROJECT_INSTALL`, and `HOME/eessi` when neither of those is set, each at `versions/EESSI_VERSION/software/OS/TARGET/modules/all`. With `--json`, that check prints one object with `schema_version` 1 instead of the text summary. `--json` prints one line of JSON with the decision summary on stdout instead of prolog or shell lines on a normal run; with `--dry-run`, it emits the same decision fields plus the diagnostic keys; with `--check-submit`, it emits the check document. `--chain PATH` runs an existing task prolog first. `--timeout SEC` bounds the decision. `--syslog TARGET` (or `EESSI_ARCH_GUARD_SYSLOG` / config `syslog`) emits structured RFC 5424 or native `systemd-journald` events (`journald`, `syslog`, `unix:///path`, `journal+unix:///path`, `udp://host:port`, `tcp://host:port`) with stable `MSGID` values (`EESSI_ARCH_RELOAD` on reload, `EESSI_ARCH_FAIL` on failure, and `EESSI_ARCH_SKIP` / `EESSI_ARCH_NOOP` when `EESSI_ARCH_GUARD_SYSLOG_ALL=1` or config `syslog_all = 1`). RFC 5424 messages use `[archGuard@<PEN> ...]` structured data (`DEFAULT_SYSLOG_PEN` / `32473`, the IANA RFC 5398 / RFC 5424 section 6.3.2 documentation placeholder until `EESSI_ARCH_GUARD_SYSLOG_PEN` or config `syslog_pen` sets a site or project PEN); native journald records emit `MESSAGE`, `PRIORITY`, `SYSLOG_IDENTIFIER`, `SYSLOG_FACILITY`, `MSGID`, `ARCH_GUARD_KIND`, `ARCH_GUARD_CACHED`, `ARCH_GUARD_STRICT`, `ARCH_GUARD_WAS`, `ARCH_GUARD_NOW`, `ARCH_GUARD_CAUSE`, `SLURM_JOB_ID`, `SLURM_STEP_ID`, and `SLURM_LOCALID`. `--restore` is the helper the prolog execs. `-h` and `--help` print the usage text. `--version` prints the version.
 
-The prolog compares `EESSI_SOFTWARE_SUBDIR` and `EESSI_ACCEL_SUBDIR` with `eessi_archdetect.sh`, walking `<EESSI_PREFIX>/software/<EESSI_OS_TYPE>/<candidate>/software`. It may set `EESSI_SOFTWARE_SUBDIR_OVERRIDE` and drop a stale `EESSI_ARCHDETECT_OPTIONS`. Opt-out and pins: `EESSI_ARCH_GUARD=0`, `EESSI_ARCHDETECT_OPTIONS_OVERRIDE`, `EESSI_ACCELERATOR_TARGET_OVERRIDE`. Loud results set `EESSI_ARCH_GUARD_FAILED`. `EESSI_ARCH_GUARD_MISSING=ignore` restores silence when no software directory exists. `EESSI_ARCH_GUARD_VERBOSE=1` writes skip reasons to stderr; Slurm discards a TaskProlog's stderr, so read them by running the guard by hand inside a task. `EESSI_ARCH_GUARD_RELOADED` is `was->now`. The cache sits under `TMPDIR` if that directory exists, otherwise `/tmp`, and is opened with `O_NOFOLLOW`. The cache file and its `.lock` stay there after the job. The cache key includes `LOADEDMODULES`, `MODULEPATH`, `EESSI_INIT_PREFIX`, `EESSI_PROC_CPUINFO`, `PATH`, the task's allowed processors, and `CUDA_VISIBLE_DEVICES`, `ROCR_VISIBLE_DEVICES`, `GPU_DEVICE_ORDINAL`, `SLURM_STEP_GPUS`, and `SLURM_GPUS_ON_NODE` when those are set. `LMOD_CMD` is the module command the helper execs. `SLURM_CPU_BIND_LIST` and `SLURM_CPU_BIND` name the processors the task will run on, as a mask, a CPU list, or a `cpu[0-3]` hostlist; together with the cpuset and the affinity mask they limit the cpuinfo archdetect sees. `SLURM_JOB_ID`, `SLURM_STEP_ID`, and `SLURM_LOCALID` (local task 0) scope the cache and the `print` line. The helper process itself is `python3 -I -X utf8` with `PATH`, `HOME`, `LANG`, `LC_ALL`, `TMPDIR`, and `EESSI_ARCH_GUARD_WORKDIR` in its environment.
+The prolog compares `EESSI_SOFTWARE_SUBDIR` and `EESSI_ACCEL_SUBDIR` with `eessi_archdetect.sh`, walking `<EESSI_PREFIX>/software/<EESSI_OS_TYPE>/<candidate>/software`. It may set `EESSI_SOFTWARE_SUBDIR_OVERRIDE` and drop a stale `EESSI_ARCHDETECT_OPTIONS`. Opt-out and pins: `EESSI_ARCH_GUARD=0`, `EESSI_ARCHDETECT_OPTIONS_OVERRIDE`, `EESSI_ACCELERATOR_TARGET_OVERRIDE`. Loud results set `EESSI_ARCH_GUARD_FAILED`. `EESSI_ARCH_GUARD_MISSING=ignore` restores silence when no software directory exists. `EESSI_ARCH_GUARD_VERBOSE=1` writes skip reasons to stderr; Slurm discards a TaskProlog's stderr, so read them by running the guard by hand inside a task. `EESSI_ARCH_GUARD_RELOADED` is `was->now`. The cache sits under `TMPDIR` if that directory exists, otherwise `/tmp`, and is opened with `O_NOFOLLOW`. The cache file and its `.lock` stay there after the job. The cache key includes `LOADEDMODULES`, `MODULEPATH`, `EESSI_INIT_PREFIX`, `EESSI_PROC_CPUINFO`, `PATH`, the task's allowed processors, and `CUDA_VISIBLE_DEVICES`, `ROCR_VISIBLE_DEVICES`, `GPU_DEVICE_ORDINAL`, `SLURM_STEP_GPUS`, and `SLURM_GPUS_ON_NODE` when those are set. `LMOD_CMD` is the module command the helper execs. `SLURM_CPU_BIND_LIST` and `SLURM_CPU_BIND` name the processors the task will run on, as a mask, a CPU list, or a `cpu[0-3]` hostlist; together with the cpuset and the affinity mask they limit the cpuinfo archdetect sees. `SLURM_JOB_ID`, `SLURM_STEP_ID`, and `SLURM_LOCALID` (local task 0) scope the cache and the `print` line. The helper process is the binary started again with `--restore`, with `PATH`, `HOME`, `LANG`, `LC_ALL`, `TMPDIR`, and `EESSI_ARCH_GUARD_WORKDIR` in its environment.
 
 Strict restores and caches use an existing private directory owned by the caller: `EESSI_ARCH_GUARD_WORKDIR`, then `TMPDIR`, then `XDG_STATE_HOME/eessi-arch-guard` (or `HOME/.local/state/eessi-arch-guard`). The base must exist and is never created or widened by the guard. Strict mode has no shared temporary-directory fallback.
 
@@ -96,22 +92,18 @@ The worked install, the config file, and the failure messages are in `docs/`.
 
 ## Develop
 
-```console
-python3 -m pip install ruff
-ruff check src tests
-python3 -m unittest discover -s tests -v
-```
-
-The Zig build (`zig/`, Zig 0.17.1) is a static binary with the same interface; [COMPAT.md](COMPAT.md) lists that interface.
-Build it and run the same suite against it:
+Zig 0.17.1 builds and tests the binary; the suite under `tests/` is Python 3.9 or newer and runs the binary as a black box.
 
 ```console
+zig fmt --check build.zig build.zig.zon zig
 zig build test
 zig build -Drelease=true
+python3 -m pip install ruff jsonschema
+ruff check src tests share
 TOOL_BIN="$PWD/zig-out/bin/eessi-arch-guard" python3 -m unittest discover -s tests -v
 ```
 
-The Python guard stays the default prolog until the binary has passed a shadow comparison on a partition, the real-Lmod tests, and a second review of its validators.
+A test that pins a whole output compares it with a file under `tests/golden/`; `RECORD=1` rewrites those files from the binary, and the diff is the review. Tests that put a root-owned configuration file beside the binary call `sudo` and need passwordless `sudo`. [COMPAT.md](COMPAT.md) records the differences from the Python guard of releases before 0.4, for sites that move off it.
 
 Copyright (c) eessi-arch-guard developers
 
