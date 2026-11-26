@@ -275,7 +275,7 @@ class MountTests(unittest.TestCase):
         )
         self.assertEqual(proc.returncode, 2)
         self.assertEqual(
-            proc.stderr, f"eessi-arch-guard: cannot read {path}: No such file or directory\n"
+            proc.stderr, f"eessi-arch-guard: cannot read {path}: [Errno 2] No such file or directory\n"
         )
 
 
