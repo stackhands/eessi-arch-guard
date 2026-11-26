@@ -24,3 +24,4 @@ zig-pkg/
 /docs/**/__pycache__/
 /.pixi/
 /.lycheecache
+src/eessi_arch_guard/bin/
