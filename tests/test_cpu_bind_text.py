@@ -1,19 +1,17 @@
-"""The two guards must read a Slurm CPU bind value as Python does.
+"""A Slurm CPU bind value is stripped of Unicode whitespace and read digit by digit.
 
-Python strips the bind value with str.strip(), which removes every Unicode
-whitespace character, and reads each mask of a mask_cpu list with
-int(piece, 16). int() takes a decimal digit of any script as that digit,
-one underscore after the prefix and between digits, and whitespace after
-the digits. The Zig guard stripped ASCII whitespace and took ASCII hex
-digits only, so a bind value Python reads as the processor 1 was ignored
-there, and the task was matched to a CPU with every processor in view.
+The bind value is stripped of every Unicode whitespace character, and each
+mask of a mask_cpu list is read as a hexadecimal number that may carry a
+decimal digit of any script, one underscore after the prefix and between
+digits, and whitespace after the digits. A bind value read as the processor 1
+limits the task to that processor, and a value that is not a mask is ignored,
+so the task sees every processor.
 
 Each value is run on a cpuinfo whose processor 0 lacks the flags of the
-others, so reading the value as processor 1 makes the guard choose an Icelake
-directory and ignoring it does not. Python alone is checked for choosing it
-on the values it reads and for ignoring the rest, and then the two programs
-are compared, each on a site of its own. The comparison skips when TOOL_BIN is
-unset.
+others, so reading the value as processor 1 makes the binary choose an
+Icelake directory and ignoring it does not. The cases read as processor 1
+must choose it, the refused ones must choose what an ignored value chooses,
+and the whole output of each run is pinned in tests/golden/cpu-bind-text.txt.
 """
 
 from __future__ import annotations
@@ -23,11 +21,12 @@ import re
 import sys
 import unittest
 from pathlib import Path
-from typing import Dict, Iterator, Sequence, Tuple
+from typing import Dict, Iterator, Tuple
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import differential  # noqa: E402
+import golden  # noqa: E402
 import harness  # noqa: E402
 
 LOADED = "x86_64/amd/zen4"
@@ -96,7 +95,7 @@ def _refused() -> Iterator[Tuple[str, Dict[str, str]]]:
 
 
 class CpuBindTextTests(unittest.TestCase):
-    def _run(self, program: Sequence[str], extra: Dict[str, str]) -> Tuple[int, str, str]:
+    def _run(self, sheet: golden.Sheet, label: str, extra: Dict[str, str]) -> Tuple[int, str, str]:
         def build(site: harness.Site) -> Dict[str, str]:
             for cpu in CPUS:
                 site.add_cpu(cpu)
@@ -106,33 +105,23 @@ class CpuBindTextTests(unittest.TestCase):
             env.update(extra)
             return env
 
-        return differential.run_fresh(program, build, ["--json"]).observed()
+        return differential.assert_golden(self, sheet, label, build, ["--json"]).observed()
 
-    def _python(self) -> Sequence[str]:
-        return differential.python_guard()
-
-    def test_python_reads_the_values_and_ignores_the_rest(self) -> None:
-        ignored = json.loads(self._run(self._python(), {"SLURM_CPU_BIND_LIST": "zz"})[1])
+    def test_the_binary_reads_the_values_and_ignores_the_rest(self) -> None:
+        sheet = golden.Sheet("cpu-bind-text")
+        self.addCleanup(sheet.finish)
+        ignored = json.loads(self._run(sheet, "control ignored", {"SLURM_CPU_BIND_LIST": "zz"})[1])
         self.assertNotEqual(ignored["now"], ICELAKE)
         for name, extra in _read():
             with self.subTest(case=name):
-                code, out, err = self._run(self._python(), extra)
+                code, out, err = self._run(sheet, "read: " + name, extra)
                 self.assertEqual(code, 0, err)
                 self.assertEqual(json.loads(out)["now"], ICELAKE)
         for name, extra in _refused():
             with self.subTest(case=name):
-                code, out, err = self._run(self._python(), extra)
+                code, out, err = self._run(sheet, "ignored: " + name, extra)
                 self.assertEqual(code, 0, err)
                 self.assertEqual(json.loads(out)["now"], ignored["now"])
-
-    def test_programs_agree(self) -> None:
-        harness.skip_unless_tool_bin(self)
-        for name, extra in [*_read(), *_refused()]:
-            with self.subTest(case=name):
-                self.assertEqual(
-                    self._run(differential.zig_program(), extra),
-                    self._run(self._python(), extra),
-                )
 
 
 if __name__ == "__main__":

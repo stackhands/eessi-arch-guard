@@ -1,15 +1,13 @@
-"""The Python and Zig guards must report a failed planner write alike.
+"""check-submit reports a failed planner write.
 
 check-submit writes its planner inputs to a private directory and, when a
-write fails, reports "could not run eb-stack" followed by the OSError text.
-The cases make a real write fail without privileges: differential.run_fresh
-starts the guard under the shared size limiter, so the kernel answers a
-write past the cap with EFBIG. The cap is above the few bytes Python's
-temporary-directory probe writes and below the size of the easystack file,
-so the failure falls on the first planner file in both programs. Each
-program runs on a site of its own, and they are compared on exit status,
-standard output, and standard error. The comparison skips when TOOL_BIN is
-unset.
+write fails, reports "could not run eb-stack" followed by the error text. The
+case makes a real write fail without privileges: differential.run_fresh starts
+the binary under a file-size limit, so the kernel answers a write past the cap
+with EFBIG. The cap is above the few bytes a temporary-directory probe writes
+and below the size of the easystack file, so the failure falls on the first
+planner file. Exit status and both streams are asserted and pinned in
+tests/golden/submit-write-errno.txt.
 """
 
 from __future__ import annotations
@@ -23,6 +21,7 @@ from typing import Dict
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import differential  # noqa: E402
+import golden  # noqa: E402
 import harness  # noqa: E402
 
 TARGET = "x86_64/amd/zen4"
@@ -49,15 +48,13 @@ def build(site: harness.Site) -> Dict[str, str]:
     }
 
 
-class SubmitWriteErrnoParityTests(unittest.TestCase):
-    def test_python_guard_reports_the_write_errno(self) -> None:
-        python = differential.run_fresh(differential.python_guard(), build, ARGS, LIMIT)
-        self.assertEqual(python.returncode, 2, python.stderr)
-        self.assertIn(EXPECTED, python.stderr)
-
-    def test_programs_agree_when_a_planner_write_fails(self) -> None:
-        harness.skip_unless_tool_bin(self)
-        differential.assert_agree(self, build, ARGS, LIMIT)
+class SubmitWriteErrnoTests(unittest.TestCase):
+    def test_the_binary_reports_the_write_errno(self) -> None:
+        sheet = golden.Sheet("submit-write-errno")
+        self.addCleanup(sheet.finish)
+        run = differential.assert_golden(self, sheet, "efbig", build, ARGS, LIMIT)
+        self.assertEqual(run.returncode, 2, run.stderr)
+        self.assertIn(EXPECTED, run.stderr)
 
 
 if __name__ == "__main__":

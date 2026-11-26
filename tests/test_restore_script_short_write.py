@@ -1,18 +1,18 @@
-"""The Python and Zig restore helpers must treat a short script write alike.
+"""The restore helper goes on with a script that is written short.
 
 The restore helper writes the shell code Lmod printed to a private file with
-one os.write and runs it. When a size limit stops that write short, Python
-does not raise: the file holds the first bytes of the code and bash runs
-what is there. The Zig helper looped until every byte was written, so a
-short write became an error and the restore failed where Python goes on.
+one write and runs it. When a size limit stops that write short, the helper
+does not fail: the file holds the first bytes of the code and bash runs what
+is there.
 
 The helper is run alone, as the restore parent runs it, with the request on
-standard input, each program on a fresh site. The shared size limiter caps
-the size of any file the helper may write, so the kernel answers with a
-short write. The Lmod command prints a fixed script, so the point of the cut
-does not depend on a path or on timing: the limit lies inside a comment
-line, above the size of the wrapper script, and the line that sets the
-marker variable comes after it. The comparison skips when TOOL_BIN is unset.
+standard input, on a fresh site. The file-size limit caps the size of any file
+the helper may write, so the kernel answers with a short write. The Lmod
+command prints a fixed script, so the point of the cut does not depend on a
+path or on timing: the limit lies inside a comment line, above the size of the
+wrapper script, and the line that sets the marker variable comes after it. The
+whole output of the unlimited and the cut run is pinned in
+tests/golden/restore-script-short-write.txt.
 """
 
 from __future__ import annotations
@@ -27,6 +27,7 @@ from typing import Dict, Mapping, Optional
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import differential  # noqa: E402
+import golden  # noqa: E402
 import harness  # noqa: E402
 
 ZEN4 = "x86_64/amd/zen4"
@@ -65,25 +66,21 @@ def exported(stdout: str) -> Optional[Dict[str, str]]:
     return json.loads(stdout).get("env")
 
 
-class RestoreScriptShortWriteParityTests(unittest.TestCase):
-    def _python(self, limit: Optional[int]) -> differential.Result:
-        return differential.run_fresh(
-            differential.python_guard(), build, ["--restore"], limit, request
-        )
+class RestoreScriptShortWriteTests(unittest.TestCase):
+    def _run(self, sheet: golden.Sheet, label: str, limit: Optional[int]) -> differential.Result:
+        return differential.assert_golden(self, sheet, label, build, ["--restore"], limit, request)
 
-    def test_python_helper_goes_on_with_the_short_script(self) -> None:
-        full = self._python(None)
+    def test_the_helper_goes_on_with_the_short_script(self) -> None:
+        sheet = golden.Sheet("restore-script-short-write")
+        self.addCleanup(sheet.finish)
+        full = self._run(sheet, "unlimited", None)
         self.assertEqual(full.returncode, 0, full.stderr)
         self.assertEqual(exported(full.stdout)["MARKER"], "full")
-        short = self._python(LIMIT)
+        short = self._run(sheet, "limit %d" % LIMIT, LIMIT)
         self.assertEqual(short.returncode, 0, short.stderr)
         env = exported(short.stdout)
         self.assertEqual(env["LEAD"], "1")
         self.assertNotIn("MARKER", env)
-
-    def test_programs_agree_when_a_script_is_written_short(self) -> None:
-        harness.skip_unless_tool_bin(self)
-        differential.assert_agree(self, build, ["--restore"], LIMIT, request)
 
 
 if __name__ == "__main__":

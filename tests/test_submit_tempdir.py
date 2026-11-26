@@ -1,17 +1,15 @@
-"""The Python and Zig guards must report the same failure when no temporary
-directory takes a file.
+"""check-submit reports a missing temporary directory.
 
-check-submit makes its planner directory with tempfile.mkdtemp, which takes
-the directory from tempfile.gettempdir. When no candidate takes a probe
-file, gettempdir raises FileNotFoundError, and the guard reports the eb-stack
-run as failed with that text. The case makes every probe write fail without
-privileges: the shared size limiter caps the size of any file the program
-may write at zero, so the kernel answers the write with EFBIG. Each program
-runs on a fresh site with an eb-stack stub on PATH. The programs are compared
-on exit status, standard output, and standard error, as text and as JSON,
-with the variables that name a temporary directory unset and with one that
-is long enough for the message to be cut at 200 characters. The comparison
-skips when TOOL_BIN is unset.
+check-submit makes its planner directory in a temporary directory. When no
+candidate takes a probe file, the binary reports the eb-stack run as failed
+with the text "No usable temporary directory found in [". The case makes every
+probe write fail without privileges: the file-size limit caps the size of any
+file the binary may write at zero, so the kernel answers the write with EFBIG.
+Each run uses a fresh site with an eb-stack stub on PATH. Exit status,
+standard output, and standard error are pinned, as text and as JSON, with the
+variables that name a temporary directory unset and with one that is long
+enough for the message to be cut at 200 characters, in
+tests/golden/submit-tempdir.txt.
 """
 
 from __future__ import annotations
@@ -26,6 +24,7 @@ from typing import Dict, Mapping, Sequence
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import differential  # noqa: E402
+import golden  # noqa: E402
 import harness  # noqa: E402
 
 TARGET = "x86_64/amd/zen4"
@@ -56,25 +55,28 @@ def _build(extra: Mapping[str, str]) -> differential.Build:
     return build
 
 
-class SubmitTempdirParityTests(unittest.TestCase):
-    def _python(self, mode: Sequence[str]) -> differential.Result:
-        return differential.run_fresh(
-            differential.python_guard(), _build({}), [*ARGS, *mode], fsize=0
-        )
-
-    def test_python_guard_reports_the_gettempdir_error(self) -> None:
-        run = self._python(())
+class SubmitTempdirTests(unittest.TestCase):
+    def test_the_binary_reports_the_missing_directory(self) -> None:
+        sheet = golden.Sheet("submit-tempdir")
+        self.addCleanup(sheet.finish)
+        run = differential.assert_golden(self, sheet, "unset text", _build({}), [*ARGS], fsize=0)
         self.assertEqual(run.returncode, 2, run.stderr)
         self.assertIn(PREFIX, run.stderr)
-        run = self._python(("--json",))
+        run = differential.assert_golden(
+            self, sheet, "unset json", _build({}), [*ARGS, "--json"], fsize=0
+        )
         self.assertTrue(json.loads(run.stdout)["message"].startswith(PREFIX))
-
-    def test_programs_agree_when_no_temporary_directory_takes_a_file(self) -> None:
-        harness.skip_unless_tool_bin(self)
-        for extra, label in CASES:
+        for extra, label in CASES[1:]:
             for mode in MODES:
                 with self.subTest(tmpdir=label, mode=" ".join(mode)):
-                    differential.assert_agree(self, _build(extra), [*ARGS, *mode], 0)
+                    differential.assert_golden(
+                        self,
+                        sheet,
+                        "%s %s" % (label, " ".join(mode) or "text"),
+                        _build(extra),
+                        [*ARGS, *mode],
+                        0,
+                    )
 
 
 if __name__ == "__main__":
