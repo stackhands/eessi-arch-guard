@@ -14,6 +14,7 @@ const guard = @import("guard.zig");
 const jsonout = @import("jsonout.zig");
 const jsonline = @import("jsonline.zig");
 const syslog = @import("syslog.zig");
+const sitetools = @import("sitetools.zig");
 
 const sys = common.sys;
 const fsx = common.fsx;
@@ -24,11 +25,10 @@ const Allocator = std.mem.Allocator;
 const Py = json.Py;
 const empty: []const u8 = "";
 
-/// The version `--version` prints first, `.version` of build.zig.zon. The
-/// Python guard's `__version__` and pyproject.toml name the same one.
+/// The version `--version` prints first, `.version` of build.zig.zon.
 pub const version = build_options.version;
 const tool = "eessi-arch-guard";
-/// The Python guard's bare version, then this build (COMPAT.md).
+/// The bare version, then this build.
 const version_text = cli.versionLine(tool, version, build_options.commit)[tool.len + 1 ..];
 const strict_failure_exit: u8 = 78;
 const default_timeout: f64 = 60.0;
@@ -44,6 +44,9 @@ const help_text =
     \\       eessi-arch-guard --check-submit --partition NAME [--constraint NAME]
     \\                        [--eb-stack PATH] [--json]
     \\       eessi-arch-guard --check-submit --target TARGET [--eb-stack PATH] [--json]
+    \\       eessi-arch-guard --check-mount [--repo PATH] [--site PATH] [--eessi PATH]
+    \\                        [--modulepath PATH] [--mountinfo FILE] [--require-input]
+    \\       eessi-arch-guard --check-revision --stat FILE [--min N]
     \\
     \\Slurm TaskProlog: when the loaded EESSI CPU or accelerator target is not this
     \\node's, print export/unset lines for the reloaded module environment.
@@ -63,6 +66,10 @@ const help_text =
     \\so a site sets this in a wrapper or in a root-owned eessi-arch-guard.conf.
     \\--timeout SEC bounds the decision. The default is 60 seconds.
     \\--syslog TARGET sends structured RFC 5424 or journald decision events.
+    \\--check-mount says whether the EESSI repository is on a cvmfs mount and the site
+    \\module directory precedes the EESSI one on MODULEPATH; exit 0 when both hold.
+    \\--check-revision reads `cvmfs_config stat` output from --stat FILE, prints the
+    \\client revision, and exits 1 when it is older than --min N.
     \\--restore reads a JSON restore request on stdin and writes the JSON result.
     \\-h, --help print this text. --version prints the version.
     \\
@@ -270,6 +277,16 @@ const Args = struct {
     constraint: ?[]const u8 = null,
     eb_stack: ?[]const u8 = null,
     target: ?[]const u8 = null,
+    check_mount: bool = false,
+    check_revision: bool = false,
+    repo: ?[]const u8 = null,
+    site: ?[]const u8 = null,
+    eessi: ?[]const u8 = null,
+    modulepath: ?[]const u8 = null,
+    mountinfo: ?[]const u8 = null,
+    require_input: bool = false,
+    stat: ?[]const u8 = null,
+    min: ?[]const u8 = null,
 };
 
 /// _option_value: the word after argv[i.*], with i.* moved onto it, unless
@@ -331,6 +348,40 @@ fn parseArgs(argv: []const []const u8) Args {
             a.target = optionValue(argv, &i);
         } else if (std.mem.startsWith(u8, arg, "--target=")) {
             a.target = arg["--target=".len..];
+        } else if (std.mem.eql(u8, arg, "--repo")) {
+            a.repo = optionValue(argv, &i);
+        } else if (std.mem.startsWith(u8, arg, "--repo=")) {
+            a.repo = arg["--repo=".len..];
+        } else if (std.mem.eql(u8, arg, "--site")) {
+            a.site = optionValue(argv, &i);
+        } else if (std.mem.startsWith(u8, arg, "--site=")) {
+            a.site = arg["--site=".len..];
+        } else if (std.mem.eql(u8, arg, "--eessi")) {
+            a.eessi = optionValue(argv, &i);
+        } else if (std.mem.startsWith(u8, arg, "--eessi=")) {
+            a.eessi = arg["--eessi=".len..];
+        } else if (std.mem.eql(u8, arg, "--modulepath")) {
+            a.modulepath = optionValue(argv, &i);
+        } else if (std.mem.startsWith(u8, arg, "--modulepath=")) {
+            a.modulepath = arg["--modulepath=".len..];
+        } else if (std.mem.eql(u8, arg, "--mountinfo")) {
+            a.mountinfo = optionValue(argv, &i);
+        } else if (std.mem.startsWith(u8, arg, "--mountinfo=")) {
+            a.mountinfo = arg["--mountinfo=".len..];
+        } else if (std.mem.eql(u8, arg, "--stat")) {
+            a.stat = optionValue(argv, &i);
+        } else if (std.mem.startsWith(u8, arg, "--stat=")) {
+            a.stat = arg["--stat=".len..];
+        } else if (std.mem.eql(u8, arg, "--min")) {
+            a.min = optionValue(argv, &i);
+        } else if (std.mem.startsWith(u8, arg, "--min=")) {
+            a.min = arg["--min=".len..];
+        } else if (std.mem.eql(u8, arg, "--check-mount")) {
+            a.check_mount = true;
+        } else if (std.mem.eql(u8, arg, "--check-revision")) {
+            a.check_revision = true;
+        } else if (std.mem.eql(u8, arg, "--require-input")) {
+            a.require_input = true;
         }
     }
     return a;
@@ -1401,6 +1452,15 @@ fn realMain(arena: Allocator, argv0: []const u8, argv: []const []const u8, envp:
         .self_exe = selfExe(arena),
     };
     if (args.restore) return guard.restoreMain(&ctx);
+    if (args.check_mount) return sitetools.runMount(arena, .{
+        .repo = args.repo,
+        .site = args.site,
+        .eessi = args.eessi,
+        .modulepath = args.modulepath,
+        .mountinfo = args.mountinfo,
+        .require_input = args.require_input,
+    }, env);
+    if (args.check_revision) return sitetools.runRevision(arena, args.stat, args.min);
 
     var chain_out: []const u8 = "";
     const cfg = siteConfig(arena, invokedPath(arena, argv0));
@@ -1610,6 +1670,7 @@ test {
     _ = envmap;
     _ = guard;
     _ = syslog;
+    _ = sitetools;
     _ = @import("pydecode.zig");
 }
 
