@@ -1,7 +1,11 @@
 #!/bin/bash
-# Build the wheel with the binary in it, install it into a virtual environment,
-# and run the console script and the module through it. Needs no root and
-# changes nothing outside the temporary directory, which is removed on exit.
+# Install a wheel that carries the binary and the _launch extension into a
+# virtual environment, and run the console script and the module through it.
+# WHEEL names a wheel built by cibuildwheel, which is checked against the
+# manylinux tags. Without it the script builds one for $PYTHON from the
+# checkout (abi3 on a GIL CPython, cp313t or cp314t on a free-threaded one),
+# whose platform tag is linux_ARCH, and checks it with --local. Needs no root
+# and changes nothing outside the temporary directory, which is removed on exit.
 set -euo pipefail
 
 root=$(CDPATH='' cd -- "$(dirname -- "$0")/../.." && pwd)
@@ -15,19 +19,22 @@ cleanup() {
 }
 trap cleanup EXIT
 
-echo "+ install -D -m 755 eessi-arch-guard src/eessi_arch_guard/bin/eessi-arch-guard"
-install -D -m 755 "$binary" "$bundled"
 python=${PYTHON:-python3}
-echo "+ $python -m pip wheel --no-deps -w <dir> ."
-"$python" -m pip wheel --disable-pip-version-check --quiet --no-deps -w "$work/dist" "$root"
-wheel=$(printf '%s\n' "$work"/dist/*.whl)
-case "$wheel" in
-    *-py3-none-manylinux2014_*.whl) echo "wheel tag: py3-none-manylinux2014" ;;
-    *) echo "unexpected wheel name: $wheel" >&2; exit 1 ;;
-esac
-echo "+ python3 tools/check_wheel.py <wheel>"
-"$python" "$root/tools/check_wheel.py" "$wheel"
-rm -f "$bundled"
+if [ -n "${WHEEL:-}" ]; then
+    wheel=$WHEEL
+    echo "+ python3 tools/check_wheel.py <wheel>"
+    "$python" "$root/tools/check_wheel.py" "$wheel"
+else
+    echo "+ install -D -m 755 eessi-arch-guard src/eessi_arch_guard/bin/eessi-arch-guard"
+    install -D -m 755 "$binary" "$bundled"
+    echo "+ $python -m pip wheel --no-deps -w <dir> ."
+    "$python" -m pip wheel --disable-pip-version-check --quiet --no-deps -w "$work/dist" "$root"
+    wheel=$(printf '%s\n' "$work"/dist/*.whl)
+    echo "+ python3 tools/check_wheel.py --local <wheel>"
+    "$python" "$root/tools/check_wheel.py" --local "$wheel"
+    rm -f "$bundled"
+fi
+echo "wheel: ${wheel##*/}"
 
 echo "+ $python -m venv <venv>"
 "$python" -m venv "$work/venv"
@@ -47,6 +54,8 @@ if [ "$via_console" != "$direct" ] || [ "$via_module" != "$direct" ]; then
     exit 1
 fi
 echo "console script and module print the version of the binary: ${direct%% *}"
+echo "+ <venv>/bin/python -c 'import eessi_arch_guard._launch'"
+"$work/venv/bin/python" -c 'import eessi_arch_guard._launch as m; print(m.__file__)' 
 if [ "${direct%% *}" != "$version" ]; then
     echo "the package version $version is not the binary's ${direct%% *}" >&2
     exit 1

@@ -46,6 +46,8 @@ jobs:
       - name: build.zig.zon's version and -Dcommit reach --version
         run: bash tests/build_version.sh
       - uses: ./.github/actions/allow-userns
+      - name: build the _launch extension in place
+        run: python -m pip install setuptools && python setup.py build_ext --inplace
       - name: test
         run: TOOL_BIN="$PWD/zig-out/bin/eessi-arch-guard" python -m unittest discover -s tests -v
 
@@ -72,14 +74,27 @@ jobs:
       - run: zig build -Drelease=true
       - run: bash tests/build_version.sh
       - uses: ./.github/actions/allow-userns
+      - name: build the _launch extension in place
+        run: python -m pip install setuptools && python setup.py build_ext --inplace
       - name: test
         run: TOOL_BIN="$PWD/zig-out/bin/eessi-arch-guard" python -m unittest discover -s tests -v
 
-  wheel:
-    # The wheel carries the binary; the installed console script and module
-    # run it.
-    runs-on: ubuntu-22.04
-    timeout-minutes: 30
+  wheels:
+    # cibuildwheel builds the wheels in the manylinux2014 images: one abi3
+    # wheel from CPython 3.9 for every GIL CPython, and one wheel for each of
+    # the free-threaded 3.13t and 3.14t. Each carries the static binary, built
+    # for the same architecture.
+    name: wheels (${{ matrix.arch }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            os: ubuntu-22.04
+          - arch: aarch64
+            os: ubuntu-24.04-arm
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -92,19 +107,49 @@ jobs:
       - uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2.2.1
         with:
           version: 0.17.1
-      - run: zig build -Drelease=true
-      - name: build the wheel, install it, run the entry points
-        run: bash docs/examples/check_install.sh
+      - name: stage the static binary into the package
+        run: |
+          zig build -Drelease=true -Dtarget=${{ matrix.arch }}-linux-musl --prefix out
+          install -D -m 755 out/bin/eessi-arch-guard src/eessi_arch_guard/bin/eessi-arch-guard
+      - uses: pypa/cibuildwheel@f9b966cfadf4109556cadc5bb39ddb72d0ce664e # v4.3.5
+        with:
+          output-dir: dist
+      - name: check the tags and contents of every wheel
+        run: |
+          python -m pip install --quiet auditwheel
+          ls dist
+          test "$(ls dist/*.whl | wc -l)" -eq 3
+          for wheel in dist/*.whl; do
+            python tools/check_wheel.py "$wheel"
+            auditwheel show "$wheel"
+          done
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: wheels-${{ matrix.arch }}
+          path: dist/
 
-  free-threading:
-    # The same wheel on a free-threaded CPython: it installs, importing the
-    # launcher keeps the GIL off, and calls from many threads agree.
+  wheel-install:
+    # The x86_64 wheels from the wheels job, installed on each CPython they
+    # serve: the console script and module run the bundled binary, importing
+    # _launch keeps the GIL off on a free-threaded build, and calls from many
+    # threads agree.
+    needs: wheels
     runs-on: ubuntu-22.04
     timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.13t", "3.14t"]
+        include:
+          - python-version: "3.9"
+            wheel-tag: cp39-abi3
+          - python-version: "3.12"
+            wheel-tag: cp39-abi3
+          - python-version: "3.14"
+            wheel-tag: cp39-abi3
+          - python-version: "3.13t"
+            wheel-tag: cp313-cp313t
+          - python-version: "3.14t"
+            wheel-tag: cp314-cp314t
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -117,15 +162,29 @@ jobs:
         with:
           version: 0.17.1
       - run: zig build -Drelease=true
-      - name: build the wheel, install it, run the entry points and the thread probe
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: wheels-x86_64
+          path: dist
+      - name: install the wheel, run the entry points and the thread probe
+        env:
+          PYTHON: ${{ steps.python.outputs.python-path }}
+          WHEEL_TAG: ${{ matrix.wheel-tag }}
+          PYTHON_VERSION: ${{ matrix.python-version }}
+        run: |
+          case "$PYTHON_VERSION" in
+            *t) "$PYTHON" -c "import sysconfig, sys; assert sysconfig.get_config_var('Py_GIL_DISABLED'), sys.version" ;;
+          esac
+          wheel=$(printf '%s\n' dist/*-"$WHEEL_TAG"-*.whl)
+          WHEEL="$PWD/$wheel" bash docs/examples/check_install.sh
+      - name: the launcher tests on this Python
+        working-directory: tests
         env:
           PYTHON: ${{ steps.python.outputs.python-path }}
         run: |
-          "$PYTHON" -c "import sysconfig, sys; assert sysconfig.get_config_var('Py_GIL_DISABLED'), sys.version"
-          bash docs/examples/check_install.sh
-      - name: the launcher tests on this Python
-        working-directory: tests
-        run: TOOL_BIN="$GITHUB_WORKSPACE/zig-out/bin/eessi-arch-guard" "${{ steps.python.outputs.python-path }}" -m unittest -v test_free_threading test_package
+          "$PYTHON" -m pip install setuptools
+          (cd .. && "$PYTHON" setup.py build_ext --inplace)
+          TOOL_BIN="$GITHUB_WORKSPACE/zig-out/bin/eessi-arch-guard" "$PYTHON" -m unittest -v test_launch test_free_threading test_package
 
   real-eb-stack:
     # The tests that read EB_STACK_BIN skip without it, and no other job sets

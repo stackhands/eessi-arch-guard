@@ -28,7 +28,10 @@ jobs:
       - run: zig build test --summary all
       - uses: ./.github/actions/allow-userns
       - name: Python suite against the binary
-        run: zig build -Drelease=true && TOOL_BIN="$PWD/zig-out/bin/eessi-arch-guard" python3 -m unittest discover -s tests
+        run: |
+          python3 -m pip install setuptools
+          python3 setup.py build_ext --inplace
+          zig build -Drelease=true && TOOL_BIN="$PWD/zig-out/bin/eessi-arch-guard" python3 -m unittest discover -s tests
       - name: build
         run: |
           zig build -Drelease=true -Dtarget=${{ matrix.arch }}-linux-musl -Dcommit="${GITHUB_SHA::7}" --prefix out
@@ -54,12 +57,23 @@ jobs:
           cp share/completions/* dist/share/completions/
           cp share/man/eessi-arch-guard.1 dist/share/man/
           find dist/share -type f | sort
-      - name: wheel with the binary
+      - name: stage the binary into the package
         run: |
-          python3 -m pip install --quiet build
+          rm -rf src/eessi_arch_guard/*.so build
           install -D -m 755 out/bin/eessi-arch-guard src/eessi_arch_guard/bin/eessi-arch-guard
-          python3 -m build --wheel --outdir dist .
-          rm src/eessi_arch_guard/bin/eessi-arch-guard
+      # The manylinux2014 images build one cp39-abi3 wheel and one wheel for
+      # each of cp313t and cp314t; auditwheel repair tags them manylinux.
+      - uses: pypa/cibuildwheel@f9b966cfadf4109556cadc5bb39ddb72d0ce664e # v4.3.5
+        with:
+          output-dir: dist
+      - name: check the wheels
+        run: |
+          python3 -m pip install --quiet auditwheel
+          test "$(ls dist/*.whl | wc -l)" -eq 3
+          for wheel in dist/*.whl; do
+            python3 tools/check_wheel.py "$wheel"
+            auditwheel show "$wheel"
+          done
           ls dist
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
