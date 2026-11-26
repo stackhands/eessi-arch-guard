@@ -140,10 +140,11 @@ class FuzzTests:
             tmp_dir = root / "cache_tmp"
             tmp_dir.mkdir(mode=0o700)
             ad = init / "eessi_archdetect.sh"
-            ad.write_text(f"#!/bin/sh\nchmod 0000 {str(tmp_dir)!r}\nsleep 0.4\n", encoding="utf-8")
+            ad.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
             ad.chmod(0o755)
             cpuinfo = root / "cpuinfo"
             cpuinfo.write_text("processor : 0\nflags : avx2 fma\n", encoding="utf-8")
+            os.chmod(tmp_dir, 0)
 
             sock = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
             sock_path = root / "em.sock"
