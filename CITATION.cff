@@ -1,0 +1,22 @@
+cff-version: 1.2.0
+title: 'eessi-arch-guard: a Slurm TaskProlog for EESSI CPU and GPU target mismatches'
+message: If you use eessi-arch-guard, please cite it using the metadata below.
+type: software
+authors:
+- given-names: Rohit
+  family-names: Goswami
+  email: rgoswami@ieee.org
+  orcid: https://orcid.org/0000-0002-2393-8056
+license: MIT
+repository-code: https://github.com/stackhands/eessi-arch-guard
+url: https://stackhands.github.io/eessi-arch-guard/
+keywords:
+- EESSI
+- Slurm
+- Lmod
+- CPU architecture
+- HPC
+abstract: Slurm TaskProlog that detects a CPU or GPU target mismatch between a task
+  and its inherited EESSI module stack, reloads the stack through Lmod on the compute
+  node and prints the environment delta, plus a pre-submit check, Lmod site hooks
+  and mount checks.

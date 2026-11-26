@@ -46,17 +46,7 @@ Release archives include bash and zsh completion files plus a man page generated
 
 ## Install the prolog
 
-Install the static binary from a [release](https://github.com/stackhands/eessi-arch-guard/releases). It runs once per task, and starts in about 3.5 ms where the Python file takes about 46 ms ([When you need it](#when-you-need-it-and-when-you-do-not)).
-
-```bash
-v=0.3.1 arch=x86_64   # or aarch64
-curl -LO "https://github.com/stackhands/eessi-arch-guard/releases/download/v${v}/eessi-arch-guard-${v}-${arch}-linux-musl"
-curl -LO "https://github.com/stackhands/eessi-arch-guard/releases/download/v${v}/SHA256SUMS"
-sha256sum --check --ignore-missing SHA256SUMS
-sudo install -m 755 "eessi-arch-guard-${v}-${arch}-linux-musl" /usr/local/sbin/eessi-arch-guard
-```
-
-Without a binary for your architecture, install `src/eessi_arch_guard.py` instead (shebang `#!/usr/bin/python3 -I`, Python 3.9 or newer, standard library only); it has the same interface ([COMPAT.md](COMPAT.md)).
+The Python guard is the default prolog: install `src/eessi_arch_guard.py` (shebang `#!/usr/bin/python3 -I`, Python 3.9 or newer, standard library only). It runs once per task and takes about 46 ms where the static binary takes about 3.5 ms ([When you need it](#when-you-need-it-and-when-you-do-not)).
 
 ```bash
 sudo install -m 755 src/eessi_arch_guard.py /usr/local/sbin/eessi-arch-guard
@@ -66,7 +56,23 @@ sudo install -m 755 src/eessi_arch_guard.py /usr/local/sbin/eessi-arch-guard
 TaskProlog=/usr/local/sbin/eessi-arch-guard
 ```
 
+The static binary has the same interface ([COMPAT.md](COMPAT.md)) and is opt-in until it has passed a shadow comparison on a partition ([Develop](#develop)). To try it, take it from a [release](https://github.com/stackhands/eessi-arch-guard/releases) and install it at the same path.
+
+```bash
+v=0.3.1 arch=x86_64   # or aarch64
+curl -LO "https://github.com/stackhands/eessi-arch-guard/releases/download/v${v}/eessi-arch-guard-${v}-${arch}-linux-musl"
+curl -LO "https://github.com/stackhands/eessi-arch-guard/releases/download/v${v}/SHA256SUMS"
+sha256sum --check --ignore-missing SHA256SUMS
+sudo install -m 755 "eessi-arch-guard-${v}-${arch}-linux-musl" /usr/local/sbin/eessi-arch-guard
+```
+
 `pip install .` also installs a console script for `eessi-arch-guard --shell` on a login node. That generated script is started without `-I`. Point `TaskProlog` at the file. The worked install, the config file, and the failure messages are in `docs/`.
+
+Three optional site tools ship in `share/`, each with a how-to:
+
+- The Lmod `SitePackage.lua` hooks warn at module load, track module usage and hide toolchain modules: [Warn at module load](docs/orgmode/howto/warn-at-module-load.org).
+- `share/sitepath.py` checks that the site module tree precedes the EESSI tree and that the repository sits on a cvmfs mount: [Check the client mount](docs/orgmode/howto/check-the-client-mount.org).
+- `share/cvmfsrev.py` reads the CVMFS client revision from `cvmfs_config stat` output and compares it with a minimum: [Check the client revision](docs/orgmode/howto/check-the-client-revision.org).
 
 ## Flags and environment
 

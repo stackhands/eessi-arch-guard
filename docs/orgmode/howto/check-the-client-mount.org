@@ -18,7 +18,7 @@ This check changes nothing. It reads the mount table and =MODULEPATH= and prints
 
 ** Steps
 
-1. Ask, from a checkout of this repository:
+1. Ask, from a checkout of this repository (after `pip install .`, the same script sits at `$PREFIX/share/eessi-arch-guard/sitepath.py`, where `PREFIX` is `sys.prefix`):
 
    #+begin_src bash
    python3 share/sitepath.py \
