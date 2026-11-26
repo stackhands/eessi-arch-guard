@@ -47,6 +47,7 @@ Ranges = List[Tuple[int, int]]
 # longer differs fails as a new difference does.
 SIGMA_CLASS_CHANGED: Dict[int, str] = {
     0x1734: "14.0.0",  # HANUNOO SIGN PAMUDPOD: Mn in 13.0.0, Mc from 14.0.0 on
+    0x1171E: "16.0.0",  # AHOM CONSONANT SIGN MEDIAL RA: Mn in 13.0.0, Mc from 16.0.0 on
 }
 
 
