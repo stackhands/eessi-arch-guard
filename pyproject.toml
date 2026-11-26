@@ -50,6 +50,7 @@ select = ["E", "F", "W", "I"]
 # One abi3 wheel from CPython 3.9 for every GIL CPython, and one wheel per
 # free-threaded CPython, which takes no abi3 wheel.
 build = ["cp39-manylinux_*", "cp313t-manylinux_*", "cp314t-manylinux_*"]
+enable = ["cpython-freethreading"]
 archs = ["native"]
 manylinux-x86_64-image = "manylinux2014"
 manylinux-aarch64-image = "manylinux2014"

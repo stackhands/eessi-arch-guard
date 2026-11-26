@@ -63,7 +63,7 @@ jobs:
           install -D -m 755 out/bin/eessi-arch-guard src/eessi_arch_guard/bin/eessi-arch-guard
       # The manylinux2014 images build one cp39-abi3 wheel and one wheel for
       # each of cp313t and cp314t; auditwheel repair tags them manylinux.
-      - uses: pypa/cibuildwheel@f9b966cfadf4109556cadc5bb39ddb72d0ce664e # v4.3.5
+      - uses: pypa/cibuildwheel@8d2b08b68458a16aeb24b64e68a09ab1c8e82084 # v3.4.1
         with:
           output-dir: dist
       - name: check the wheels
