@@ -1,0 +1,25 @@
+# bash completion for eessi-arch-guard
+_eessi_arch_guard() {
+    local cur prev
+    cur=${COMP_WORDS[COMP_CWORD]}
+    prev=${COMP_WORDS[COMP_CWORD-1]}
+    case "$prev" in
+        --chain|--eb-stack|--mountinfo|--stat|--repo|--site|--eessi)
+            mapfile -t COMPREPLY < <(compgen -f -- "$cur")
+            return 0
+            ;;
+        --syslog)
+            mapfile -t COMPREPLY < <(compgen -W "journald syslog" -- "$cur")
+            return 0
+            ;;
+        --timeout|--partition|--constraint|--target|--modulepath|--min)
+            return 0
+            ;;
+    esac
+    local opts="--shell --strict --dry-run --json --chain --timeout --syslog --restore
+        --check-submit --partition --constraint --eb-stack --target
+        --check-mount --repo --site --eessi --modulepath --mountinfo --require-input
+        --check-revision --stat --min -h --help --version"
+    mapfile -t COMPREPLY < <(compgen -W "$opts" -- "$cur")
+}
+complete -F _eessi_arch_guard eessi-arch-guard
