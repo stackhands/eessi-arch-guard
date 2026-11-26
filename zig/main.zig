@@ -261,7 +261,7 @@ fn installCrashHandlers() void {
 
 // ---- arguments ---------------------------------------------------------
 
-const Args = struct {
+pub const Args = struct {
     shell: bool = false,
     restore: bool = false,
     help: bool = false,
@@ -299,7 +299,7 @@ fn optionValue(argv: []const []const u8, i: *usize) []const u8 {
 }
 
 /// parse_args: documented flags only; anything else is skipped.
-fn parseArgs(argv: []const []const u8) Args {
+pub fn parseArgs(argv: []const []const u8) Args {
     var a: Args = .{};
     var i: usize = 0;
     while (i < argv.len) : (i += 1) {
@@ -481,7 +481,7 @@ fn parseTimeout(arena: Allocator, s: []const u8) ?f64 {
 
 // ---- the site configuration --------------------------------------------
 
-const Settings = std.StringArrayHashMapUnmanaged([]const u8);
+pub const Settings = std.StringArrayHashMapUnmanaged([]const u8);
 
 const Config = struct {
     path: ?[]const u8 = null,
@@ -942,7 +942,7 @@ fn selectorHint(arena: Allocator, settings: Settings, prefix: []const u8, value:
     return arena.print("; nearest known {s} is {s}{s}", .{ kind, prefix, chosen }) catch "";
 }
 
-fn submitTarget(arena: Allocator, settings: ?Settings, partition: []const u8, constraint: []const u8, why: *[]const u8) ?[]const u8 {
+pub fn submitTarget(arena: Allocator, settings: ?Settings, partition: []const u8, constraint: []const u8, why: *[]const u8) ?[]const u8 {
     if (!submitSelector(partition)) {
         why.* = "--partition needs one safe partition name";
         return null;
@@ -1672,6 +1672,8 @@ test {
     _ = syslog;
     _ = sitetools;
     _ = @import("pydecode.zig");
+    _ = @import("submit_target_test.zig");
+    _ = @import("syslog_pen_test.zig");
 }
 
 test "parseArgs" {

@@ -1,0 +1,45 @@
+=== EESSI_SOFTWARE_SUBDIR_OVERRIDE='   '
+rc: 0
+--- stdout
+export EESSI_ARCH_GUARD_FAILED=x86_64/amd/zen4->invalid-environment
+print eessi-arch-guard: EESSI_SOFTWARE_SUBDIR_OVERRIDE is not a safe subdirectory:    ; environment left as it was
+
+--- stderr
+
+--- end
+=== EESSI_SOFTWARE_SUBDIR_OVERRIDE='x86_64/amd/zen4/'
+rc: 0
+--- stdout
+export EESSI_ARCH_GUARD_FAILED=x86_64/amd/zen4->invalid-environment
+print eessi-arch-guard: EESSI_SOFTWARE_SUBDIR_OVERRIDE is not a safe subdirectory: x86_64/amd/zen4/; environment left as it was
+
+--- stderr
+
+--- end
+=== EESSI_SOFTWARE_SUBDIR_OVERRIDE='x86_64/amd/unknownarch'
+rc: 0
+--- stdout
+export EESSI_ARCH_GUARD_FAILED=x86_64/amd/zen4->invalid-environment
+print eessi-arch-guard: EESSI_SOFTWARE_SUBDIR_OVERRIDE is not an installed target: x86_64/amd/unknownarch; environment left as it was
+
+--- stderr
+
+--- end
+=== EESSI_ACCEL_SUBDIR='accel/nvidia/cc90/'
+rc: 0
+--- stdout
+export EESSI_ARCH_GUARD_FAILED=x86_64/amd/zen4->invalid-environment
+print eessi-arch-guard: EESSI_ACCEL_SUBDIR is not a valid accelerator subdirectory: accel/nvidia/cc90/; environment left as it was
+
+--- stderr
+
+--- end
+=== EESSI_ACCEL_SUBDIR=' accel/nvidia/cc90'
+rc: 0
+--- stdout
+export EESSI_ARCH_GUARD_FAILED=x86_64/amd/zen4->invalid-environment
+print eessi-arch-guard: EESSI_ACCEL_SUBDIR is not a valid accelerator subdirectory:  accel/nvidia/cc90; environment left as it was
+
+--- stderr
+
+--- end

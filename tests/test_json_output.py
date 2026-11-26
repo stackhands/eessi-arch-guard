@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import subprocess
-import sys
 import unittest
 from pathlib import Path
 
@@ -146,17 +145,23 @@ class JsonOutputTests(unittest.TestCase):
             site.close()
 
     def test_restore_reply_validates_fixture(self):
-        sys.path.insert(0, str(ROOT / "src"))
-        import eessi_arch_guard as guard  # noqa: E402
-        sample = guard.do_restore(
-            {
-                "env": {"PATH": guard.to_wire("/bin")},
-                "eessi": guard.to_wire("EESSI/2026"),
-                "modules": [],
-                "lmod": guard.to_wire("/bin/false"),
-                "pin": "",
-            }
+        request = {
+            "env": {"PATH": "/bin"},
+            "eessi": "EESSI/2026",
+            "modules": [],
+            "lmod": "/bin/false",
+            "pin": "",
+        }
+        proc = subprocess.run(
+            [*harness.GUARD_ARGV, "--restore"],
+            input=json.dumps(request).encode("utf-8"),
+            env={"PATH": "/usr/bin:/bin", "LC_ALL": "C"},
+            capture_output=True,
+            check=False,
         )
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        sample = json.loads(proc.stdout)
+        self.assertIs(sample["ok"], False)
         self.restore_validator.validate(sample)
 
     def test_unreadable_config_reports_errno_permission_denied(self):

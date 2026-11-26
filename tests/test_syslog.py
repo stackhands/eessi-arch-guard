@@ -14,7 +14,6 @@ import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 import harness  # noqa: E402
 
@@ -310,26 +309,18 @@ class SyslogTests(unittest.TestCase):
         self.assertIn("syslog", bad.stderr.lower())
 
     def test_custom_syslog_pen_from_env_and_config_and_invalid_pen_warns(self):
-        import eessi_arch_guard as guard  # noqa: E402
-
-        self.assertEqual(guard.DEFAULT_SYSLOG_PEN, "32473")
-        pen, warn = guard.resolve_syslog_pen(
-            {"EESSI_ARCH_GUARD_SYSLOG_PEN": "49152"},
-            {"syslog_pen": "12345"},
-        )
-        self.assertEqual(pen, "49152")
-        self.assertIsNone(warn)
-
-        pen_cfg, warn_cfg = guard.resolve_syslog_pen({}, {"syslog_pen": "12345"})
-        self.assertEqual(pen_cfg, "12345")
-        self.assertIsNone(warn_cfg)
-
-        pen_bad, warn_bad = guard.resolve_syslog_pen(
-            {"EESSI_ARCH_GUARD_SYSLOG_PEN": "0"},
-            {"syslog_pen": "12345"},
-        )
-        self.assertEqual(pen_bad, "12345")
-        self.assertIsNotNone(warn_bad)
+        for pen_env, want_pen, want_warning in (
+            (None, "32473", False),
+            ("49152", "49152", False),
+            ("0", "32473", True),
+        ):
+            extra = {} if pen_env is None else {"EESSI_ARCH_GUARD_SYSLOG_PEN": pen_env}
+            dry = harness.run_guard(
+                self._cpu_env(ZEN4, "zen2", extra), ["--dry-run", "--json"]
+            )
+            self.assertEqual(dry.returncode, 0, dry.stderr)
+            self.assertEqual(json.loads(dry.stdout)["syslog"]["pen"], want_pen)
+            self.assertEqual("syslog_pen" in dry.stderr.lower(), want_warning, dry.stderr)
 
         sock, path = self._dgram_server("pen.sock")
         try:

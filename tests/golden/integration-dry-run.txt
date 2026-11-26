@@ -1,0 +1,90 @@
+=== no site, text
+rc: 0
+--- stdout
+mode: prolog
+strict: false
+announce: true
+config: none
+chain: none
+timeout: 60
+syslog: none
+syslog_all: false
+syslog_pen: 32473
+job: none
+step: none
+localid: unset
+cache: none
+decision: skip
+was: none
+now: none
+was_accel: none
+now_accel: none
+compare_accel: true
+pin: none
+eessi: none
+modules: none
+marker: none
+detail: EESSI is not loaded
+message: none
+exit: 0
+
+--- stderr
+
+--- end
+=== no site, json
+rc: 0
+--- stdout
+{"announce": true, "cache": {"cached_kind": null, "hit": false, "path": null}, "cached": false, "cause": "not-loaded", "chain": {"path": null, "source": "none", "status": "none"}, "compare_accel": true, "config": {"path": null, "status": "none", "warning": null}, "decision": "skip", "detail": "EESSI is not loaded", "eessi": null, "exit": 0, "exit_semantic": "ok", "job": {"id": null, "localid": null, "step": null}, "kind": "decision", "marker": null, "message": null, "mode": "prolog", "modules": [], "now": null, "now_accel": null, "pin": null, "reload_needed": false, "schema_version": 1, "shell": false, "strict": false, "syslog": {"all": false, "pen": "32473", "target": null}, "timeout": 60.0, "was": null, "was_accel": null}
+
+--- stderr
+
+--- end
+=== no site, decision json
+rc: 0
+--- stdout
+{"cached": false, "cause": "not-loaded", "decision": "skip", "detail": "EESSI is not loaded", "exit": 0, "exit_semantic": "ok", "kind": "decision", "message": null, "now": null, "reload_needed": false, "schema_version": 1, "shell": false, "strict": false, "was": null}
+
+--- stderr
+
+--- end
+=== reload, strict, chain, text
+rc: 0
+--- stdout
+mode: prolog
+strict: true
+announce: true
+config: none
+chain: @WORK@/dry-run-chain.sh (cli, valid)
+timeout: 15
+syslog: none
+syslog_all: false
+syslog_pen: 32473
+job: 314
+step: 2
+localid: 0
+cache: @WORK@/@CACHE@ (miss)
+decision: reloaded
+was: x86_64/amd/zen4
+now: x86_64/amd/zen2
+was_accel: none
+now_accel: none
+compare_accel: true
+pin: none
+eessi: EESSI/2025.06
+modules: R/4.4.2
+marker: x86_64/amd/zen4->x86_64/amd/zen2
+detail: none
+message: eessi-arch-guard: would reload modules for x86_64/amd/zen2 (loaded for x86_64/amd/zen4)
+exit: 0
+
+--- stderr
+
+--- end
+=== reload, strict, chain, json
+rc: 0
+--- stdout
+{"announce": true, "cache": {"cached_kind": null, "hit": false, "path": "@WORK@/@CACHE@"}, "cached": false, "cause": null, "chain": {"path": "@WORK@/dry-run-chain.sh", "source": "cli", "status": "valid"}, "compare_accel": true, "config": {"path": null, "status": "none", "warning": null}, "decision": "reloaded", "detail": null, "eessi": "EESSI/2025.06", "exit": 0, "exit_semantic": "ok", "job": {"id": "314", "localid": "0", "step": "2"}, "kind": "decision", "marker": "x86_64/amd/zen4->x86_64/amd/zen2", "message": "eessi-arch-guard: would reload modules for x86_64/amd/zen2 (loaded for x86_64/amd/zen4)", "mode": "prolog", "modules": ["R/4.4.2"], "now": "x86_64/amd/zen2", "now_accel": null, "pin": null, "reload_needed": true, "schema_version": 1, "shell": false, "strict": true, "syslog": {"all": false, "pen": "32473", "target": null}, "timeout": 1.5, "was": "x86_64/amd/zen4", "was_accel": null}
+
+--- stderr
+
+--- end
