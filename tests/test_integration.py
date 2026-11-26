@@ -101,28 +101,30 @@ class IntegrationTests(unittest.TestCase):
         self.site.write_cpuinfo(node)
         return harness.base_env(self.site, loaded, list(modules), gpu="none")
 
-    def test_zen4_to_zen2(self):
-        env = self._cpu_env(ZEN4, "zen2")
-        proc = harness.run_guard(env)
-        changes, printed = _assert_prolog(proc)
-        self.assertEqual(changes["EESSI_SOFTWARE_SUBDIR"], ZEN2)
-        self.assertIn(ZEN2, changes["EBROOTR"])
-        self.assertNotIn(ZEN4, changes["EBROOTR"])
-        self.assertEqual(changes["EESSI_ARCH_GUARD_RELOADED"], "%s->%s" % (ZEN4, ZEN2))
-        self.assertTrue(printed)
-        self.assertIn("--force", " ".join(harness.log_lines(self.site.log)))
-        # Idempotent once the task environment is the reloaded one.
-        again = harness.run_guard(_apply(env, changes))
-        self.assertEqual(again.stdout, "")
-        self.assertEqual(again.returncode, 0)
-
-    def test_zen2_to_zen4(self):
-        env = self._cpu_env(ZEN2, "zen4")
-        proc = harness.run_guard(env)
-        changes, _printed = _assert_prolog(proc)
-        self.assertEqual(changes["EESSI_SOFTWARE_SUBDIR"], ZEN4)
-        self.assertIn(ZEN4, changes["EBROOTR"])
-        self.assertEqual(changes["EESSI_ARCH_GUARD_RELOADED"], "%s->%s" % (ZEN2, ZEN4))
+    def test_cpu_reload_between_zen_targets(self):
+        # loaded, node, expect subdir, path that must leave EBROOTR, idempotent
+        rows = (
+            (ZEN4, "zen2", ZEN2, ZEN4, True),
+            (ZEN2, "zen4", ZEN4, None, False),
+        )
+        for loaded, node, expect, excluded, idempotent in rows:
+            with self.subTest(loaded=loaded, node=node):
+                env = self._cpu_env(loaded, node)
+                proc = harness.run_guard(env)
+                changes, printed = _assert_prolog(proc)
+                self.assertEqual(changes["EESSI_SOFTWARE_SUBDIR"], expect)
+                self.assertIn(expect, changes["EBROOTR"])
+                if excluded is not None:
+                    self.assertNotIn(excluded, changes["EBROOTR"])
+                self.assertEqual(
+                    changes["EESSI_ARCH_GUARD_RELOADED"], "%s->%s" % (loaded, expect)
+                )
+                if idempotent:
+                    self.assertTrue(printed)
+                    self.assertIn("--force", " ".join(harness.log_lines(self.site.log)))
+                    again = harness.run_guard(_apply(env, changes))
+                    self.assertEqual(again.stdout, "")
+                    self.assertEqual(again.returncode, 0)
 
     def test_cc90_to_cc120(self):
         self.site.write_cpuinfo("zen4")
@@ -1175,31 +1177,102 @@ class IntegrationTests(unittest.TestCase):
         self.assertEqual(proc.returncode, 0, proc.stderr)
         return proc.stdout.strip()
 
-    def test_kvm_sapphirerapids_without_waitpkg_falls_back(self):
-        # The stub still offers sapphirerapids: its flag list matches
-        # archdetect and does not require waitpkg. The guard must not.
+    def test_cpu_family_fallback_follows_the_installed_tree(self):
+        # cpuinfo, model rewrite, trees, modules, loaded, expect or None
+        # for a noop, and the extra columns each old case checked.
         spr = "x86_64/intel/sapphirerapids"
         icelake = "x86_64/intel/icelake"
-        self.site.add_cpu(spr)
-        self.site.add_cpu(icelake)
-        self.site.add_module(spr, "R/4.4.2")
-        self.site.add_module(icelake, "R/4.4.2")
-        self._copy_cpuinfo("sapphirerapids-kvm-no-waitpkg.cpuinfo")
-        offered = self._stub_cpupath()
-        self.assertTrue(offered.startswith(spr + ":"), offered)
-        self.assertIn(icelake, offered)
-        env = harness.base_env(self.site, spr, ["R/4.4.2"], gpu="none")
-        proc = harness.run_guard(env)
-        changes, printed = _assert_prolog(proc)
-        self.assertEqual(changes["EESSI_SOFTWARE_SUBDIR"], icelake)
-        self.assertNotEqual(changes["EESSI_SOFTWARE_SUBDIR"], spr)
-        self.assertEqual(changes["EESSI_SOFTWARE_SUBDIR_OVERRIDE"], icelake)
-        self.assertEqual(changes["EESSI_ARCHDETECT_OPTIONS"], icelake)
-        self.assertIn(spr, changes["EESSI_ARCH_GUARD_RELOADED"])
-        self.assertIn(icelake, changes["EESSI_ARCH_GUARD_RELOADED"])
-        self.assertTrue(printed)
+        skylake = "x86_64/intel/skylake_avx512"
+        gnr = "x86_64/intel/graniterapids"
+        rows = (
+            {
+                "cpuinfo": "sapphirerapids-kvm-no-waitpkg.cpuinfo",
+                "trees": (spr, icelake),
+                "modules": (spr, icelake),
+                "loaded": spr,
+                "expect": icelake,
+                "offered_prefix": spr + ":",
+                "offered_contains": icelake,
+                "override": icelake,
+                "archdetect": icelake,
+                "reloaded": (spr, icelake),
+                "printed": True,
+                "source_excludes": icelake,
+            },
+            {
+                "cpuinfo": "sapphirerapids-kvm-no-waitpkg.cpuinfo",
+                "trees": (spr, skylake),
+                "modules": (skylake,),
+                "loaded": spr,
+                "expect": skylake,
+                "override": skylake,
+                "source_excludes": skylake,
+            },
+            {
+                "cpuinfo": "sapphirerapids-8488C.cpuinfo",
+                "trees": (spr,),
+                "modules": (spr,),
+                "loaded": spr,
+                "expect": None,
+                "offered_prefix": spr + ":",
+                "offered_contains": "x86_64/intel/icelake:",
+            },
+            {
+                "cpuinfo": "sapphirerapids-kvm-no-waitpkg.cpuinfo",
+                "model_rewrite": ("model           : 143", "model           : 173"),
+                "trees": (gnr, spr, icelake),
+                "modules": (icelake,),
+                "loaded": gnr,
+                "expect": icelake,
+                "offered_prefix": gnr + ":" + spr + ":",
+                "override": icelake,
+            },
+        )
         source = harness.GUARD.read_text(encoding="utf-8")
-        self.assertNotIn(icelake, source)
+        for row in rows:
+            with self.subTest(loaded=row["loaded"], expect=row["expect"]):
+                self.site.close()
+                self.site = _site()
+                for tree in row["trees"]:
+                    self.site.add_cpu(tree)
+                for tree in row["modules"]:
+                    self.site.add_module(tree, "R/4.4.2")
+                if "model_rewrite" in row:
+                    text = (
+                        Path(__file__).resolve().parent
+                        / "fixtures"
+                        / "cpuinfo"
+                        / row["cpuinfo"]
+                    ).read_text(encoding="ascii")
+                    old, new = row["model_rewrite"]
+                    text = text.replace(old, new, 1)
+                    with open(self.site.cpuinfo, "w", encoding="ascii") as handle:
+                        handle.write(text)
+                else:
+                    self._copy_cpuinfo(row["cpuinfo"])
+                offered = self._stub_cpupath()
+                if "offered_prefix" in row:
+                    self.assertTrue(offered.startswith(row["offered_prefix"]), offered)
+                if "offered_contains" in row:
+                    self.assertIn(row["offered_contains"], offered)
+                env = harness.base_env(self.site, row["loaded"], ["R/4.4.2"], gpu="none")
+                proc = harness.run_guard(env)
+                if row["expect"] is None:
+                    _assert_prolog(proc)
+                    self.assertEqual(proc.stdout, "")
+                    continue
+                changes, printed = _assert_prolog(proc)
+                self.assertEqual(changes["EESSI_SOFTWARE_SUBDIR"], row["expect"])
+                if "override" in row:
+                    self.assertEqual(changes["EESSI_SOFTWARE_SUBDIR_OVERRIDE"], row["override"])
+                if "archdetect" in row:
+                    self.assertEqual(changes["EESSI_ARCHDETECT_OPTIONS"], row["archdetect"])
+                for part in row.get("reloaded", ()):
+                    self.assertIn(part, changes["EESSI_ARCH_GUARD_RELOADED"])
+                if row.get("printed"):
+                    self.assertTrue(printed)
+                if "source_excludes" in row:
+                    self.assertNotIn(row["source_excludes"], source)
 
     def test_alderlake_aliases_without_waitpkg_fall_back(self):
         aliases = ("raptorlake", "meteorlake", "gracemont", "lunarlake")
@@ -1314,34 +1387,6 @@ class IntegrationTests(unittest.TestCase):
             self.assertRegex(proc.stderr, r"\Aeessi-arch-guard: restore failed: .* is not JSON\n\Z")
         self.assertEqual(harness.log_lines(self.site.log), [])
 
-    def test_kvm_sapphirerapids_falls_back_to_skylake_when_that_tree_exists(self):
-        spr = "x86_64/intel/sapphirerapids"
-        skylake = "x86_64/intel/skylake_avx512"
-        self.site.add_cpu(spr)
-        self.site.add_cpu(skylake)
-        self.site.add_module(skylake, "R/4.4.2")
-        self._copy_cpuinfo("sapphirerapids-kvm-no-waitpkg.cpuinfo")
-        env = harness.base_env(self.site, spr, ["R/4.4.2"], gpu="none")
-        proc = harness.run_guard(env)
-        changes, _printed = _assert_prolog(proc)
-        self.assertEqual(changes["EESSI_SOFTWARE_SUBDIR"], skylake)
-        self.assertEqual(changes["EESSI_SOFTWARE_SUBDIR_OVERRIDE"], skylake)
-        source = harness.GUARD.read_text(encoding="utf-8")
-        self.assertNotIn(skylake, source)
-
-    def test_real_sapphirerapids_keeps_the_target(self):
-        spr = "x86_64/intel/sapphirerapids"
-        self.site.add_cpu(spr)
-        self.site.add_module(spr, "R/4.4.2")
-        self._copy_cpuinfo("sapphirerapids-8488C.cpuinfo")
-        offered = self._stub_cpupath()
-        self.assertTrue(offered.startswith(spr + ":"), offered)
-        self.assertIn("x86_64/intel/icelake:", offered)
-        env = harness.base_env(self.site, spr, ["R/4.4.2"], gpu="none")
-        proc = harness.run_guard(env)
-        _assert_prolog(proc)
-        self.assertEqual(proc.stdout, "")
-
     def test_emeraldrapids_without_waitpkg_falls_back(self):
         # GCC's emeraldrapids march is the Sapphire Rapids mask, including
         # waitpkg. A candidate with that leaf has to be dropped when the
@@ -1369,31 +1414,6 @@ class IntegrationTests(unittest.TestCase):
         self.assertEqual(
             changes.get("EESSI_SOFTWARE_SUBDIR_OVERRIDE"), icelake, proc.stdout
         )
-
-    def test_graniterapids_without_waitpkg_falls_back(self):
-        spr = "x86_64/intel/sapphirerapids"
-        gnr = "x86_64/intel/graniterapids"
-        icelake = "x86_64/intel/icelake"
-        text = (
-            Path(__file__).resolve().parent
-            / "fixtures"
-            / "cpuinfo"
-            / "sapphirerapids-kvm-no-waitpkg.cpuinfo"
-        ).read_text(encoding="ascii")
-        text = text.replace("model           : 143", "model           : 173", 1)
-        with open(self.site.cpuinfo, "w", encoding="ascii") as handle:
-            handle.write(text)
-        self.site.add_cpu(gnr)
-        self.site.add_cpu(spr)
-        self.site.add_cpu(icelake)
-        self.site.add_module(icelake, "R/4.4.2")
-        offered = self._stub_cpupath()
-        self.assertTrue(offered.startswith(gnr + ":" + spr + ":"), offered)
-        env = harness.base_env(self.site, gnr, ["R/4.4.2"], gpu="none")
-        proc = harness.run_guard(env)
-        changes, _printed = _assert_prolog(proc)
-        self.assertEqual(changes["EESSI_SOFTWARE_SUBDIR"], icelake)
-        self.assertEqual(changes["EESSI_SOFTWARE_SUBDIR_OVERRIDE"], icelake)
 
     def test_duplicated_flags_lines_across_identical_blocks_keep_all_flags(self):
         spr = "x86_64/intel/sapphirerapids"
@@ -1655,7 +1675,7 @@ class IntegrationTests(unittest.TestCase):
         self.assertNotIn("EESSI_PROC_CPUINFO", changes)
         self.assertNotIn("EESSI_ARCH_GUARD_FAILED", changes)
 
-    def test_malformed_trailing_comma_cpu_bind_is_ignored(self):
+    def test_malformed_cpu_bind_is_ignored(self):
         spr = "x86_64/intel/sapphirerapids"
         haswell = "x86_64/intel/haswell"
         self.site.add_cpu(spr)
@@ -1683,45 +1703,13 @@ class IntegrationTests(unittest.TestCase):
         )
         with open(self.site.cpuinfo, "w", encoding="ascii") as handle:
             handle.write(cpuinfo)
-        env = harness.base_env(self.site, haswell, ["R/4.4.2"], gpu="none")
-        env["SLURM_CPU_BIND_LIST"] = "1,"
-        proc = harness.run_guard(env)
-        self.assertEqual(proc.returncode, 0, proc.stderr)
-        self.assertEqual(proc.stdout, "", proc.stdout)
-
-    def test_malformed_space_separated_cpu_bind_is_ignored(self):
-        spr = "x86_64/intel/sapphirerapids"
-        haswell = "x86_64/intel/haswell"
-        self.site.add_cpu(spr)
-        self.site.add_cpu(haswell)
-        self.site.add_module(spr, "R/4.4.2")
-        self.site.add_module(haswell, "R/4.4.2")
-        cpuinfo = "\n".join(
-            (
-                "processor : 0",
-                "vendor_id : GenuineIntel",
-                "cpu family : 6",
-                "model : 60",
-                "model name : Intel Haswell",
-                "flags : avx2 fma",
-                "",
-                "processor : 1",
-                "vendor_id : GenuineIntel",
-                "cpu family : 6",
-                "model : 143",
-                "model name : Intel Sapphire Rapids",
-                "flags : avx2 fma avx512f avx512bw avx512cd avx512dq avx512vl "
-                "avx512_bf16 amx_tile waitpkg",
-                "",
-            )
-        )
-        with open(self.site.cpuinfo, "w", encoding="ascii") as handle:
-            handle.write(cpuinfo)
-        env = harness.base_env(self.site, haswell, ["R/4.4.2"], gpu="none")
-        env["SLURM_CPU_BIND_LIST"] = "0 1"
-        proc = harness.run_guard(env)
-        self.assertEqual(proc.returncode, 0, proc.stderr)
-        self.assertEqual(proc.stdout, "", proc.stdout)
+        for bind in ("1,", "0 1"):
+            with self.subTest(bind=bind):
+                env = harness.base_env(self.site, haswell, ["R/4.4.2"], gpu="none")
+                env["SLURM_CPU_BIND_LIST"] = bind
+                proc = harness.run_guard(env)
+                self.assertEqual(proc.returncode, 0, proc.stderr)
+                self.assertEqual(proc.stdout, "", proc.stdout)
 
     def test_scoped_cpuinfo_uses_tmpdir(self):
         spr = "x86_64/intel/sapphirerapids"
