@@ -21,6 +21,9 @@ usage: eessi-arch-guard [--shell] [--strict] [--dry-run] [--json]
        eessi-arch-guard --check-submit --partition NAME [--constraint NAME]
                         [--eb-stack PATH] [--json]
        eessi-arch-guard --check-submit --target TARGET [--eb-stack PATH] [--json]
+       eessi-arch-guard --check-mount [--repo PATH] [--site PATH] [--eessi PATH]
+                        [--modulepath PATH] [--mountinfo FILE] [--require-input]
+       eessi-arch-guard --check-revision --stat FILE [--min N]
 
 Slurm TaskProlog: when the loaded EESSI CPU or accelerator target is not this
 node's, print export/unset lines for the reloaded module environment.
@@ -40,6 +43,10 @@ keys; with --check-submit it replaces the text summary.
 so a site sets this in a wrapper or in a root-owned eessi-arch-guard.conf.
 --timeout SEC bounds the decision. The default is 60 seconds.
 --syslog TARGET sends structured RFC 5424 or journald decision events.
+--check-mount says whether the EESSI repository is on a cvmfs mount and the site
+module directory precedes the EESSI one on MODULEPATH; exit 0 when both hold.
+--check-revision reads `cvmfs_config stat` output from --stat FILE, prints the
+client revision, and exits 1 when it is older than --min N.
 --restore reads a JSON restore request on stdin and writes the JSON result.
 -h, --help print this text. --version prints the version.
 
