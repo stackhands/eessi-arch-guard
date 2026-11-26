@@ -42,18 +42,18 @@ class StrictStatusTests(unittest.TestCase):
             EESSI_TEST_HANG_PID=pid_file,
         )
 
-    def test_failed_decision_has_strict_status_in_each_output_mode(self):
-        for mode in ([], ["--shell"]):
-            with self.subTest(mode=mode):
-                proc = harness.run_guard(self.failing_env(), ["--strict", *mode])
-                self.assertEqual(proc.returncode, 78, proc.stderr)
-                self.assertIn("EESSI_ARCH_GUARD_FAILED", proc.stdout)
-
-    def test_default_failed_decision_remains_fail_open(self):
-        for mode in ([], ["--shell"]):
-            with self.subTest(mode=mode):
-                proc = harness.run_guard(self.failing_env(), mode)
-                self.assertEqual(proc.returncode, 0, proc.stderr)
+    def test_failed_decision_status_follows_strict_and_the_mode(self):
+        # strict flag, output mode, expected status
+        rows = (
+            (["--strict"], [], STRICT_FAILURE_EXIT),
+            (["--strict"], ["--shell"], STRICT_FAILURE_EXIT),
+            ([], [], 0),
+            ([], ["--shell"], 0),
+        )
+        for strict, mode, code in rows:
+            with self.subTest(strict=strict, mode=mode):
+                proc = harness.run_guard(self.failing_env(), [*strict, *mode])
+                self.assertEqual(proc.returncode, code, proc.stderr)
                 self.assertIn("EESSI_ARCH_GUARD_FAILED", proc.stdout)
 
     def test_interrupted_decision_is_strict_in_each_output_mode(self):

@@ -9,7 +9,6 @@ import socket
 import subprocess
 import sys
 import tempfile
-import threading
 import unittest
 from pathlib import Path
 
@@ -261,22 +260,16 @@ class SyslogTests(unittest.TestCase):
         tcp.listen(1)
         tcp.settimeout(2.0)
         tcp_port = tcp.getsockname()[1]
-        received: list[bytes] = []
-
-        def accept_one():
-            conn, _ = tcp.accept()
-            with conn:
-                received.append(conn.recv(65536))
-
-        t = threading.Thread(target=accept_one, daemon=True)
-        t.start()
         try:
+            # The kernel completes the connection into the backlog, so the
+            # guard sends its frame and exits before this side accepts.
             env = self._cpu_env(ZEN4, "zen2")
             p_tcp = harness.run_guard(env, [f"--syslog=tcp://127.0.0.1:{tcp_port}"])
             self.assertEqual(p_tcp.returncode, 0)
-            t.join(timeout=2.0)
-            self.assertEqual(len(received), 1)
-            frame = received[0].decode("utf-8")
+            conn, _ = tcp.accept()
+            with conn:
+                conn.settimeout(2.0)
+                frame = conn.recv(65536).decode("utf-8")
             length_s, msg = frame.split(" ", 1)
             self.assertEqual(int(length_s), len(msg.encode("utf-8")))
             self.assertIsNotNone(RFC5424_RE.fullmatch(msg), msg)

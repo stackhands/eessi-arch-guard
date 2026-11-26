@@ -23,10 +23,20 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import harness  # noqa: E402
 import retire_b_support as support  # noqa: E402
 
-FIXTURE = Path(__file__).resolve().parent / "fixtures" / "cpuinfo"
 CPUS = ("x86_64/intel/icelake", "x86_64/generic")
 LOADED = "x86_64/amd/zen4"
 RUN_TIMEOUT = 20.0
+# Two processors. The bind list keeps only the first, so the guard rewrites
+# the file and the break before flags has to be a line break.
+FLAGS = (
+    "avx2 fma avx512f avx512bw avx512cd avx512dq avx512vl "
+    "avx512_vnni avx512_vbmi2 avx512_bf16 amx_tile"
+)
+SMALL_CPUINFO = "".join(
+    "processor : %d\nvendor_id : GenuineIntel\ncpu family : 6\nmodel : 207\nflags : %s\n\n"
+    % (cpu, FLAGS)
+    for cpu in (0, 1)
+)
 BREAKS = {
     "CR": "\r",
     "VT": "\x0b",
@@ -47,11 +57,11 @@ class CpuinfoLineBreakTests(unittest.TestCase):
         for cpu in (*CPUS, LOADED):
             self.site.add_cpu(cpu)
             self.site.add_module(cpu, "R/4.4.2")
-        self.text = (FIXTURE / "emeraldrapids-kvm-no-waitpkg.cpuinfo").read_text(encoding="utf-8")
+        self.text = SMALL_CPUINFO
 
     def _env(self) -> dict:
         env = harness.base_env(self.site, LOADED, ["R/4.4.2"], gpu="none")
-        env["SLURM_CPU_BIND_LIST"] = "0,1"
+        env["SLURM_CPU_BIND_LIST"] = "0"
         return env
 
     def _decide(self, text: str):

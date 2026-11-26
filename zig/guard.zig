@@ -37,9 +37,24 @@ pub const key_fields = [_][]const u8{
 };
 
 pub const waitpkg_marches = [_][]const u8{
-    "alderlake",     "arrowlake",      "arrowlake_s",   "clearwaterforest", "diamondrapids",
-    "emeraldrapids", "grandridge",     "graniterapids", "graniterapids_d",  "novalake",
-    "pantherlake",   "sapphirerapids", "sierraforest",  "tremont",
+    "alderlake",
+    "arrowlake",
+    "arrowlake_s",
+    "clearwaterforest",
+    "diamondrapids",
+    "emeraldrapids",
+    "gracemont",
+    "grandridge",
+    "graniterapids",
+    "graniterapids_d",
+    "lunarlake",
+    "meteorlake",
+    "novalake",
+    "pantherlake",
+    "raptorlake",
+    "sapphirerapids",
+    "sierraforest",
+    "tremont",
 };
 
 /// What a decision came to.
@@ -2306,67 +2321,101 @@ test "lockExclusive honors deadline, cancel, EINTR and committing" {
     try std.testing.expectError(error.Terminated, lockExclusive(&c, waiter));
     try std.testing.expectEqual(linux.E.SUCCESS, linux.errno(linux.flock(held, std.posix.LOCK.EX | std.posix.LOCK.NB)));
 
-    // Under contention, SIGUSR1 interruptions do not abort early before the deadline.
+    // SIGUSR1 while the deadline is still long must not finish the wait.
+    // The waiter publishes its tid. After one delivered signal the result
+    // pipe is still empty. `terminated` then ends that same wait.
     lock_test_usr1_hits.store(0, .seq_cst);
     const handler: linux.Sigaction = .{ .handler = .{ .handler = &onLockTestUsr1 }, .mask = linux.sigemptyset(), .flags = 0 };
     var prev: linux.Sigaction = undefined;
     _ = linux.sigaction(.USR1, &handler, &prev);
     defer _ = linux.sigaction(.USR1, &prev, null);
 
-    const pid = linux.getpid();
-    const tid = linux.gettid();
-    const Signaler = struct {
-        fn send(target_pid: i32, target_tid: i32) void {
-            var ts: linux.timespec = .{ .sec = 0, .nsec = 15 * std.time.ns_per_ms };
-            _ = linux.nanosleep(&ts, null);
-            _ = linux.tgkill(target_pid, target_tid, .USR1);
-            _ = linux.nanosleep(&ts, null);
-            _ = linux.tgkill(target_pid, target_tid, .USR1);
+    var ready_pipe: [2]linux.fd_t = undefined;
+    try std.testing.expectEqual(linux.E.SUCCESS, linux.errno(linux.pipe2(&ready_pipe, .{ .CLOEXEC = true })));
+    var done_pipe: [2]linux.fd_t = undefined;
+    try std.testing.expectEqual(linux.E.SUCCESS, linux.errno(linux.pipe2(&done_pipe, .{ .CLOEXEC = true, .NONBLOCK = true })));
+
+    const Wait = struct {
+        ok: bool = false,
+        tid: i32 = 0,
+        err: ?anyerror = null,
+
+        fn go(self: *@This(), ctx: *Ctx, fd: sys.fd_t, ready_w: linux.fd_t, done_w: linux.fd_t) void {
+            self.tid = linux.gettid();
+            var one = [_]u8{1};
+            _ = linux.write(ready_w, &one, 1);
+            _ = linux.close(ready_w);
+            if (lockExclusive(ctx, fd)) |_| {
+                self.ok = true;
+            } else |err| {
+                self.err = err;
+            }
+            _ = linux.write(done_w, &one, 1);
+            _ = linux.close(done_w);
         }
     };
-    const sig_thread = try std.Thread.spawn(.{}, Signaler.send, .{ pid, tid });
-    var deadline_lim: Limit = .{ .deadline_ms = nowMs() + 90 };
-    c.limit = &deadline_lim;
-    const wait_start = nowMs();
-    try std.testing.expectError(error.Deadline, lockExclusive(&c, waiter));
-    sig_thread.join();
-    try std.testing.expect(nowMs() - wait_start >= 60);
+
+    var job: Wait = .{};
+    var eintr_lim: Limit = .{ .deadline_ms = nowMs() + 60_000 };
+    c.limit = &eintr_lim;
+    const wait_thread = try std.Thread.spawn(.{}, Wait.go, .{ &job, &c, waiter, ready_pipe[1], done_pipe[1] });
+    var got: [1]u8 = undefined;
+    _ = linux.read(ready_pipe[0], &got, 1);
+    const pid = linux.getpid();
+    var spins: u32 = 0;
+    var signaled = false;
+    while (lock_test_usr1_hits.load(.seq_cst) < 1) {
+        if (spins == 1_000_000) break;
+        _ = linux.tgkill(pid, job.tid, .USR1);
+        spins += 1;
+    } else signaled = true;
+    const early = linux.read(done_pipe[0], &got, 1);
+    const still_waiting = linux.errno(early) == .AGAIN;
+    eintr_lim.terminated.store(true, .seq_cst);
+    _ = linux.tgkill(pid, job.tid, .USR1);
+    wait_thread.join();
+    _ = linux.close(ready_pipe[0]);
+    _ = linux.close(done_pipe[0]);
+    try std.testing.expect(signaled);
+    try std.testing.expect(still_waiting);
+    try std.testing.expect(!job.ok);
+    try std.testing.expect(job.err.? == error.Terminated);
     try std.testing.expect(lock_test_usr1_hits.load(.seq_cst) >= 1);
 
-    // Setting terminated while waiting stops with error.Terminated before the deadline.
-    var cancel_lim: Limit = .{ .deadline_ms = nowMs() + 60_000 };
-    c.limit = &cancel_lim;
-    const Canceler = struct {
-        fn run(lim: *Limit, target_pid: i32, target_tid: i32) void {
-            var ts: linux.timespec = .{ .sec = 0, .nsec = 25 * std.time.ns_per_ms };
-            _ = linux.nanosleep(&ts, null);
-            lim.terminated.store(true, .seq_cst);
-            _ = linux.tgkill(target_pid, target_tid, .USR1);
+    // Committing ignores an expired deadline and a set `terminated` flag.
+    // The unlocker blocks until this test closes the release pipe.
+    var release_pipe: [2]linux.fd_t = undefined;
+    try std.testing.expectEqual(linux.E.SUCCESS, linux.errno(linux.pipe2(&release_pipe, .{ .CLOEXEC = true })));
+    const Unlocker = struct {
+        fn run(h: sys.fd_t, read_fd: linux.fd_t) void {
+            var buf: [1]u8 = undefined;
+            _ = linux.read(read_fd, &buf, 1);
+            _ = linux.close(read_fd);
+            _ = linux.flock(h, std.posix.LOCK.UN);
         }
     };
-    const cancel_thread = try std.Thread.spawn(.{}, Canceler.run, .{ &cancel_lim, pid, tid });
-    const cancel_start = nowMs();
-    try std.testing.expectError(error.Terminated, lockExclusive(&c, waiter));
-    cancel_thread.join();
-    try std.testing.expect(nowMs() - cancel_start < 1000);
-
-    // While committing, neither an expired deadline nor terminated stops lock acquisition.
+    const unlock_thread = try std.Thread.spawn(.{}, Unlocker.run, .{ held, release_pipe[0] });
+    var commit_ready: [2]linux.fd_t = undefined;
+    try std.testing.expectEqual(linux.E.SUCCESS, linux.errno(linux.pipe2(&commit_ready, .{ .CLOEXEC = true })));
+    var commit_done: [2]linux.fd_t = undefined;
+    try std.testing.expectEqual(linux.E.SUCCESS, linux.errno(linux.pipe2(&commit_done, .{ .CLOEXEC = true })));
     var commit_lim: Limit = .{
         .deadline_ms = nowMs() - 1,
         .terminated = .init(true),
         .committing = .init(true),
     };
     c.limit = &commit_lim;
-    const Unlocker = struct {
-        fn run(h: sys.fd_t) void {
-            var ts: linux.timespec = .{ .sec = 0, .nsec = 25 * std.time.ns_per_ms };
-            _ = linux.nanosleep(&ts, null);
-            _ = linux.flock(h, std.posix.LOCK.UN);
-        }
-    };
-    const unlock_thread = try std.Thread.spawn(.{}, Unlocker.run, .{held});
-    try lockExclusive(&c, waiter);
+    var commit_job: Wait = .{};
+    const commit_thread = try std.Thread.spawn(.{}, Wait.go, .{
+        &commit_job, &c, waiter, commit_ready[1], commit_done[1],
+    });
+    _ = linux.read(commit_ready[0], &got, 1);
+    _ = linux.close(release_pipe[1]);
+    commit_thread.join();
     unlock_thread.join();
+    _ = linux.close(commit_ready[0]);
+    _ = linux.close(commit_done[0]);
+    try std.testing.expect(commit_job.ok);
     _ = linux.flock(waiter, std.posix.LOCK.UN);
 }
 
