@@ -82,6 +82,7 @@ class ArgumentTests(unittest.TestCase):
     def test_the_module_has_the_documented_name(self) -> None:
         self.assertEqual(_launch.__name__, "eessi_arch_guard._launch")
         self.assertTrue(_launch.execv.__doc__.startswith("Replace the current process"))
+        self.assertEqual(_launch.execv.__text_signature__, "($module, path, argv, /)")
 
 
 class ExecTests(unittest.TestCase):
