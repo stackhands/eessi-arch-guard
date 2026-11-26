@@ -1,102 +1,155 @@
-"""Private configured restore workspaces for strict job guards."""
+"""Private configured restore workspaces for strict job guards.
+
+The restore helper runs the module commands in a directory it makes under a
+parent it picks. A wrapper in place of Lmod records where that directory is,
+what the helper sets in its environment, and the command line of the helper.
+"""
 
 import json
 import os
+import shutil
 import sys
 import tempfile
-import types
 import unittest
 from pathlib import Path
-from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
-import eessi_arch_guard as guard  # noqa: E402
 import harness  # noqa: E402
+
+ZEN2 = "x86_64/amd/zen2"
+ZEN4 = "x86_64/amd/zen4"
+
+WRAPPER = """#!/bin/sh
+{
+  echo "WORK=$EESSI_ARCH_GUARD_WORKDIR"
+  echo "HOME=$HOME"
+  echo "TMPDIR=$TMPDIR"
+  if [ -d "$EESSI_ARCH_GUARD_WORKDIR" ]; then echo "ISDIR=yes"; fi
+  p=$$
+  while [ "$p" -gt 1 ]; do
+    echo "ARGV=$(tr '\\0' ' ' < /proc/$p/cmdline)"
+    p=$(sed 's/.*) [^ ]* //; s/ .*//' /proc/$p/stat)
+  done
+} >> "%s"
+exec /usr/bin/python3 -I %s "$@"
+"""
 
 
 class WorkspaceTests(unittest.TestCase):
+    def setUp(self):
+        self.site = harness.Site()
+        self.addCleanup(self.site.close)
+        for cpu in (ZEN2, ZEN4):
+            self.site.add_cpu(cpu)
+            self.site.add_module(cpu, "R/4.4.2")
+        self.site.write_cpuinfo("zen2")
+        self.root = tempfile.mkdtemp(prefix="eag-workspace-")
+        self.addCleanup(shutil.rmtree, self.root, ignore_errors=True)
+        os.chmod(self.root, 0o700)
+        self.record = os.path.join(self.root, "..record-" + os.path.basename(self.root))
+        wrapper = os.path.join(self.site.root, "lmod-record")
+        with open(wrapper, "w", encoding="utf-8") as handle:
+            handle.write(WRAPPER % (self.record, harness.FAKE_LMOD))
+        os.chmod(wrapper, 0o755)
+        self.addCleanup(lambda: os.path.exists(self.record) and os.unlink(self.record))
+        self.env = harness.base_env(self.site, ZEN4, ["R/4.4.2"], gpu="none")
+        self.env["LMOD_CMD"] = wrapper
+        self.env["HOME"] = self.root
+        self.env["TMPDIR"] = self.root
+
+    def recorded(self):
+        found = {}
+        if os.path.exists(self.record):
+            with open(self.record, encoding="utf-8") as handle:
+                for line in handle:
+                    key, _sep, value = line.rstrip("\n").partition("=")
+                    found.setdefault(key, []).append(value)
+        return found
+
+    def failed_with(self, proc, text):
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertIn("->restore-failed", proc.stdout)
+        self.assertIn(text, proc.stdout)
+        self.assertEqual(self.recorded(), {})
+
     def test_strict_restore_honors_existing_private_tmpdir(self):
-        with tempfile.TemporaryDirectory() as root, mock.patch.object(guard, "_STRICT_MODE", True):
-            self.assertEqual(guard.restore_work_base({"TMPDIR": root}), os.path.realpath(root))
-            self.assertEqual(guard.cache_directory({"TMPDIR": root}), os.path.realpath(root))
+        self.env["SLURM_JOB_ID"] = "9191"
+        proc = harness.run_guard(self.env, ["--strict"])
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertIn("EESSI_ARCH_GUARD_RELOADED", proc.stdout)
+        report = json.loads(harness.run_guard(self.env, ["--strict", "--dry-run", "--json"]).stdout)
+        self.assertEqual(os.path.dirname(report["cache"]["path"]), os.path.realpath(self.root))
+        self.assertTrue(os.path.exists(report["cache"]["path"]))
+        work = self.recorded()["WORK"][0]
+        self.assertEqual(os.path.dirname(work), os.path.realpath(self.root))
 
     def test_explicit_workspace_has_priority(self):
-        with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as other:
-            env = {"EESSI_ARCH_GUARD_WORKDIR": root, "TMPDIR": other}
-            self.assertEqual(guard.restore_work_base(env), os.path.realpath(root))
+        other = tempfile.mkdtemp(prefix="eag-workspace-other-")
+        self.addCleanup(shutil.rmtree, other, ignore_errors=True)
+        self.env["EESSI_ARCH_GUARD_WORKDIR"] = self.root
+        self.env["TMPDIR"] = other
+        proc = harness.run_guard(self.env)
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertIn("EESSI_ARCH_GUARD_RELOADED", proc.stdout)
+        work = self.recorded()["WORK"][0]
+        self.assertEqual(os.path.dirname(work), os.path.realpath(self.root))
 
     def test_untrusted_explicit_workspace_is_refused_without_creation(self):
-        with tempfile.TemporaryDirectory() as root:
-            missing = str(Path(root) / "missing")
-            with self.assertRaises(ValueError):
-                guard.restore_work_base({"EESSI_ARCH_GUARD_WORKDIR": missing})
-            self.assertFalse(Path(missing).exists())
-            public = Path(root) / "public"
-            public.mkdir(mode=0o755)
-            with self.assertRaises(ValueError):
-                guard.restore_work_base({"EESSI_ARCH_GUARD_WORKDIR": str(public)})
+        missing = os.path.join(self.root, "missing")
+        self.env["EESSI_ARCH_GUARD_WORKDIR"] = missing
+        self.failed_with(harness.run_guard(self.env), "restore workspace unavailable")
+        self.assertFalse(os.path.exists(missing))
+        public = os.path.join(self.root, "public")
+        os.mkdir(public, 0o755)
+        os.chmod(public, 0o755)
+        self.env["EESSI_ARCH_GUARD_WORKDIR"] = public
+        self.failed_with(harness.run_guard(self.env), "restore workspace unavailable")
 
     def test_explicit_symlink_is_refused(self):
-        with tempfile.TemporaryDirectory() as root:
-            link = Path(root) / "alias"
-            link.symlink_to(root, target_is_directory=True)
-            with self.assertRaises(ValueError):
-                guard.restore_work_base({"EESSI_ARCH_GUARD_WORKDIR": str(link)})
+        link = os.path.join(self.root, "alias")
+        os.symlink(self.root, link, target_is_directory=True)
+        self.env["EESSI_ARCH_GUARD_WORKDIR"] = link
+        self.failed_with(harness.run_guard(self.env), "restore workspace unavailable")
 
     def test_existing_state_workspace_handles_missing_job_tmpdir(self):
-        with tempfile.TemporaryDirectory() as root, mock.patch.object(guard, "_STRICT_MODE", True):
-            state = Path(root) / "state"
-            work = state / "eessi-arch-guard"
-            work.mkdir(parents=True, mode=0o700)
-            env = {"TMPDIR": str(Path(root) / "not-created"), "XDG_STATE_HOME": str(state)}
-            self.assertEqual(guard.restore_work_base(env), str(work))
-            self.assertFalse(Path(env["TMPDIR"]).exists())
+        state = os.path.join(self.root, "state")
+        work = os.path.join(state, "eessi-arch-guard")
+        os.makedirs(work, mode=0o700)
+        self.env["TMPDIR"] = os.path.join(self.root, "not-created")
+        self.env["XDG_STATE_HOME"] = state
+        proc = harness.run_guard(self.env, ["--strict"])
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertIn("EESSI_ARCH_GUARD_RELOADED", proc.stdout)
+        self.assertEqual(os.path.dirname(self.recorded()["WORK"][0]), work)
+        self.assertFalse(os.path.exists(self.env["TMPDIR"]))
 
     def test_strict_mode_without_private_workspace_has_no_cache_fallback(self):
-        with tempfile.TemporaryDirectory() as root, mock.patch.object(guard, "_STRICT_MODE", True):
-            env = {"HOME": root, "TMPDIR": str(Path(root) / "missing")}
-            self.assertIsNone(guard.cache_directory(env))
-            with self.assertRaises(ValueError):
-                guard.restore_work_base(env)
-            self.assertFalse((Path(root) / ".local").exists())
+        self.env["TMPDIR"] = os.path.join(self.root, "missing")
+        self.env["SLURM_JOB_ID"] = "9292"
+        proc = harness.run_guard(self.env, ["--strict"])
+        self.assertEqual(proc.returncode, 78, proc.stderr)
+        self.assertIn("strict mode needs an existing private job or state workspace", proc.stdout)
+        self.assertEqual(self.recorded(), {})
+        self.assertFalse(os.path.exists(os.path.join(self.root, ".local")))
+        report = json.loads(harness.run_guard(self.env, ["--strict", "--dry-run", "--json"]).stdout)
+        self.assertIsNone(report["cache"]["path"])
+        leftovers = [n for n in os.listdir(self.root) if n.startswith(".eessi-arch-guard")]
+        self.assertEqual(leftovers, [])
 
     def test_restore_helper_and_its_cleanup_stay_under_selected_parent(self):
-        with tempfile.TemporaryDirectory() as root, mock.patch.object(guard, "_STRICT_MODE", True):
-            observed = []
-
-            def helper(argv, clean, **kwargs):
-                work = Path(clean["EESSI_ARCH_GUARD_WORKDIR"])
-                self.assertEqual(work.parent, Path(root))
-                self.assertTrue(work.is_dir())
-                self.assertEqual(clean["HOME"], str(work))
-                self.assertEqual(clean["TMPDIR"], str(work))
-                self.assertIn("--strict", argv)
-                observed.append(work)
-                data = {"ok": True, "env": guard._wire_map({"RESULT": "restored"}), "missing": []}
-                return types.SimpleNamespace(
-                    returncode=0, stdout=json.dumps(data).encode(), stderr=b""
-                )
-
-            with mock.patch.object(guard, "run_captured", side_effect=helper):
-                result = guard.call_restore({"TMPDIR": root}, "EESSI/2026.06", ["2026"])
-            self.assertTrue(result.ok, result.error)
-            self.assertEqual(result.env, {"RESULT": "restored"})
-            self.assertEqual(len(observed), 1)
-            self.assertFalse(observed[0].exists())
-            self.assertTrue(Path(root).is_dir())
-
-    def test_strict_call_does_not_leak_policy_into_default_calls(self):
-        with (
-            mock.patch.object(guard, "site_config", return_value=({}, None)),
-            mock.patch.object(
-                guard, "limited_decide", return_value=guard.Outcome({}, None, "noop")
-            ),
-            mock.patch.object(guard, "write_fd"),
-        ):
-            self.assertFalse(guard._STRICT_MODE)
-            self.assertEqual(guard.main(["--strict"]), 0)
-            self.assertFalse(guard._STRICT_MODE)
+        proc = harness.run_guard(self.env, ["--strict"])
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        found = self.recorded()
+        work = found["WORK"][0]
+        self.assertEqual(os.path.dirname(work), os.path.realpath(self.root))
+        self.assertEqual(found["ISDIR"][0], "yes")
+        self.assertEqual(found["HOME"][0], work)
+        self.assertEqual(found["TMPDIR"][0], work)
+        helper = [line for line in found["ARGV"] if "--restore" in line]
+        self.assertTrue(helper, found["ARGV"])
+        self.assertIn("--strict", helper[0])
+        self.assertFalse(os.path.exists(work))
+        self.assertTrue(os.path.isdir(self.root))
 
 
 class RestoreMismatchTests(unittest.TestCase):
