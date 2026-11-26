@@ -1,15 +1,14 @@
-"""The two guards must cut an eb-stack failure down to its text alike.
+"""check-submit cuts an eb-stack failure down to its text.
 
 When eb-stack fails without naming a flagged module, check-submit reports
-the first of its stderr and its stdout that holds text, after str.strip(),
-which removes every Unicode whitespace character. The Zig guard removed a
-space, a tab, a carriage return and a newline only, so a stderr that held
-a no-break space alone hid the stdout that Python showed, and a message
-padded with another kind of whitespace kept the padding.
+the first of its stderr and its stdout that holds text, after removing every
+Unicode whitespace character from both ends. A stderr that holds a no-break
+space alone is empty text, so the stdout shows instead, and a message padded
+with any whitespace character loses the padding.
 
-Python alone is checked for the messages it gives, and then the two
-programs are compared, each on a tree of its own. The comparison skips
-when TOOL_BIN is unset.
+The first test checks the message of each case. The second pins the exit
+status, the JSON, and the standard error of each case in
+``golden/check-submit-detail-text.txt``.
 """
 
 from __future__ import annotations
@@ -22,8 +21,8 @@ from typing import Iterator, Tuple
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import harness  # noqa: E402
+import retire_b_support as support  # noqa: E402
 
-PYTHON_ARGV = [sys.executable, "-I", str(harness.GUARD)]
 SPACES = {
     "VT": "\x0b",
     "FF": "\x0c",
@@ -44,7 +43,7 @@ SPACES = {
 
 
 def _cases() -> Iterator[Tuple[str, str, str, str]]:
-    """Name, stderr, stdout and the message Python gives."""
+    """Name, stderr, stdout and the expected message."""
     for name, space in SPACES.items():
         yield "stderr of " + name + " alone", space, "out-text\n", "eb-stack failed: out-text"
         yield (
@@ -59,25 +58,23 @@ def _cases() -> Iterator[Tuple[str, str, str, str]]:
 
 
 class SubmitDetailTests(unittest.TestCase):
-    def test_python_reports_the_text_that_strip_leaves(self) -> None:
+    def test_the_message_is_the_text_that_trimming_leaves(self) -> None:
         for name, stderr, stdout, message in _cases():
             with self.subTest(case=name):
                 code, payload, _err = harness.run_check_submit_stub(
-                    PYTHON_ARGV, stderr.encode("utf-8"), stdout.encode("utf-8")
+                    harness.GUARD_ARGV, stderr.encode("utf-8"), stdout.encode("utf-8")
                 )
                 self.assertEqual(code, 2)
                 assert payload is not None
                 self.assertEqual(payload["message"], message)
 
-    def test_programs_agree(self) -> None:
-        harness.skip_unless_tool_bin(self)
+    def test_output_of_each_case(self) -> None:
+        sheet = support.sheet(self, "check-submit-detail-text")
         for name, stderr, stdout, _message in _cases():
             streams = (stderr.encode("utf-8"), stdout.encode("utf-8"))
             with self.subTest(case=name):
-                self.assertEqual(
-                    harness.run_check_submit_stub([str(harness.PROGRAM)], *streams),
-                    harness.run_check_submit_stub(PYTHON_ARGV, *streams),
-                )
+                result = harness.run_check_submit_stub(harness.GUARD_ARGV, *streams)
+                sheet.check(self, support.label(name), support.render_stub(*result))
 
 
 if __name__ == "__main__":

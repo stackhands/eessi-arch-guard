@@ -1,10 +1,9 @@
-"""The Python and Zig guards must accept the same syslog enterprise numbers.
+"""The guard accepts any positive decimal syslog enterprise number of up to 20 digits.
 
-The Python guard takes any positive decimal number of up to twenty digits.
 A twenty-digit number can exceed the largest value a 64-bit integer holds, so
-a parser that stores it in one rejects numbers the Python guard accepts. The
-cases run both programs on one generated tree and compare exit status, standard
-output, and standard error. The comparison skips when TOOL_BIN is unset.
+the guard keeps the digits as text. A number with more digits, or zero,
+falls back to 32473. The first test checks the number that the report
+shows, and ``golden/syslog-pen.txt`` pins the exit status and both streams.
 """
 
 from __future__ import annotations
@@ -18,6 +17,7 @@ from typing import Dict
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import harness  # noqa: E402
+import retire_b_support as support  # noqa: E402
 
 ZEN2 = "x86_64/amd/zen2"
 ZEN4 = "x86_64/amd/zen4"
@@ -35,7 +35,7 @@ PENS = {
 }
 
 
-class SyslogPenParityTests(unittest.TestCase):
+class SyslogPenTests(unittest.TestCase):
     def setUp(self) -> None:
         self.site = harness.Site()
         self.addCleanup(self.site.close)
@@ -49,30 +49,28 @@ class SyslogPenParityTests(unittest.TestCase):
         env["EESSI_ARCH_GUARD_SYSLOG_PEN"] = pen
         return env
 
-    def _python(self, env: Dict[str, str]):
-        argv = [sys.executable, "-I", str(harness.GUARD), *ARGS]
+    def _program(self, env: Dict[str, str]):
+        argv = [*harness.GUARD_ARGV, *ARGS]
         return harness.run_with_timeout(argv, env=env, timeout=RUN_TIMEOUT)
 
-    def test_python_guard_reports_the_number_it_accepts(self) -> None:
+    def test_the_report_shows_the_number_it_accepts(self) -> None:
         for pen, shown in PENS.items():
             with self.subTest(pen=pen):
-                proc = self._python(self._env(pen))
+                proc = self._program(self._env(pen))
                 self.assertEqual(proc.returncode, 0, proc.stderr)
                 doc = json.loads(proc.stdout)
                 self.assertEqual(doc["syslog"]["pen"], shown)
 
-    def test_programs_agree_on_enterprise_numbers(self) -> None:
-        harness.skip_unless_tool_bin(self)
+    def test_output_for_enterprise_numbers(self) -> None:
+        sheet = support.sheet(self, "syslog-pen")
         for pen in PENS:
-            env = self._env(pen)
-            python = self._python(env)
-            program = harness.run_with_timeout(
-                [str(harness.PROGRAM), *ARGS], env=env, timeout=RUN_TIMEOUT
-            )
+            proc = self._program(self._env(pen))
             with self.subTest(pen=pen):
-                self.assertEqual(program.returncode, python.returncode)
-                self.assertEqual(program.stderr, python.stderr)
-                self.assertEqual(program.stdout, python.stdout)
+                sheet.check(
+                    self,
+                    support.label("pen %r" % pen),
+                    support.render_proc(proc, support.site_work(self.site)),
+                )
 
 
 if __name__ == "__main__":

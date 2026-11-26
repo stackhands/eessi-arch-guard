@@ -1,0 +1,39 @@
+=== status 0 flagged
+rc: 0
+--- stdout
+{"constraint": null, "exit": 0, "exit_semantic": "ok", "kind": "check-submit", "loaded": 1, "message": "1 loaded module(s) available for x86_64/amd/zen4", "missing": [], "partition": null, "schema_version": 1, "target": "x86_64/amd/zen4"}
+--- stderr
+
+--- end
+=== status 1 flagged
+rc: 1
+--- stdout
+{"constraint": null, "exit": 1, "exit_semantic": "missing", "kind": "check-submit", "loaded": 1, "message": null, "missing": ["R/4.4.2"], "partition": null, "schema_version": 1, "target": "x86_64/amd/zen4"}
+--- stderr
+eessi-arch-guard: check-submit: loaded module absent from x86_64/amd/zen4: R/4.4.2
+
+--- end
+=== status 2 flagged
+rc: 2
+--- stdout
+{"constraint": null, "exit": 2, "exit_semantic": "invalid", "kind": "check-submit", "loaded": 1, "message": "eb-stack failed: warn", "missing": [], "partition": null, "schema_version": 1, "target": "x86_64/amd/zen4"}
+--- stderr
+eessi-arch-guard: check-submit: eb-stack failed: warn
+
+--- end
+=== status 3 flagged
+rc: 2
+--- stdout
+{"constraint": null, "exit": 2, "exit_semantic": "invalid", "kind": "check-submit", "loaded": 1, "message": "eb-stack failed: warn", "missing": [], "partition": null, "schema_version": 1, "target": "x86_64/amd/zen4"}
+--- stderr
+eessi-arch-guard: check-submit: eb-stack failed: warn
+
+--- end
+=== status 1 not flagged
+rc: 2
+--- stdout
+{"constraint": null, "exit": 2, "exit_semantic": "invalid", "kind": "check-submit", "loaded": 1, "message": "eb-stack failed: warn", "missing": [], "partition": null, "schema_version": 1, "target": "x86_64/amd/zen4"}
+--- stderr
+eessi-arch-guard: check-submit: eb-stack failed: warn
+
+--- end

@@ -1,13 +1,11 @@
-"""The Python and Zig guards must print one JSON object for an OSError skip.
+"""An OS error that the decision does not handle ends the run as a skip.
 
-An OSError the decision does not catch ends the run as a skip. With --json
-the guard prints a failed decision whose cause is the exception class and
-whose message is the exception text; the detail is null, because the text is
-already the message. The cache directory has mode 000, so the guard decides
-without the cache, and at the deadline its read of the cache opens the
-directory outside any handler and raises PermissionError. For root the
-guard runs without the two capabilities that let it open the directory
-anyway.
+With --json the guard prints a failed decision whose cause is the error
+class and whose message is the error text; the detail is null, because the
+text is already the message. The cache directory has mode 000, so the guard
+decides without the cache, and at the deadline its read of the cache fails
+to open the directory with a permission error. For root the guard runs
+without the two capabilities that let it open the directory anyway.
 
 The deadline comes from an event, not from a wait: the GPU query is a
 script that blocks on a lock the test holds, so the decision is still
@@ -15,9 +13,8 @@ running at the deadline of a short --timeout however fast the program is.
 After the run the test releases the lock, and the script takes it and exits,
 whenever it gets there. The script holds the write end of a FIFO open from
 its start, and the test waits for the hangup on the read end, which comes
-when the script has exited. The programs are compared on exit status,
-standard output, and standard error. The comparison skips when TOOL_BIN is
-unset.
+when the script has exited. The first test checks the cause, message and
+detail, and ``golden/json-os-skip.txt`` pins the exit status and both streams.
 """
 
 from __future__ import annotations
@@ -35,6 +32,7 @@ from typing import List, Sequence
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import harness  # noqa: E402
+import retire_b_support as support  # noqa: E402
 
 CPU = "x86_64/amd/zen4"
 RUN_TIMEOUT = 30.0
@@ -57,7 +55,7 @@ BLOCKING_GPU_QUERY = (
 )
 
 
-class JsonOsSkipParityTests(unittest.TestCase):
+class JsonOsSkipTests(unittest.TestCase):
     def setUp(self) -> None:
         self.site = harness.Site()
         self.addCleanup(self.site.close)
@@ -90,7 +88,7 @@ class JsonOsSkipParityTests(unittest.TestCase):
                 pass
             self.fail("the GPU query did not exit after its lock was released")
 
-    def _run(self, guard: Sequence[str]):
+    def _run(self, guard: Sequence[str] = harness.GUARD_ARGV):
         env = harness.base_env(self.site, CPU, ["R/4.4.2"], gpu="1", gpu_cc="8.0")
         env["TMPDIR"] = self.cache
         env["SLURM_JOB_ID"] = "6060"
@@ -111,8 +109,8 @@ class JsonOsSkipParityTests(unittest.TestCase):
         finally:
             os.close(alive)
 
-    def test_python_guard_prints_the_error_without_a_detail(self) -> None:
-        proc = self._run([sys.executable, "-I", str(harness.GUARD)])
+    def test_the_error_is_printed_without_a_detail(self) -> None:
+        proc = self._run()
         self.assertEqual(proc.returncode, 0, proc.stderr)
         report = json.loads(proc.stdout)
         self.assertEqual(report["cause"], "PermissionError")
@@ -121,15 +119,10 @@ class JsonOsSkipParityTests(unittest.TestCase):
         )
         self.assertIsNone(report["detail"])
 
-    def test_programs_agree_on_the_json_of_an_os_error_skip(self) -> None:
-        harness.skip_unless_tool_bin(self)
-        python = self._run([sys.executable, "-I", str(harness.GUARD)])
-        program = self._run([str(harness.PROGRAM)])
-        self.assertEqual(program.returncode, python.returncode)
-        self.assertEqual(program.stderr, python.stderr)
-        self.assertEqual(
-            json.loads(program.stdout), json.loads(python.stdout), program.stdout
-        )
+    def test_output_of_an_os_error_skip(self) -> None:
+        sheet = support.sheet(self, "json-os-skip")
+        proc = self._run()
+        support.check(self, sheet, "permission denied", proc, self.site)
 
 
 if __name__ == "__main__":

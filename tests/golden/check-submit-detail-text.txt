@@ -1,0 +1,376 @@
+=== stderr of VT alone
+rc: 2
+--- stdout
+{"constraint": null, "exit": 2, "exit_semantic": "invalid", "kind": "check-submit", "loaded": 1, "message": "eb-stack failed: out-text", "missing": [], "partition": null, "schema_version": 1, "target": "x86_64/amd/zen4"}
+--- stderr
+eessi-arch-guard: check-submit: eb-stack failed: out-text
+
+--- end
+=== stderr padded by VT
+rc: 2
+--- stdout
+{"constraint": null, "exit": 2, "exit_semantic": "invalid", "kind": "check-submit", "loaded": 1, "message": "eb-stack failed: msg", "missing": [], "partition": null, "schema_version": 1, "target": "x86_64/amd/zen4"}
+--- stderr
+eessi-arch-guard: check-submit: eb-stack failed: msg
+
+--- end
+=== stdout padded by VT
+rc: 2
+--- stdout
+{"constraint": null, "exit": 2, "exit_semantic": "invalid", "kind": "check-submit", "loaded": 1, "message": "eb-stack failed: msg", "missing": [], "partition": null, "schema_version": 1, "target": "x86_64/amd/zen4"}
+--- stderr
+eessi-arch-guard: check-submit: eb-stack failed: msg
+
+--- end
+=== stderr of FF alone
+rc: 2
+--- stdout
+{"constraint": null, "exit": 2, "exit_semantic": "invalid", "kind": "check-submit", "loaded": 1, "message": "eb-stack failed: out-text", "missing": [], "partition": null, "schema_version": 1, "target": "x86_64/amd/zen4"}
+--- stderr
+eessi-arch-guard: check-submit: eb-stack failed: out-text
+
+--- end
+=== stderr padded by FF
+rc: 2
+--- stdout
+{"constraint": null, "exit": 2, "exit_semantic": "invalid", "kind": "check-submit", "loaded": 1, "message": "eb-stack failed: msg", "missing": [], "partition": null, "schema_version": 1, "target": "x86_64/amd/zen4"}
+--- stderr
+eessi-arch-guard: check-submit: eb-stack failed: msg
+
+--- end
+=== stdout padded by FF
+rc: 2
+--- stdout
+{"constraint": null, "exit": 2, "exit_semantic": "invalid", "kind": "check-submit", "loaded": 1, "message": "eb-stack failed: msg", "missing": [], "partition": null, "schema_version": 1, "target": "x86_64/amd/zen4"}
+--- stderr
+eessi-arch-guard: check-submit: eb-stack failed: msg
+
+--- end
+=== stderr of FS alone
+rc: 2
+--- stdout
+{"constraint": null, "exit": 2, "exit_semantic": "invalid", "kind": "check-submit", "loaded": 1, "message": "eb-stack failed: out-text", "missing": [], "partition": null, "schema_version": 1, "target": "x86_64/amd/zen4"}
+--- stderr
+eessi-arch-guard: check-submit: eb-stack failed: out-text
+
+--- end
+=== stderr padded by FS
+rc: 2
+--- stdout
+{"constraint": null, "exit": 2, "exit_semantic": "invalid", "kind": "check-submit", "loaded": 1, "message": "eb-stack failed: msg", "missing": [], "partition": null, "schema_version": 1, "target": "x86_64/amd/zen4"}
+--- stderr
+eessi-arch-guard: check-submit: eb-stack failed: msg
+
+--- end
+=== stdout padded by FS
+rc: 2
+--- stdout
+{"constraint": null, "exit": 2, "exit_semantic": "invalid", "kind": "check-submit", "loaded": 1, "message": "eb-stack failed: msg", "missing": [], "partition": null, "schema_version": 1, "target": "x86_64/amd/zen4"}
+--- stderr
+eessi-arch-guard: check-submit: eb-stack failed: msg
+
+--- end
+=== stderr of GS alone
+rc: 2
+--- stdout
+{"constraint": null, "exit": 2, "exit_semantic": "invalid", "kind": "check-submit", "loaded": 1, "message": "eb-stack failed: out-text", "missing": [], "partition": null, "schema_version": 1, "target": "x86_64/amd/zen4"}
+--- stderr
+eessi-arch-guard: check-submit: eb-stack failed: out-text
+
+--- end
+=== stderr padded by GS
+rc: 2
+--- stdout
+{"constraint": null, "exit": 2, "exit_semantic": "invalid", "kind": "check-submit", "loaded": 1, "message": "eb-stack failed: msg", "missing": [], "partition": null, "schema_version": 1, "target": "x86_64/amd/zen4"}
+--- stderr
+eessi-arch-guard: check-submit: eb-stack failed: msg
+
+--- end
+=== stdout padded by GS
+rc: 2
+--- stdout
+{"constraint": null, "exit": 2, "exit_semantic": "invalid", "kind": "check-submit", "loaded": 1, "message": "eb-stack failed: msg", "missing": [], "partition": null, "schema_version": 1, "target": "x86_64/amd/zen4"}
+--- stderr
+eessi-arch-guard: check-submit: eb-stack failed: msg
+
+--- end
+=== stderr of RS alone
+rc: 2
+--- stdout
+{"constraint": null, "exit": 2, "exit_semantic": "invalid", "kind": "check-submit", "loaded": 1, "message": "eb-stack failed: out-text", "missing": [], "partition": null, "schema_version": 1, "target": "x86_64/amd/zen4"}
+--- stderr
+eessi-arch-guard: check-submit: eb-stack failed: out-text
+
+--- end
+=== stderr padded by RS
+rc: 2
+--- stdout
+{"constraint": null, "exit": 2, "exit_semantic": "invalid", "kind": "check-submit", "loaded": 1, "message": "eb-stack failed: msg", "missing": [], "partition": null, "schema_version": 1, "target": "x86_64/amd/zen4"}
+--- stderr
+eessi-arch-guard: check-submit: eb-stack failed: msg
+
+--- end
+=== stdout padded by RS
+rc: 2
+--- stdout
+{"constraint": null, "exit": 2, "exit_semantic": "invalid", "kind": "check-submit", "loaded": 1, "message": "eb-stack failed: msg", "missing": [], "partition": null, "schema_version": 1, "target": "x86_64/amd/zen4"}
+--- stderr
+eessi-arch-guard: check-submit: eb-stack failed: msg
+
+--- end
+=== stderr of US alone
+rc: 2
+--- stdout
+{"constraint": null, "exit": 2, "exit_semantic": "invalid", "kind": "check-submit", "loaded": 1, "message": "eb-stack failed: out-text", "missing": [], "partition": null, "schema_version": 1, "target": "x86_64/amd/zen4"}
+--- stderr
+eessi-arch-guard: check-submit: eb-stack failed: out-text
+
+--- end
+=== stderr padded by US
+rc: 2
+--- stdout
+{"constraint": null, "exit": 2, "exit_semantic": "invalid", "kind": "check-submit", "loaded": 1, "message": "eb-stack failed: msg", "missing": [], "partition": null, "schema_version": 1, "target": "x86_64/amd/zen4"}
+--- stderr
+eessi-arch-guard: check-submit: eb-stack failed: msg
+
+--- end
+=== stdout padded by US
+rc: 2
+--- stdout
+{"constraint": null, "exit": 2, "exit_semantic": "invalid", "kind": "check-submit", "loaded": 1, "message": "eb-stack failed: msg", "missing": [], "partition": null, "schema_version": 1, "target": "x86_64/amd/zen4"}
+--- stderr
+eessi-arch-guard: check-submit: eb-stack failed: msg
+
+--- end
+=== stderr of NEL alone
+rc: 2
+--- stdout
+{"constraint": null, "exit": 2, "exit_semantic": "invalid", "kind": "check-submit", "loaded": 1, "message": "eb-stack failed: out-text", "missing": [], "partition": null, "schema_version": 1, "target": "x86_64/amd/zen4"}
+--- stderr
+eessi-arch-guard: check-submit: eb-stack failed: out-text
+
+--- end
+=== stderr padded by NEL
+rc: 2
+--- stdout
+{"constraint": null, "exit": 2, "exit_semantic": "invalid", "kind": "check-submit", "loaded": 1, "message": "eb-stack failed: msg", "missing": [], "partition": null, "schema_version": 1, "target": "x86_64/amd/zen4"}
+--- stderr
+eessi-arch-guard: check-submit: eb-stack failed: msg
+
+--- end
+=== stdout padded by NEL
+rc: 2
+--- stdout
+{"constraint": null, "exit": 2, "exit_semantic": "invalid", "kind": "check-submit", "loaded": 1, "message": "eb-stack failed: msg", "missing": [], "partition": null, "schema_version": 1, "target": "x86_64/amd/zen4"}
+--- stderr
+eessi-arch-guard: check-submit: eb-stack failed: msg
+
+--- end
+=== stderr of NBSP alone
+rc: 2
+--- stdout
+{"constraint": null, "exit": 2, "exit_semantic": "invalid", "kind": "check-submit", "loaded": 1, "message": "eb-stack failed: out-text", "missing": [], "partition": null, "schema_version": 1, "target": "x86_64/amd/zen4"}
+--- stderr
+eessi-arch-guard: check-submit: eb-stack failed: out-text
+
+--- end
+=== stderr padded by NBSP
+rc: 2
+--- stdout
+{"constraint": null, "exit": 2, "exit_semantic": "invalid", "kind": "check-submit", "loaded": 1, "message": "eb-stack failed: msg", "missing": [], "partition": null, "schema_version": 1, "target": "x86_64/amd/zen4"}
+--- stderr
+eessi-arch-guard: check-submit: eb-stack failed: msg
+
+--- end
+=== stdout padded by NBSP
+rc: 2
+--- stdout
+{"constraint": null, "exit": 2, "exit_semantic": "invalid", "kind": "check-submit", "loaded": 1, "message": "eb-stack failed: msg", "missing": [], "partition": null, "schema_version": 1, "target": "x86_64/amd/zen4"}
+--- stderr
+eessi-arch-guard: check-submit: eb-stack failed: msg
+
+--- end
+=== stderr of OGHAM alone
+rc: 2
+--- stdout
+{"constraint": null, "exit": 2, "exit_semantic": "invalid", "kind": "check-submit", "loaded": 1, "message": "eb-stack failed: out-text", "missing": [], "partition": null, "schema_version": 1, "target": "x86_64/amd/zen4"}
+--- stderr
+eessi-arch-guard: check-submit: eb-stack failed: out-text
+
+--- end
+=== stderr padded by OGHAM
+rc: 2
+--- stdout
+{"constraint": null, "exit": 2, "exit_semantic": "invalid", "kind": "check-submit", "loaded": 1, "message": "eb-stack failed: msg", "missing": [], "partition": null, "schema_version": 1, "target": "x86_64/amd/zen4"}
+--- stderr
+eessi-arch-guard: check-submit: eb-stack failed: msg
+
+--- end
+=== stdout padded by OGHAM
+rc: 2
+--- stdout
+{"constraint": null, "exit": 2, "exit_semantic": "invalid", "kind": "check-submit", "loaded": 1, "message": "eb-stack failed: msg", "missing": [], "partition": null, "schema_version": 1, "target": "x86_64/amd/zen4"}
+--- stderr
+eessi-arch-guard: check-submit: eb-stack failed: msg
+
+--- end
+=== stderr of EN alone
+rc: 2
+--- stdout
+{"constraint": null, "exit": 2, "exit_semantic": "invalid", "kind": "check-submit", "loaded": 1, "message": "eb-stack failed: out-text", "missing": [], "partition": null, "schema_version": 1, "target": "x86_64/amd/zen4"}
+--- stderr
+eessi-arch-guard: check-submit: eb-stack failed: out-text
+
+--- end
+=== stderr padded by EN
+rc: 2
+--- stdout
+{"constraint": null, "exit": 2, "exit_semantic": "invalid", "kind": "check-submit", "loaded": 1, "message": "eb-stack failed: msg", "missing": [], "partition": null, "schema_version": 1, "target": "x86_64/amd/zen4"}
+--- stderr
+eessi-arch-guard: check-submit: eb-stack failed: msg
+
+--- end
+=== stdout padded by EN
+rc: 2
+--- stdout
+{"constraint": null, "exit": 2, "exit_semantic": "invalid", "kind": "check-submit", "loaded": 1, "message": "eb-stack failed: msg", "missing": [], "partition": null, "schema_version": 1, "target": "x86_64/amd/zen4"}
+--- stderr
+eessi-arch-guard: check-submit: eb-stack failed: msg
+
+--- end
+=== stderr of LS alone
+rc: 2
+--- stdout
+{"constraint": null, "exit": 2, "exit_semantic": "invalid", "kind": "check-submit", "loaded": 1, "message": "eb-stack failed: out-text", "missing": [], "partition": null, "schema_version": 1, "target": "x86_64/amd/zen4"}
+--- stderr
+eessi-arch-guard: check-submit: eb-stack failed: out-text
+
+--- end
+=== stderr padded by LS
+rc: 2
+--- stdout
+{"constraint": null, "exit": 2, "exit_semantic": "invalid", "kind": "check-submit", "loaded": 1, "message": "eb-stack failed: msg", "missing": [], "partition": null, "schema_version": 1, "target": "x86_64/amd/zen4"}
+--- stderr
+eessi-arch-guard: check-submit: eb-stack failed: msg
+
+--- end
+=== stdout padded by LS
+rc: 2
+--- stdout
+{"constraint": null, "exit": 2, "exit_semantic": "invalid", "kind": "check-submit", "loaded": 1, "message": "eb-stack failed: msg", "missing": [], "partition": null, "schema_version": 1, "target": "x86_64/amd/zen4"}
+--- stderr
+eessi-arch-guard: check-submit: eb-stack failed: msg
+
+--- end
+=== stderr of PS alone
+rc: 2
+--- stdout
+{"constraint": null, "exit": 2, "exit_semantic": "invalid", "kind": "check-submit", "loaded": 1, "message": "eb-stack failed: out-text", "missing": [], "partition": null, "schema_version": 1, "target": "x86_64/amd/zen4"}
+--- stderr
+eessi-arch-guard: check-submit: eb-stack failed: out-text
+
+--- end
+=== stderr padded by PS
+rc: 2
+--- stdout
+{"constraint": null, "exit": 2, "exit_semantic": "invalid", "kind": "check-submit", "loaded": 1, "message": "eb-stack failed: msg", "missing": [], "partition": null, "schema_version": 1, "target": "x86_64/amd/zen4"}
+--- stderr
+eessi-arch-guard: check-submit: eb-stack failed: msg
+
+--- end
+=== stdout padded by PS
+rc: 2
+--- stdout
+{"constraint": null, "exit": 2, "exit_semantic": "invalid", "kind": "check-submit", "loaded": 1, "message": "eb-stack failed: msg", "missing": [], "partition": null, "schema_version": 1, "target": "x86_64/amd/zen4"}
+--- stderr
+eessi-arch-guard: check-submit: eb-stack failed: msg
+
+--- end
+=== stderr of NNBSP alone
+rc: 2
+--- stdout
+{"constraint": null, "exit": 2, "exit_semantic": "invalid", "kind": "check-submit", "loaded": 1, "message": "eb-stack failed: out-text", "missing": [], "partition": null, "schema_version": 1, "target": "x86_64/amd/zen4"}
+--- stderr
+eessi-arch-guard: check-submit: eb-stack failed: out-text
+
+--- end
+=== stderr padded by NNBSP
+rc: 2
+--- stdout
+{"constraint": null, "exit": 2, "exit_semantic": "invalid", "kind": "check-submit", "loaded": 1, "message": "eb-stack failed: msg", "missing": [], "partition": null, "schema_version": 1, "target": "x86_64/amd/zen4"}
+--- stderr
+eessi-arch-guard: check-submit: eb-stack failed: msg
+
+--- end
+=== stdout padded by NNBSP
+rc: 2
+--- stdout
+{"constraint": null, "exit": 2, "exit_semantic": "invalid", "kind": "check-submit", "loaded": 1, "message": "eb-stack failed: msg", "missing": [], "partition": null, "schema_version": 1, "target": "x86_64/amd/zen4"}
+--- stderr
+eessi-arch-guard: check-submit: eb-stack failed: msg
+
+--- end
+=== stderr of MMSP alone
+rc: 2
+--- stdout
+{"constraint": null, "exit": 2, "exit_semantic": "invalid", "kind": "check-submit", "loaded": 1, "message": "eb-stack failed: out-text", "missing": [], "partition": null, "schema_version": 1, "target": "x86_64/amd/zen4"}
+--- stderr
+eessi-arch-guard: check-submit: eb-stack failed: out-text
+
+--- end
+=== stderr padded by MMSP
+rc: 2
+--- stdout
+{"constraint": null, "exit": 2, "exit_semantic": "invalid", "kind": "check-submit", "loaded": 1, "message": "eb-stack failed: msg", "missing": [], "partition": null, "schema_version": 1, "target": "x86_64/amd/zen4"}
+--- stderr
+eessi-arch-guard: check-submit: eb-stack failed: msg
+
+--- end
+=== stdout padded by MMSP
+rc: 2
+--- stdout
+{"constraint": null, "exit": 2, "exit_semantic": "invalid", "kind": "check-submit", "loaded": 1, "message": "eb-stack failed: msg", "missing": [], "partition": null, "schema_version": 1, "target": "x86_64/amd/zen4"}
+--- stderr
+eessi-arch-guard: check-submit: eb-stack failed: msg
+
+--- end
+=== stderr of IDEOGRAPHIC alone
+rc: 2
+--- stdout
+{"constraint": null, "exit": 2, "exit_semantic": "invalid", "kind": "check-submit", "loaded": 1, "message": "eb-stack failed: out-text", "missing": [], "partition": null, "schema_version": 1, "target": "x86_64/amd/zen4"}
+--- stderr
+eessi-arch-guard: check-submit: eb-stack failed: out-text
+
+--- end
+=== stderr padded by IDEOGRAPHIC
+rc: 2
+--- stdout
+{"constraint": null, "exit": 2, "exit_semantic": "invalid", "kind": "check-submit", "loaded": 1, "message": "eb-stack failed: msg", "missing": [], "partition": null, "schema_version": 1, "target": "x86_64/amd/zen4"}
+--- stderr
+eessi-arch-guard: check-submit: eb-stack failed: msg
+
+--- end
+=== stdout padded by IDEOGRAPHIC
+rc: 2
+--- stdout
+{"constraint": null, "exit": 2, "exit_semantic": "invalid", "kind": "check-submit", "loaded": 1, "message": "eb-stack failed: msg", "missing": [], "partition": null, "schema_version": 1, "target": "x86_64/amd/zen4"}
+--- stderr
+eessi-arch-guard: check-submit: eb-stack failed: msg
+
+--- end
+=== both empty
+rc: 2
+--- stdout
+{"constraint": null, "exit": 2, "exit_semantic": "invalid", "kind": "check-submit", "loaded": 1, "message": "eb-stack failed: exit 3", "missing": [], "partition": null, "schema_version": 1, "target": "x86_64/amd/zen4"}
+--- stderr
+eessi-arch-guard: check-submit: eb-stack failed: exit 3
+
+--- end
+=== stderr of ASCII space
+rc: 2
+--- stdout
+{"constraint": null, "exit": 2, "exit_semantic": "invalid", "kind": "check-submit", "loaded": 1, "message": "eb-stack failed: out-text", "missing": [], "partition": null, "schema_version": 1, "target": "x86_64/amd/zen4"}
+--- stderr
+eessi-arch-guard: check-submit: eb-stack failed: out-text
+
+--- end

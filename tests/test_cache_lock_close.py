@@ -1,19 +1,18 @@
 """A failed close of the cache lock, injected at the close(2) call.
 
-The guard releases the cache lock by closing its descriptor, and Python
-closes it in a ``finally`` block, so a failed close raises OSError. After a
-decision, cached or new, both builds print the skip line of that OSError.
-After the deadline or SIGTERM the Zig build keeps the timeout or the
-termination, where Python's ``finally`` block reports the close instead;
-COMPAT.md lists the difference. An interrupted close is a failed one too:
-``os.close`` does not retry EINTR, as PEP 475 exempts it, and raises
-InterruptedError.
+The guard releases the cache lock by closing its descriptor, so a failed
+close is an error of the run. After a decision, cached or new, the guard
+prints the skip line of that error. After the deadline or SIGTERM it keeps
+the timeout or the termination as the failure it reports and does not report
+the close. An interrupted close (EINTR) is a failed one too and is not
+retried.
 
 ``close_fail.c`` traces the guard and fails the first close of the lock
 with EIO, or EINTR, after the close has run, so the lock is free
-afterwards, as after a real failed close. The tests run the build
-``harness`` picks; they skip without a C compiler or where ptrace is
-refused.
+afterwards, as after a real failed close. The cache path is the one the
+guard makes: a first run makes the cache file, and the test finds it by its
+name, so no test depends on how the name is built. The tests skip without a
+C compiler or where ptrace is refused.
 """
 
 from __future__ import annotations
@@ -30,9 +29,7 @@ import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-import eessi_arch_guard as guard  # noqa: E402
 import harness  # noqa: E402
 from slurm_model import apply_task_prolog  # noqa: E402
 
@@ -45,6 +42,8 @@ EINTR_SKIP_LINE = (
     "print eessi-arch-guard: skipped, InterruptedError: [Errno 4] Interrupted system call\n"
 )
 SOURCE = Path(__file__).resolve().parent / "close_fail.c"
+STRICT_FAILURE_EXIT = 78
+CACHE_PREFIX = ".eessi-arch-guard."
 
 
 class CacheLockCloseTests(unittest.TestCase):
@@ -77,8 +76,34 @@ class CacheLockCloseTests(unittest.TestCase):
         self.env = harness.base_env(self.site, ZEN4, ["R/4.4.2"], gpu="none")
         self.env["TMPDIR"] = self.site.root
         self.env["SLURM_JOB_ID"] = "7373"
-        self.cache = guard.cache_file_path(self.env)
-        self.lock = self.cache + ".lock"
+        self.cache, self.lock = self._make_cache_names()
+
+    def _make_cache_names(self, args=()):
+        """Run the guard once, and return its cache path and lock path.
+
+        The run leaves the cache file and its lock in the work directory. The
+        cache file is removed, so the caller starts without a cache unless it
+        runs the guard again.
+        """
+        proc = subprocess.run(
+            [*harness.GUARD_ARGV, *args],
+            capture_output=True,
+            encoding="utf-8",
+            env=self.env,
+            timeout=60,
+            check=False,
+        )
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        found = [
+            os.path.join(directory, name)
+            for directory, _dirs, names in os.walk(self.site.root)
+            for name in names
+            if name.startswith(CACHE_PREFIX) and not name.endswith((".lock", ".tmp"))
+        ]
+        self.assertEqual(len(found), 1, found)
+        cache = found[0]
+        os.unlink(cache)
+        return cache, cache + ".lock"
 
     def _argv(self, args=(), errno=EIO):
         return [self.tracer, errno, self.lock, "--", *harness.GUARD_ARGV, *args]
@@ -116,7 +141,7 @@ class CacheLockCloseTests(unittest.TestCase):
         self.assertEqual(proc.returncode, 0, proc.stderr)
         self.assertEqual(proc.stdout, SKIP_LINE)
         self.assertEqual(proc.stderr, "")
-        # The decision was written before the close, as in Python.
+        # The decision is written before the close.
         self.assertTrue(os.path.isfile(self.cache))
         self._assert_lock_free()
 
@@ -129,13 +154,19 @@ class CacheLockCloseTests(unittest.TestCase):
         self._assert_lock_free()
 
     def test_failed_close_after_a_cache_hit_is_the_skip_and_strict(self) -> None:
-        guard._write_cache(
-            self.cache,
-            guard.Outcome({"SENTINEL": "cached-decision"}, "cached", "reloaded"),
+        self.cache, self.lock = self._make_cache_names(["--strict"])
+        cached = subprocess.run(
+            [*harness.GUARD_ARGV, "--strict"],
+            capture_output=True,
+            encoding="utf-8",
+            env=self.env,
+            timeout=60,
+            check=False,
         )
+        self.assertEqual(cached.returncode, 0, cached.stderr)
         before = Path(self.cache).read_bytes()
         proc = self._run(["--strict"])
-        self.assertEqual(proc.returncode, guard.STRICT_FAILURE_EXIT, proc.stderr)
+        self.assertEqual(proc.returncode, STRICT_FAILURE_EXIT, proc.stderr)
         self.assertEqual(proc.stdout, SKIP_LINE)
         self.assertEqual(Path(self.cache).read_bytes(), before)
         self._assert_lock_free()
@@ -156,10 +187,7 @@ class CacheLockCloseTests(unittest.TestCase):
     def test_failed_close_after_the_deadline(self) -> None:
         self._hold_lock()
         proc = self._run(["--timeout", "0.5"])
-        if harness.TOOL_BIN:
-            self.assertTrue(self._failed_token(proc).endswith("->timeout"), proc.stdout)
-        else:
-            self.assertEqual(proc.stdout, SKIP_LINE)
+        self.assertTrue(self._failed_token(proc).endswith("->timeout"), proc.stdout)
         self.assertFalse(os.path.isfile(self.cache))
 
     def test_failed_close_after_sigterm(self) -> None:
@@ -180,11 +208,7 @@ class CacheLockCloseTests(unittest.TestCase):
                 tracer.kill()
                 tracer.communicate(timeout=10)
         proc = subprocess.CompletedProcess(tracer.args, tracer.returncode, out, err)
-        if harness.TOOL_BIN:
-            self.assertTrue(self._failed_token(proc).endswith("->terminated"), proc.stdout)
-        else:
-            self.assertEqual(proc.returncode, 0, proc.stderr)
-            self.assertEqual(proc.stdout, SKIP_LINE)
+        self.assertTrue(self._failed_token(proc).endswith("->terminated"), proc.stdout)
         self.assertFalse(os.path.isfile(self.cache))
 
     def _wait_for_lock_open(self, tracer) -> None:

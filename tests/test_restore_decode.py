@@ -1,19 +1,18 @@
-"""`--restore` stderr matches CPython 3.14 on the committed decode vectors.
+"""`--restore` exit status and streams on the committed decode vectors.
 
-The vectors were produced by Python 3.14: ``decode('utf-8')`` then
-``json.loads``, and the same bytes fed to the Python guard. This test runs
-the Python guard again when this interpreter reports the stored exception,
-then runs ``TOOL_BIN`` against every vector. A Python older than 3.13 words
-a trailing comma differently, so a live exception that is not the stored one
-does not fail the Python half. The binary is always compared with the stored
-bytes. ``TOOL_BIN`` unset skips only that half, after the Python assertions.
+``zig/testdata/restore_decode_vectors.json`` holds request bytes with the
+exit status, standard output, and standard error expected for each. They are
+an expected-output file: the exception texts in them come from CPython 3.14
+(``decode('utf-8')`` then ``json.loads``), whose wording the binary
+reproduces. This test runs the binary on every vector and compares all three
+with the stored values. The Zig test "restore decode vectors match CPython"
+in ``zig/pydecode.zig`` reads the same file.
 """
 
 from __future__ import annotations
 
 import json
 import subprocess
-import sys
 import unittest
 from pathlib import Path
 
@@ -60,29 +59,12 @@ REQUIRED = (
 )
 
 
-def _not_json(name):
-    raise ValueError("%s is not JSON" % name)
-
-
-def exception_text(raw):
-    """The exception ``json.loads`` raises after a strict utf-8 decode, or None."""
-    try:
-        text = raw.decode("utf-8")
-    except UnicodeDecodeError as exc:
-        return str(exc)
-    try:
-        json.loads(text, parse_constant=_not_json)
-    except Exception as exc:
-        return str(exc)
-    return None
-
-
-class RestoreDecodeParityTests(unittest.TestCase):
+class RestoreDecodeTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.vectors = json.loads(VECTORS.read_text(encoding="utf-8"))
 
-    def test_vectors_match_the_guard_and_the_binary(self):
+    def test_vectors_match_the_binary(self):
         self.assertGreaterEqual(len(self.vectors), 40)
         self.assertGreaterEqual(sum(1 for vector in self.vectors if vector["code"] == 1), 30)
         names = {vector["name"] for vector in self.vectors}
@@ -102,29 +84,12 @@ class RestoreDecodeParityTests(unittest.TestCase):
             self.assertIn("restore request is malformed", obj["stdout"])
         for vector in self.vectors:
             raw = bytes.fromhex(vector["input_hex"])
-            self.check_python(vector, raw)
-        harness.skip_unless_tool_bin(self)
-        for vector in self.vectors:
-            raw = bytes.fromhex(vector["input_hex"])
-            self.check_binary(vector, raw)
-
-    def check_python(self, vector, raw):
-        if exception_text(raw) != vector["exc"]:
-            return
-        proc = subprocess.run(
-            [sys.executable, "-I", str(harness.GUARD), "--restore"],
-            input=raw,
-            capture_output=True,
-            env=ENV,
-            check=False,
-        )
-        self.assertEqual(proc.returncode, vector["code"], vector["name"])
-        self.assertEqual(proc.stdout.decode("utf-8"), vector["stdout"], vector["name"])
-        self.assertEqual(proc.stderr.decode("utf-8"), vector["stderr"], vector["name"])
+            with self.subTest(vector=vector["name"]):
+                self.check_binary(vector, raw)
 
     def check_binary(self, vector, raw):
         proc = subprocess.run(
-            [harness.TOOL_BIN, "--restore"],
+            [*harness.GUARD_ARGV, "--restore"],
             input=raw,
             capture_output=True,
             env=ENV,

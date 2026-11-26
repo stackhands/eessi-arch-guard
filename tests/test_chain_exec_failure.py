@@ -1,15 +1,13 @@
-"""The Python and Zig guards must print one JSON object for a chain exec failure.
+"""A chained prolog that cannot be started ends the run as a skip.
 
-A chained prolog that cannot be started raises an OSError in Python before
-any decision is made. Python's main catches it and, with --json on the
-command line, prints a failed decision whose cause is the exception class
-and whose message is the exception text; without --json it prints the skip
-line. The programs are compared on exit status, standard output, and
-standard error for a chain whose interpreter is missing, a chain that is
-not a program the kernel can run, and a chain under a directory whose name
-has a quote and a character outside ASCII, so that the message has to be
-quoted as Python does and escaped as JSON does. The comparison skips when
-TOOL_BIN is unset.
+The guard starts the chain before it decides anything. When the exec fails,
+with --json it prints a failed decision whose cause is the OS error class
+and whose message is the error text with the program path in single quotes;
+without --json it prints the skip line. The cases cover a chain whose
+interpreter is missing, a chain that is not a program the kernel can run,
+and a chain under a directory whose name has a quote and a character outside
+ASCII, so that the message is quoted with the path escaped and the JSON is
+escaped. Expected outputs are in ``golden/chain-exec-failure.txt``.
 """
 
 from __future__ import annotations
@@ -24,6 +22,7 @@ from typing import Sequence
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import harness  # noqa: E402
+import retire_b_support as support  # noqa: E402
 
 CPU = "x86_64/amd/zen4"
 RUN_TIMEOUT = 20.0
@@ -33,7 +32,7 @@ MODES: Sequence[Sequence[str]] = (
 )
 
 
-class ChainExecJsonParityTests(unittest.TestCase):
+class ChainExecFailureTests(unittest.TestCase):
     def setUp(self) -> None:
         self.site = harness.Site()
         self.addCleanup(self.site.close)
@@ -52,16 +51,13 @@ class ChainExecJsonParityTests(unittest.TestCase):
         os.chmod(path, 0o755)
         return path
 
-    def _run(self, guard, chain: str, mode: Sequence[str]):
+    def _run(self, chain: str, mode: Sequence[str]):
         env = harness.base_env(self.site, CPU, ["R/4.4.2"], gpu="none")
-        argv = [*guard, "--chain", chain, *mode]
+        argv = [*harness.GUARD_ARGV, "--chain", chain, *mode]
         return harness.run_with_timeout(argv, env=env, timeout=RUN_TIMEOUT)
 
-    def _python(self, chain: str, mode: Sequence[str]):
-        return self._run([sys.executable, "-I", str(harness.GUARD)], chain, mode)
-
-    def test_python_guard_prints_the_exception_as_the_message(self) -> None:
-        proc = self._python(self.bad_shebang, ("--json",))
+    def test_the_exception_text_is_the_message(self) -> None:
+        proc = self._run(self.bad_shebang, ("--json",))
         self.assertEqual(proc.returncode, 0, proc.stderr)
         report = json.loads(proc.stdout)
         self.assertEqual(report["cause"], "FileNotFoundError")
@@ -69,21 +65,21 @@ class ChainExecJsonParityTests(unittest.TestCase):
             report["message"], "[Errno 2] No such file or directory: %r" % self.bad_shebang
         )
         self.assertIsNone(report["detail"])
-        proc = self._python(self.empty, ("--json",))
+        proc = self._run(self.empty, ("--json",))
         report = json.loads(proc.stdout)
         self.assertEqual(report["cause"], "OSError")
         self.assertEqual(report["message"], "[Errno 8] Exec format error: %r" % self.empty)
 
-    def test_programs_agree_when_the_chain_cannot_be_started(self) -> None:
-        harness.skip_unless_tool_bin(self)
+    def test_output_when_the_chain_cannot_be_started(self) -> None:
+        sheet = support.sheet(self, "chain-exec-failure")
         for chain in (self.bad_shebang, self.empty, self.odd):
             for mode in MODES:
-                with self.subTest(chain=os.path.basename(chain), mode=" ".join(mode)):
-                    python = self._python(chain, mode)
-                    program = self._run([str(harness.PROGRAM)], chain, mode)
-                    self.assertEqual(program.returncode, python.returncode, program.stderr)
-                    self.assertEqual(program.stderr, python.stderr)
-                    self.assertEqual(program.stdout, python.stdout)
+                name = "%s %s" % (os.path.basename(chain), " ".join(mode))
+                if chain == self.odd:
+                    name = "odd-directory " + name
+                with self.subTest(case=name):
+                    proc = self._run(chain, mode)
+                    support.check(self, sheet, name, proc, self.site)
 
 
 if __name__ == "__main__":

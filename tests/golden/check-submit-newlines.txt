@@ -1,0 +1,176 @@
+=== pair in stderr
+rc: 2
+--- stdout
+{"constraint": null, "exit": 2, "exit_semantic": "invalid", "kind": "check-submit", "loaded": 1, "message": "eb-stack failed: first second", "missing": [], "partition": null, "schema_version": 1, "target": "x86_64/amd/zen4"}
+--- stderr
+eessi-arch-guard: check-submit: eb-stack failed: first second
+
+--- end
+=== lone return in stderr
+rc: 2
+--- stdout
+{"constraint": null, "exit": 2, "exit_semantic": "invalid", "kind": "check-submit", "loaded": 1, "message": "eb-stack failed: first second", "missing": [], "partition": null, "schema_version": 1, "target": "x86_64/amd/zen4"}
+--- stderr
+eessi-arch-guard: check-submit: eb-stack failed: first second
+
+--- end
+=== line feed in stderr
+rc: 2
+--- stdout
+{"constraint": null, "exit": 2, "exit_semantic": "invalid", "kind": "check-submit", "loaded": 1, "message": "eb-stack failed: first second", "missing": [], "partition": null, "schema_version": 1, "target": "x86_64/amd/zen4"}
+--- stderr
+eessi-arch-guard: check-submit: eb-stack failed: first second
+
+--- end
+=== two pairs in stderr
+rc: 2
+--- stdout
+{"constraint": null, "exit": 2, "exit_semantic": "invalid", "kind": "check-submit", "loaded": 1, "message": "eb-stack failed: a  b", "missing": [], "partition": null, "schema_version": 1, "target": "x86_64/amd/zen4"}
+--- stderr
+eessi-arch-guard: check-submit: eb-stack failed: a  b
+
+--- end
+=== pair then return in stderr
+rc: 2
+--- stdout
+{"constraint": null, "exit": 2, "exit_semantic": "invalid", "kind": "check-submit", "loaded": 1, "message": "eb-stack failed: a  b", "missing": [], "partition": null, "schema_version": 1, "target": "x86_64/amd/zen4"}
+--- stderr
+eessi-arch-guard: check-submit: eb-stack failed: a  b
+
+--- end
+=== pair in stdout
+rc: 2
+--- stdout
+{"constraint": null, "exit": 2, "exit_semantic": "invalid", "kind": "check-submit", "loaded": 1, "message": "eb-stack failed: first second", "missing": [], "partition": null, "schema_version": 1, "target": "x86_64/amd/zen4"}
+--- stderr
+eessi-arch-guard: check-submit: eb-stack failed: first second
+
+--- end
+=== pair beside a stdout
+rc: 2
+--- stdout
+{"constraint": null, "exit": 2, "exit_semantic": "invalid", "kind": "check-submit", "loaded": 1, "message": "eb-stack failed: err or", "missing": [], "partition": null, "schema_version": 1, "target": "x86_64/amd/zen4"}
+--- stderr
+eessi-arch-guard: check-submit: eb-stack failed: err or
+
+--- end
+=== flagged line after carriage return
+rc: 1
+--- stdout
+{"constraint": null, "exit": 1, "exit_semantic": "missing", "kind": "check-submit", "loaded": 1, "message": null, "missing": ["R/4.4.2"], "partition": null, "schema_version": 1, "target": "x86_64/amd/zen4"}
+--- stderr
+eessi-arch-guard: check-submit: loaded module absent from x86_64/amd/zen4: R/4.4.2
+
+--- end
+=== flagged line after vertical tab
+rc: 1
+--- stdout
+{"constraint": null, "exit": 1, "exit_semantic": "missing", "kind": "check-submit", "loaded": 1, "message": null, "missing": ["R/4.4.2"], "partition": null, "schema_version": 1, "target": "x86_64/amd/zen4"}
+--- stderr
+eessi-arch-guard: check-submit: loaded module absent from x86_64/amd/zen4: R/4.4.2
+
+--- end
+=== flagged line after form feed
+rc: 1
+--- stdout
+{"constraint": null, "exit": 1, "exit_semantic": "missing", "kind": "check-submit", "loaded": 1, "message": null, "missing": ["R/4.4.2"], "partition": null, "schema_version": 1, "target": "x86_64/amd/zen4"}
+--- stderr
+eessi-arch-guard: check-submit: loaded module absent from x86_64/amd/zen4: R/4.4.2
+
+--- end
+=== flagged line after file separator
+rc: 1
+--- stdout
+{"constraint": null, "exit": 1, "exit_semantic": "missing", "kind": "check-submit", "loaded": 1, "message": null, "missing": ["R/4.4.2"], "partition": null, "schema_version": 1, "target": "x86_64/amd/zen4"}
+--- stderr
+eessi-arch-guard: check-submit: loaded module absent from x86_64/amd/zen4: R/4.4.2
+
+--- end
+=== flagged line after group separator
+rc: 1
+--- stdout
+{"constraint": null, "exit": 1, "exit_semantic": "missing", "kind": "check-submit", "loaded": 1, "message": null, "missing": ["R/4.4.2"], "partition": null, "schema_version": 1, "target": "x86_64/amd/zen4"}
+--- stderr
+eessi-arch-guard: check-submit: loaded module absent from x86_64/amd/zen4: R/4.4.2
+
+--- end
+=== flagged line after record separator
+rc: 1
+--- stdout
+{"constraint": null, "exit": 1, "exit_semantic": "missing", "kind": "check-submit", "loaded": 1, "message": null, "missing": ["R/4.4.2"], "partition": null, "schema_version": 1, "target": "x86_64/amd/zen4"}
+--- stderr
+eessi-arch-guard: check-submit: loaded module absent from x86_64/amd/zen4: R/4.4.2
+
+--- end
+=== flagged line after next line
+rc: 1
+--- stdout
+{"constraint": null, "exit": 1, "exit_semantic": "missing", "kind": "check-submit", "loaded": 1, "message": null, "missing": ["R/4.4.2"], "partition": null, "schema_version": 1, "target": "x86_64/amd/zen4"}
+--- stderr
+eessi-arch-guard: check-submit: loaded module absent from x86_64/amd/zen4: R/4.4.2
+
+--- end
+=== flagged line after line separator
+rc: 1
+--- stdout
+{"constraint": null, "exit": 1, "exit_semantic": "missing", "kind": "check-submit", "loaded": 1, "message": null, "missing": ["R/4.4.2"], "partition": null, "schema_version": 1, "target": "x86_64/amd/zen4"}
+--- stderr
+eessi-arch-guard: check-submit: loaded module absent from x86_64/amd/zen4: R/4.4.2
+
+--- end
+=== flagged line after paragraph separator
+rc: 1
+--- stdout
+{"constraint": null, "exit": 1, "exit_semantic": "missing", "kind": "check-submit", "loaded": 1, "message": null, "missing": ["R/4.4.2"], "partition": null, "schema_version": 1, "target": "x86_64/amd/zen4"}
+--- stderr
+eessi-arch-guard: check-submit: loaded module absent from x86_64/amd/zen4: R/4.4.2
+
+--- end
+=== flagged line after unit separator
+rc: 2
+--- stdout
+{"constraint": null, "exit": 2, "exit_semantic": "invalid", "kind": "check-submit", "loaded": 1, "message": "eb-stack failed: noise EAGCheck522f342e342e32-1.0.eb is flagged on x86_64: it has never been installed there", "missing": [], "partition": null, "schema_version": 1, "target": "x86_64/amd/zen4"}
+--- stderr
+eessi-arch-guard: check-submit: eb-stack failed: noise EAGCheck522f342e342e32-1.0.eb is flagged on x86_64: it has never been installed there
+
+--- end
+=== flagged line after single shift
+rc: 2
+--- stdout
+{"constraint": null, "exit": 2, "exit_semantic": "invalid", "kind": "check-submit", "loaded": 1, "message": "eb-stack failed: noise\u0084EAGCheck522f342e342e32-1.0.eb is flagged on x86_64: it has never been installed there", "missing": [], "partition": null, "schema_version": 1, "target": "x86_64/amd/zen4"}
+--- stderr
+eessi-arch-guard: check-submit: eb-stack failed: noise\x84EAGCheck522f342e342e32-1.0.eb is flagged on x86_64: it has never been installed there
+
+--- end
+=== flagged line after hyphenation point
+rc: 2
+--- stdout
+{"constraint": null, "exit": 2, "exit_semantic": "invalid", "kind": "check-submit", "loaded": 1, "message": "eb-stack failed: noise\u2027EAGCheck522f342e342e32-1.0.eb is flagged on x86_64: it has never been installed there", "missing": [], "partition": null, "schema_version": 1, "target": "x86_64/amd/zen4"}
+--- stderr
+eessi-arch-guard: check-submit: eb-stack failed: noise\u2027EAGCheck522f342e342e32-1.0.eb is flagged on x86_64: it has never been installed there
+
+--- end
+=== flagged line after left to right embedding
+rc: 2
+--- stdout
+{"constraint": null, "exit": 2, "exit_semantic": "invalid", "kind": "check-submit", "loaded": 1, "message": "eb-stack failed: noise\u202aEAGCheck522f342e342e32-1.0.eb is flagged on x86_64: it has never been installed there", "missing": [], "partition": null, "schema_version": 1, "target": "x86_64/amd/zen4"}
+--- stderr
+eessi-arch-guard: check-submit: eb-stack failed: noise\u202aEAGCheck522f342e342e32-1.0.eb is flagged on x86_64: it has never been installed there
+
+--- end
+=== flagged line after lone lead byte
+rc: 2
+--- stdout
+{"constraint": null, "exit": 2, "exit_semantic": "invalid", "kind": "check-submit", "loaded": 1, "message": "eb-stack failed: noise\udcc2EAGCheck522f342e342e32-1.0.eb is flagged on x86_64: it has never been installed there", "missing": [], "partition": null, "schema_version": 1, "target": "x86_64/amd/zen4"}
+--- stderr
+eessi-arch-guard: check-submit: eb-stack failed: noise?EAGCheck522f342e342e32-1.0.eb is flagged on x86_64: it has never been installed there
+
+--- end
+=== flagged line after cut line separator
+rc: 2
+--- stdout
+{"constraint": null, "exit": 2, "exit_semantic": "invalid", "kind": "check-submit", "loaded": 1, "message": "eb-stack failed: noise\udce2\udc80EAGCheck522f342e342e32-1.0.eb is flagged on x86_64: it has never been installed there", "missing": [], "partition": null, "schema_version": 1, "target": "x86_64/amd/zen4"}
+--- stderr
+eessi-arch-guard: check-submit: eb-stack failed: noise??EAGCheck522f342e342e32-1.0.eb is flagged on x86_64: it has never been installed there
+
+--- end

@@ -1,13 +1,13 @@
-"""The Python and Zig guards must name the eb-stack program in an exec error.
+"""check-submit names the eb-stack program in an exec error.
 
 check-submit runs eb-stack and reports a failed exec as "could not run
-eb-stack" followed by the OSError text. Python's text ends with the program
-as it was given to subprocess: the path from the option, or the path
-shutil.which returned, which keeps a relative PATH entry relative, written as
-repr writes it, so a name with a quote or a newline is escaped. The cases
-run both programs on one generated tree, from a directory the relative
-entries refer to, and compare exit status, standard output, and standard
-error. The comparison skips when TOOL_BIN is unset.
+eb-stack" followed by the OS error text. The text ends with the program as
+the guard started it: the path from the option, or the path found on PATH,
+which stays relative when the PATH entry is relative. The path is written
+in single quotes with a quote or a newline in the name escaped. The cases
+run on one generated tree, from a directory the relative entries refer to.
+The first test checks the error text of each case, and
+``golden/eb-stack-exec-error.txt`` pins the exit status and both streams.
 """
 
 from __future__ import annotations
@@ -21,6 +21,7 @@ from typing import Dict, List, Tuple
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import harness  # noqa: E402
+import retire_b_support as support  # noqa: E402
 
 TARGET = "x86_64/amd/zen4"
 RUN_TIMEOUT = 20.0
@@ -28,7 +29,7 @@ BAD_FORMAT = "[Errno 8] Exec format error: "
 ABSENT = "[Errno 2] No such file or directory: "
 
 
-class EbStackExecParityTests(unittest.TestCase):
+class EbStackExecErrorTests(unittest.TestCase):
     def setUp(self) -> None:
         self.site = harness.Site()
         self.addCleanup(self.site.close)
@@ -51,7 +52,7 @@ class EbStackExecParityTests(unittest.TestCase):
             os.chmod(path, 0o755)
 
     def _cases(self) -> List[Tuple[str, str, str, str]]:
-        """Return label, option value, PATH, and the text Python reports."""
+        """Return label, option value, PATH, and the expected error text."""
         std = "/usr/bin:/bin"
         return [
             ("absolute path, bad format", self.garbage, std, BAD_FORMAT + repr(self.garbage)),
@@ -78,32 +79,24 @@ class EbStackExecParityTests(unittest.TestCase):
     def _argv(self, option: str) -> List[str]:
         return ["--check-submit", "--target", TARGET, "--eb-stack", option]
 
-    def _python(self, option: str, path: str):
-        argv = [sys.executable, "-I", str(harness.GUARD), *self._argv(option)]
-        env = self._env(path)
-        return harness.run_with_timeout(argv, env=env, timeout=RUN_TIMEOUT, cwd=self.root)
-
     def _program(self, option: str, path: str):
-        argv = [str(harness.PROGRAM), *self._argv(option)]
+        argv = [*harness.GUARD_ARGV, *self._argv(option)]
         env = self._env(path)
         return harness.run_with_timeout(argv, env=env, timeout=RUN_TIMEOUT, cwd=self.root)
 
-    def test_python_guard_names_the_program_in_the_exec_error(self) -> None:
+    def test_the_exec_error_names_the_program(self) -> None:
         for label, option, path, expected in self._cases():
             with self.subTest(case=label):
-                proc = self._python(option, path)
+                proc = self._program(option, path)
                 self.assertEqual(proc.returncode, 2, proc.stderr)
                 self.assertIn("could not run eb-stack: " + expected, proc.stderr)
 
-    def test_programs_agree_when_eb_stack_cannot_exec(self) -> None:
-        harness.skip_unless_tool_bin(self)
+    def test_output_when_eb_stack_cannot_exec(self) -> None:
+        sheet = support.sheet(self, "eb-stack-exec-error")
         for label, option, path, _expected in self._cases():
-            python = self._python(option, path)
-            program = self._program(option, path)
             with self.subTest(case=label):
-                self.assertEqual(program.returncode, python.returncode)
-                self.assertEqual(program.stderr, python.stderr)
-                self.assertEqual(program.stdout, python.stdout)
+                proc = self._program(option, path)
+                support.check(self, sheet, label, proc, self.site)
 
 
 if __name__ == "__main__":

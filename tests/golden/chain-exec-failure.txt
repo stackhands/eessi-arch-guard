@@ -1,0 +1,48 @@
+=== chain-bad-shebang.sh --json
+rc: 0
+--- stdout
+{"cached": false, "cause": "FileNotFoundError", "decision": "failed", "detail": null, "exit": 0, "exit_semantic": "ok", "kind": "decision", "message": "[Errno 2] No such file or directory: '@WORK@/chain-bad-shebang.sh'", "now": null, "reload_needed": true, "schema_version": 1, "shell": false, "strict": false, "was": "x86_64/amd/zen4"}
+
+--- stderr
+
+--- end
+=== chain-bad-shebang.sh --json --strict
+rc: 78
+--- stdout
+{"cached": false, "cause": "FileNotFoundError", "decision": "failed", "detail": null, "exit": 78, "exit_semantic": "strict-failure", "kind": "decision", "message": "[Errno 2] No such file or directory: '@WORK@/chain-bad-shebang.sh'", "now": null, "reload_needed": true, "schema_version": 1, "shell": false, "strict": true, "was": "x86_64/amd/zen4"}
+
+--- stderr
+
+--- end
+=== chain-empty.sh --json
+rc: 0
+--- stdout
+{"cached": false, "cause": "OSError", "decision": "failed", "detail": null, "exit": 0, "exit_semantic": "ok", "kind": "decision", "message": "[Errno 8] Exec format error: '@WORK@/chain-empty.sh'", "now": null, "reload_needed": true, "schema_version": 1, "shell": false, "strict": false, "was": "x86_64/amd/zen4"}
+
+--- stderr
+
+--- end
+=== chain-empty.sh --json --strict
+rc: 78
+--- stdout
+{"cached": false, "cause": "OSError", "decision": "failed", "detail": null, "exit": 78, "exit_semantic": "strict-failure", "kind": "decision", "message": "[Errno 8] Exec format error: '@WORK@/chain-empty.sh'", "now": null, "reload_needed": true, "schema_version": 1, "shell": false, "strict": true, "was": "x86_64/amd/zen4"}
+
+--- stderr
+
+--- end
+=== odd-directory chain.sh --json
+rc: 0
+--- stdout
+{"cached": false, "cause": "FileNotFoundError", "decision": "failed", "detail": null, "exit": 0, "exit_semantic": "ok", "kind": "decision", "message": "[Errno 2] No such file or directory: \"@WORK@/it's \u00e9/chain.sh\"", "now": null, "reload_needed": true, "schema_version": 1, "shell": false, "strict": false, "was": "x86_64/amd/zen4"}
+
+--- stderr
+
+--- end
+=== odd-directory chain.sh --json --strict
+rc: 78
+--- stdout
+{"cached": false, "cause": "FileNotFoundError", "decision": "failed", "detail": null, "exit": 78, "exit_semantic": "strict-failure", "kind": "decision", "message": "[Errno 2] No such file or directory: \"@WORK@/it's \u00e9/chain.sh\"", "now": null, "reload_needed": true, "schema_version": 1, "shell": false, "strict": true, "was": "x86_64/amd/zen4"}
+
+--- stderr
+
+--- end
