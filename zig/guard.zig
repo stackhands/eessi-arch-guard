@@ -2106,10 +2106,10 @@ fn lockExclusive(c: *Ctx, fd: sys.fd_t) Stop!void {
     while (true) {
         try l.check();
         const committing = l.committing.load(.seq_cst);
-        const timeout_ms: ?u32 = if (committing) null else blk: {
+        const timeout_ms: ?u64 = if (committing) null else blk: {
             const rem = l.remainingMs();
             if (rem <= 0) return error.Deadline;
-            break :blk @intCast(@min(rem, std.math.maxInt(u32)));
+            break :blk @intCast(rem);
         };
         const cancel: ?*const std.atomic.Value(bool) = if (committing) null else &l.terminated;
         state.lockExclusiveCancel(fd, timeout_ms, cancel) catch |err| switch (err) {
