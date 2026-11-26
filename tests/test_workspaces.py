@@ -21,13 +21,17 @@ ZEN4 = "x86_64/amd/zen4"
 
 WRAPPER = """#!/bin/sh
 {
-  echo "WORK=$EESSI_ARCH_GUARD_WORKDIR"
-  echo "HOME=$HOME"
-  echo "TMPDIR=$TMPDIR"
-  if [ -d "$EESSI_ARCH_GUARD_WORKDIR" ]; then echo "ISDIR=yes"; fi
   p=$$
   while [ "$p" -gt 1 ]; do
-    echo "ARGV=$(tr '\\0' ' ' < /proc/$p/cmdline)"
+    line=$(tr '\\0' ' ' < /proc/$p/cmdline)
+    echo "ARGV=$line"
+    case "$line" in
+    *--restore*)
+      tr '\\0' '\\n' < /proc/$p/environ | sed -n 's/^\\(HOME\\|TMPDIR\\|EESSI_ARCH_GUARD_WORKDIR\\)=/H_\\1=/p'
+      w=$(tr '\\0' '\\n' < /proc/$p/environ | sed -n 's/^EESSI_ARCH_GUARD_WORKDIR=//p')
+      if [ -d "$w" ]; then echo "ISDIR=yes"; fi
+      ;;
+    esac
     p=$(sed 's/.*) [^ ]* //; s/ .*//' /proc/$p/stat)
   done
 } >> "%s"
@@ -80,7 +84,7 @@ class WorkspaceTests(unittest.TestCase):
         report = json.loads(harness.run_guard(self.env, ["--strict", "--dry-run", "--json"]).stdout)
         self.assertEqual(os.path.dirname(report["cache"]["path"]), os.path.realpath(self.root))
         self.assertTrue(os.path.exists(report["cache"]["path"]))
-        work = self.recorded()["WORK"][0]
+        work = self.recorded()["H_EESSI_ARCH_GUARD_WORKDIR"][0]
         self.assertEqual(os.path.dirname(work), os.path.realpath(self.root))
 
     def test_explicit_workspace_has_priority(self):
@@ -91,7 +95,7 @@ class WorkspaceTests(unittest.TestCase):
         proc = harness.run_guard(self.env)
         self.assertEqual(proc.returncode, 0, proc.stderr)
         self.assertIn("EESSI_ARCH_GUARD_RELOADED", proc.stdout)
-        work = self.recorded()["WORK"][0]
+        work = self.recorded()["H_EESSI_ARCH_GUARD_WORKDIR"][0]
         self.assertEqual(os.path.dirname(work), os.path.realpath(self.root))
 
     def test_untrusted_explicit_workspace_is_refused_without_creation(self):
@@ -120,7 +124,7 @@ class WorkspaceTests(unittest.TestCase):
         proc = harness.run_guard(self.env, ["--strict"])
         self.assertEqual(proc.returncode, 0, proc.stderr)
         self.assertIn("EESSI_ARCH_GUARD_RELOADED", proc.stdout)
-        self.assertEqual(os.path.dirname(self.recorded()["WORK"][0]), work)
+        self.assertEqual(os.path.dirname(self.recorded()["H_EESSI_ARCH_GUARD_WORKDIR"][0]), work)
         self.assertFalse(os.path.exists(self.env["TMPDIR"]))
 
     def test_strict_mode_without_private_workspace_has_no_cache_fallback(self):
@@ -140,11 +144,11 @@ class WorkspaceTests(unittest.TestCase):
         proc = harness.run_guard(self.env, ["--strict"])
         self.assertEqual(proc.returncode, 0, proc.stderr)
         found = self.recorded()
-        work = found["WORK"][0]
+        work = found["H_EESSI_ARCH_GUARD_WORKDIR"][0]
         self.assertEqual(os.path.dirname(work), os.path.realpath(self.root))
         self.assertEqual(found["ISDIR"][0], "yes")
-        self.assertEqual(found["HOME"][0], work)
-        self.assertEqual(found["TMPDIR"][0], work)
+        self.assertEqual(found["H_HOME"][0], work)
+        self.assertEqual(found["H_TMPDIR"][0], work)
         helper = [line for line in found["ARGV"] if "--restore" in line]
         self.assertTrue(helper, found["ARGV"])
         self.assertIn("--strict", helper[0])

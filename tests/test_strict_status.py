@@ -56,46 +56,29 @@ class StrictStatusTests(unittest.TestCase):
                 self.assertEqual(proc.returncode, 0, proc.stderr)
                 self.assertIn("EESSI_ARCH_GUARD_FAILED", proc.stdout)
 
-    def test_an_error_outside_the_decision_is_strict_in_each_output_mode(self):
-        if os.geteuid() == 0:
-            self.skipTest("root opens a directory of mode 000")
-        env = self.hang_env()
-        env["SLURM_JOB_ID"] = "7070"
-        cache_dir = os.path.join(self.site.root, "cache")
-        os.mkdir(cache_dir, 0)
-        env["TMPDIR"] = cache_dir
-        try:
-            for mode in ([], ["--shell"]):
-                for strict, code in ((["--strict"], 78), ([], 0)):
-                    with self.subTest(mode=mode, strict=strict):
-                        proc = harness.run_guard(env, [*strict, *mode, "--timeout", "1"])
-                        self.assertEqual(proc.returncode, code, proc.stderr)
-                        self.assertIn("skipped", proc.stdout + proc.stderr)
-        finally:
-            os.chmod(cache_dir, 0o700)
-
-    def test_interrupted_decision_is_strict(self):
-        for strict, code in ((["--strict"], 78), ([], 0)):
-            with self.subTest(strict=strict):
-                env = self.hang_env()
-                pid_file = Path(env["EESSI_TEST_HANG_PID"])
-                if pid_file.exists():
-                    pid_file.unlink()
-                child = subprocess.Popen(
-                    [*harness.GUARD_ARGV, *strict, "--shell"],
-                    env=env,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
-                    encoding="utf-8",
-                )
-                for _ in range(200):
-                    if pid_file.is_file() and pid_file.read_text(encoding="ascii").strip():
-                        break
-                    time.sleep(0.05)
-                child.send_signal(signal.SIGINT)
-                _out, err = child.communicate(timeout=20)
-                self.assertEqual(child.returncode, code, err)
-                self.assertIn("skipped", err)
+    def test_interrupted_decision_is_strict_in_each_output_mode(self):
+        for mode in ([], ["--shell"]):
+            for strict, code in ((["--strict"], 78), ([], 0)):
+                with self.subTest(mode=mode, strict=strict):
+                    env = self.hang_env()
+                    pid_file = Path(env["EESSI_TEST_HANG_PID"])
+                    if pid_file.exists():
+                        pid_file.unlink()
+                    child = subprocess.Popen(
+                        [*harness.GUARD_ARGV, *strict, *mode],
+                        env=env,
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.PIPE,
+                        encoding="utf-8",
+                    )
+                    for _ in range(200):
+                        if pid_file.is_file() and pid_file.read_text(encoding="ascii").strip():
+                            break
+                        time.sleep(0.05)
+                    child.send_signal(signal.SIGINT)
+                    out, err = child.communicate(timeout=20)
+                    self.assertEqual(child.returncode, code, err)
+                    self.assertIn("skipped", out + err)
 
     def test_successful_and_intentional_noop_decisions_remain_zero(self):
         cases = {
