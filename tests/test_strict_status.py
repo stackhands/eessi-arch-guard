@@ -23,37 +23,28 @@ class StrictStatusTests(unittest.TestCase):
             code = guard.main(flags)
         return code, b"".join(call.args[1] for call in output.call_args_list if call.args[0] == 1)
 
-    def test_failed_decision_has_strict_status_in_each_output_mode(self):
-        outcome = guard.Outcome(
+    def test_strict_status_follows_the_failure_and_the_mode(self):
+        failed = guard.Outcome(
             {"EESSI_ARCH_GUARD_FAILED": "old->restore-failed"}, "refused", "failed"
         )
-        for mode in ([], ["--shell"]):
-            with self.subTest(mode=mode):
-                code, text = self.run_main(["--strict", *mode], outcome)
-                self.assertEqual(code, 78)
-                self.assertIn(b"EESSI_ARCH_GUARD_FAILED", text)
-
-    def test_default_failed_decision_remains_fail_open(self):
-        outcome = guard.Outcome(
-            {"EESSI_ARCH_GUARD_FAILED": "old->restore-failed"}, "refused", "failed"
+        boom = RuntimeError("decision failed")
+        # strict, outcome, error, mode, expect code, check the failure text
+        rows = (
+            (True, failed, None, [], 78, True),
+            (True, failed, None, ["--shell"], 78, True),
+            (False, failed, None, [], 0, True),
+            (False, failed, None, ["--shell"], 0, True),
+            (True, None, boom, [], 78, False),
+            (True, None, boom, ["--shell"], 78, False),
+            (False, None, boom, [], 0, False),
         )
-        for mode in ([], ["--shell"]):
-            with self.subTest(mode=mode):
-                code, text = self.run_main(mode, outcome)
-                self.assertEqual(code, 0)
-                self.assertIn(b"EESSI_ARCH_GUARD_FAILED", text)
-
-    def test_unexpected_decision_exception_is_strict_in_each_output_mode(self):
-        for mode in ([], ["--shell"]):
-            with self.subTest(mode=mode):
-                code, _text = self.run_main(
-                    ["--strict", *mode], error=RuntimeError("decision failed")
-                )
-                self.assertEqual(code, 78)
-
-    def test_unexpected_decision_exception_keeps_default_status(self):
-        code, _text = self.run_main([], error=RuntimeError("decision failed"))
-        self.assertEqual(code, 0)
+        for strict, outcome, error, mode, expect, check_text in rows:
+            flags = (["--strict"] if strict else []) + list(mode)
+            with self.subTest(strict=strict, mode=mode, error=error is not None):
+                code, text = self.run_main(flags, outcome, error)
+                self.assertEqual(code, expect)
+                if check_text:
+                    self.assertIn(b"EESSI_ARCH_GUARD_FAILED", text)
 
     def test_outer_startup_exception_is_strict(self):
         with (

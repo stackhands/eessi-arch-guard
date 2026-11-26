@@ -101,56 +101,75 @@ class CgroupV1ProcTree(unittest.TestCase):
         finally:
             os.chdir(old)
 
-    def test_v1_cpuset_mounted_off_the_default_path(self):
+    def _cpuset_rows(self):
         point = self.root / "cgroup" / "cpuset"
         other = self.root / "cgroup" / "notcpuset"
-        self.write(self.proc / "cgroup", "2:cpuset:/job:42\n")
-        self.write(
-            self.proc / "mountinfo",
-            "21 20 0:21 / %s rw - cgroup cgroup rw,cpusetfoo\n"
-            "22 20 0:22 / %s rw - cgroup cgroup rw,cpuset\n" % (other, point),
-        )
-        self.write(other / "job:42" / "cpuset.cpus.effective", "0-3\n")
-        self.write(point / "job:42" / "cpuset.cpus.effective", "4-5\n")
-        self.write(self.cg / "cpuset" / "job:42" / "cpuset.cpus.effective", "0\n")
-        self.write(self.cg / "job:42" / "cpuset.cpus.effective", "1\n")
-        self.assertEqual(self.lookup(), frozenset({4, 5}))
-
-    def test_nested_cgroup_stops_at_the_cpuset_mount(self):
-        point = self.root / "cgroup" / "cpuset"
-        self.write(self.proc / "cgroup", "2:cpuset:/a/b/c\n")
-        self.write(
-            self.proc / "mountinfo",
-            "22 20 0:22 / %s rw - cgroup cgroup rw,cpuset\n" % point,
-        )
-        self.write(point / "a" / "cpuset.cpus.effective", "6,7\n")
-        self.write(self.root / "cgroup" / "cpuset.cpus.effective", "9\n")
-        self.write(self.cg / "cpuset" / "a" / "cpuset.cpus.effective", "1\n")
-        self.assertEqual(self.lookup(), frozenset({6, 7}))
-
-    def test_missing_cpuset_controller_is_not_a_cpuset(self):
         cpu = self.cg / "cpu,cpuacct"
-        self.write(self.proc / "cgroup", "2:cpu,cpuacct:/job\n0::/job\n")
-        self.write(
-            self.proc / "mountinfo",
-            "30 20 0:30 / %s rw - cgroup cgroup rw,cpu,cpuacct\n"
-            "31 20 0:31 / %s rw - cgroup2 cgroup2 rw\n" % (cpu, self.cg),
-        )
-        self.write(cpu / "job" / "cgroup.controllers", "cpu mycpuset memory\n")
-        self.write(cpu / "job" / "cpuset.cpus.effective", "8\n")
-        self.write(self.cg / "job" / "cgroup.controllers", "cpu mycpuset memory\n")
-        self.write(self.cg / "job" / "cpuset.cpus.effective", "8\n")
-        self.write(self.cg / "cgroup.controllers", "cpu mycpuset memory\n")
-        self.write(self.cg / "cpuset.cpus.effective", "9\n")
-        self.assertIsNone(self.lookup())
-
-    def test_dotdot_mount_root_keeps_the_cgroup_root(self):
         outside = self.root / "outside"
-        self.write(self.proc / "cgroup", "0::/../job\n")
-        self.write(
-            self.proc / "mountinfo",
-            "40 20 0:40 /.. %s rw - cgroup2 cgroup2 rw\n" % outside,
+        return (
+            (
+                "mounted off the default path",
+                "2:cpuset:/job:42\n",
+                "21 20 0:21 / %s rw - cgroup cgroup rw,cpusetfoo\n"
+                "22 20 0:22 / %s rw - cgroup cgroup rw,cpuset\n" % (other, point),
+                (
+                    (other / "job:42" / "cpuset.cpus.effective", "0-3\n"),
+                    (point / "job:42" / "cpuset.cpus.effective", "4-5\n"),
+                    (self.cg / "cpuset" / "job:42" / "cpuset.cpus.effective", "0\n"),
+                    (self.cg / "job:42" / "cpuset.cpus.effective", "1\n"),
+                ),
+                frozenset({4, 5}),
+            ),
+            (
+                "nested cgroup stops at the cpuset mount",
+                "2:cpuset:/a/b/c\n",
+                "22 20 0:22 / %s rw - cgroup cgroup rw,cpuset\n" % point,
+                (
+                    (point / "a" / "cpuset.cpus.effective", "6,7\n"),
+                    (self.root / "cgroup" / "cpuset.cpus.effective", "9\n"),
+                    (self.cg / "cpuset" / "a" / "cpuset.cpus.effective", "1\n"),
+                ),
+                frozenset({6, 7}),
+            ),
+            (
+                "missing cpuset controller is not a cpuset",
+                "2:cpu,cpuacct:/job\n0::/job\n",
+                "30 20 0:30 / %s rw - cgroup cgroup rw,cpu,cpuacct\n"
+                "31 20 0:31 / %s rw - cgroup2 cgroup2 rw\n" % (cpu, self.cg),
+                (
+                    (cpu / "job" / "cgroup.controllers", "cpu mycpuset memory\n"),
+                    (cpu / "job" / "cpuset.cpus.effective", "8\n"),
+                    (self.cg / "job" / "cgroup.controllers", "cpu mycpuset memory\n"),
+                    (self.cg / "job" / "cpuset.cpus.effective", "8\n"),
+                    (self.cg / "cgroup.controllers", "cpu mycpuset memory\n"),
+                    (self.cg / "cpuset.cpus.effective", "9\n"),
+                ),
+                None,
+            ),
+            (
+                "dotdot mount root keeps the cgroup root",
+                "0::/../job\n",
+                "40 20 0:40 /.. %s rw - cgroup2 cgroup2 rw\n" % outside,
+                (
+                    (outside / "job" / "cpuset.cpus.effective", "9\n"),
+                    (self.cg / "cpuset.cpus.effective", "0-3\n"),
+                ),
+                frozenset({0, 1, 2, 3}),
+            ),
         )
-        self.write(outside / "job" / "cpuset.cpus.effective", "9\n")
-        self.write(self.cg / "cpuset.cpus.effective", "0-3\n")
-        self.assertEqual(self.lookup(), frozenset({0, 1, 2, 3}))
+
+    def test_cpuset_comes_from_the_mountinfo_table(self):
+        # One row per mount shape: off-path cpuset, a nested stop, a
+        # controller that only contains the name, and a ".." mount root.
+        names = [row[0] for row in self._cpuset_rows()]
+        for name in names:
+            with self.subTest(name=name):
+                self.tearDown()
+                self.setUp()
+                row = next(item for item in self._cpuset_rows() if item[0] == name)
+                _name, cgroup, mountinfo, files, expected = row
+                self.write(self.proc / "cgroup", cgroup)
+                self.write(self.proc / "mountinfo", mountinfo)
+                for path, text in files:
+                    self.write(path, text)
+                self.assertEqual(self.lookup(), expected)

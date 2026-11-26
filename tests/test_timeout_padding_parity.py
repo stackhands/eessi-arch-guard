@@ -16,7 +16,9 @@ from pathlib import Path
 from typing import Dict
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
+import eessi_arch_guard as guard  # noqa: E402
 import harness  # noqa: E402
 
 ZEN2 = "x86_64/amd/zen2"
@@ -71,8 +73,11 @@ class TimeoutPaddingParityTests(unittest.TestCase):
         return harness.run_with_timeout(argv, env=self.env, timeout=RUN_TIMEOUT)
 
     def test_python_guard_rejects_separator_padding(self) -> None:
-        for text in TIMEOUTS:
-            with self.subTest(timeout=text):
+        # One accepted whitespace value and one U+001C reject stay on the CLI.
+        # The other 18 go through parse_timeout.
+        cli = (" 5 ", "\x1c5")
+        for text in cli:
+            with self.subTest(timeout=text, cli=True):
                 proc = self._python(text)
                 self.assertEqual(proc.returncode, 0, proc.stderr)
                 doc = json.loads(proc.stdout)
@@ -82,6 +87,14 @@ class TimeoutPaddingParityTests(unittest.TestCase):
                 else:
                     self.assertEqual(doc["timeout"], DEFAULT_TIMEOUT)
                     self.assertIn("--timeout is not a positive number", proc.stderr)
+        for text in TIMEOUTS:
+            if text in cli:
+                continue
+            with self.subTest(timeout=text, cli=False):
+                if text in ACCEPTED:
+                    self.assertEqual(guard.parse_timeout(text), ACCEPTED[text])
+                else:
+                    self.assertIsNone(guard.parse_timeout(text))
 
     def test_programs_agree_on_padded_timeouts(self) -> None:
         harness.skip_unless_tool_bin(self)

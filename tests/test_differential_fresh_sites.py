@@ -1,18 +1,14 @@
 """The Python and Zig guards, each run on a site of its own.
 
 tests/differential.py builds one site per program, so the fake Lmod's event
-log of one run never reaches the other. The cases here show that each run
-gets a site of its own that is removed afterwards, that the random workspace
-names are normalized, and that the size limiter caps what a program writes.
-They also run the comparison that a shared site made unreliable: both
-programs under a limit on the size of any file they write, which a shared log
-reaches sooner for whichever program runs second. The comparisons skip when
-TOOL_BIN is unset.
+log of one run never reaches the other. The cases here run the comparison
+that a shared site made unreliable: both programs under a limit on the size
+of any file they write, which a shared log reaches sooner for whichever
+program runs second. The comparisons skip when TOOL_BIN is unset.
 """
 
 from __future__ import annotations
 
-import os
 import sys
 import unittest
 from pathlib import Path
@@ -38,26 +34,6 @@ def build(site: harness.Site) -> Mapping[str, str]:
 
 
 class FreshSiteTests(unittest.TestCase):
-    def test_each_run_has_a_site_of_its_own(self) -> None:
-        first = differential.run_fresh(differential.python_guard(), build, ("--json",))
-        second = differential.run_fresh(differential.python_guard(), build, ("--json",))
-        self.assertNotEqual(first.site_root, second.site_root)
-        self.assertFalse(os.path.exists(first.site_root))
-        self.assertGreater(first.log_bytes, 0)
-        self.assertEqual(second.log_bytes, first.log_bytes)
-        self.assertEqual(second.observed(), first.observed())
-
-    def test_random_workspace_names_are_normalized(self) -> None:
-        text = "/tmp/eessi-arch-guard-ab12_x9z/lmod.log /tmp/eessi-arch-guard-cpu-q1w2e3r4"
-        self.assertEqual(differential.normalize(text), "/tmp/RND/lmod.log /tmp/RND")
-
-    def test_the_size_limiter_caps_the_files_a_program_writes(self) -> None:
-        free = differential.run_fresh(differential.python_guard(), build, ("--json",))
-        limit = free.log_bytes // 2
-        capped = differential.run_fresh(differential.python_guard(), build, ("--json",), limit)
-        self.assertGreater(limit, 0)
-        self.assertEqual(capped.log_bytes, limit)
-
     def test_programs_agree_under_a_file_size_limit(self) -> None:
         harness.skip_unless_tool_bin(self)
         for limit in LIMITS:

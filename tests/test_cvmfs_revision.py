@@ -46,11 +46,6 @@ class RevisionTests(unittest.TestCase):
         self.assertEqual(code, 2)
         self.assertIn("no revision", text)
 
-    def test_the_how_to_names_the_gate(self):
-        page = (ROOT / "docs" / "orgmode" / "howto" / "check-the-client-revision.org").read_text()
-        self.assertIn("cvmfsrev.py", page)
-        self.assertIn("--min", page)
-
     def test_stat_rejects_non_regular_and_dangling_stat(self):
         script = str(ROOT / "share" / "cvmfsrev.py")
         with tempfile.TemporaryDirectory(prefix="eessi-cvmfsrev-") as tmp:

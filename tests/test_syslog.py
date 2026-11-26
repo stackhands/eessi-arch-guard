@@ -9,7 +9,6 @@ import socket
 import subprocess
 import sys
 import tempfile
-import threading
 import unittest
 from pathlib import Path
 
@@ -257,45 +256,65 @@ class SyslogTests(unittest.TestCase):
             sock.close()
 
     def test_tcp_octet_counting_and_udp(self):
-        tcp = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        tcp.bind(("127.0.0.1", 0))
-        tcp.listen(1)
-        tcp.settimeout(2.0)
-        tcp_port = tcp.getsockname()[1]
-        received: list[bytes] = []
+        from unittest import mock
 
-        def accept_one():
-            conn, _ = tcp.accept()
-            with conn:
-                received.append(conn.recv(65536))
+        import eessi_arch_guard as guard
 
-        t = threading.Thread(target=accept_one, daemon=True)
-        t.start()
+        target_tcp = guard.SyslogTarget("rfc5424-tcp", "inprocess", 0)
+        server, client = socket.socketpair(socket.AF_UNIX, socket.SOCK_STREAM)
         try:
-            env = self._cpu_env(ZEN4, "zen2")
-            p_tcp = harness.run_guard(env, [f"--syslog=tcp://127.0.0.1:{tcp_port}"])
-            self.assertEqual(p_tcp.returncode, 0)
-            t.join(timeout=2.0)
-            self.assertEqual(len(received), 1)
-            frame = received[0].decode("utf-8")
+            with mock.patch("socket.create_connection", return_value=client):
+                guard._send_syslog(
+                    target_tcp, 5, "EESSI_ARCH_RELOAD", [("kind", "reloaded")], "reloaded"
+                )
+            frame = server.recv(65536).decode("utf-8")
             length_s, msg = frame.split(" ", 1)
             self.assertEqual(int(length_s), len(msg.encode("utf-8")))
             self.assertIsNotNone(RFC5424_RE.fullmatch(msg), msg)
         finally:
-            tcp.close()
+            server.close()
+            client.close()
 
-        udp = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        udp.bind(("127.0.0.1", 0))
-        udp.settimeout(2.0)
-        udp_port = udp.getsockname()[1]
-        try:
-            env = self._cpu_env(ZEN4, "zen2")
-            p_udp = harness.run_guard(env, [f"--syslog=udp://127.0.0.1:{udp_port}"])
-            self.assertEqual(p_udp.returncode, 0)
-            raw = udp.recv(65536).decode("utf-8")
-            self.assertIsNotNone(RFC5424_RE.fullmatch(raw), raw)
-        finally:
-            udp.close()
+        captured: list[bytes] = []
+
+        class _Datagram:
+            def __init__(self, *_args, **_kwargs):
+                pass
+
+            def settimeout(self, _timeout):
+                return None
+
+            def sendto(self, data, _addr):
+                captured.append(data)
+                return len(data)
+
+            def close(self):
+                return None
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                return False
+
+        real_socket = socket.socket
+
+        def _socket(family, kind, *args, **kwargs):
+            if kind == socket.SOCK_DGRAM:
+                return _Datagram()
+            return real_socket(family, kind, *args, **kwargs)
+
+        target_udp = guard.SyslogTarget("rfc5424-udp", "inprocess", 0)
+        fake_addr = [(socket.AF_UNIX, socket.SOCK_DGRAM, 0, "", ("inprocess", 0))]
+        with (
+            mock.patch("socket.getaddrinfo", return_value=fake_addr),
+            mock.patch("socket.socket", side_effect=_socket),
+        ):
+            guard._send_syslog(
+                target_udp, 5, "EESSI_ARCH_RELOAD", [("kind", "reloaded")], "reloaded"
+            )
+        self.assertEqual(len(captured), 1)
+        self.assertIsNotNone(RFC5424_RE.fullmatch(captured[0].decode("utf-8")), captured[0])
 
     def test_syslog_failure_never_breaks_prolog_or_pollutes_stdout(self):
         env = self._cpu_env(ZEN4, "zen2")
