@@ -385,19 +385,19 @@ class IntegrationTests(unittest.TestCase):
         self.assertTrue(printed)
 
     def test_missing_module_after_the_first_32_is_named(self):
-        names = ["P%02d/1" % index for index in range(40)]
+        names = ["P%02d/1" % index for index in range(33)]
         for name in names:
             self.site.add_module(ZEN4, name)
-            if name != names[35]:
+            if name != names[32]:
                 self.site.add_module(ZEN2, name)
         env = self._cpu_env(ZEN4, "zen2", modules=names)
         proc = harness.run_guard(env)
         changes, printed = _assert_prolog(proc)
         self.assertNotIn("EESSI_SOFTWARE_SUBDIR", changes)
-        self.assertIn("; not available for this target: %s; " % names[35], printed[0])
+        self.assertIn("; not available for this target: %s; " % names[32], printed[0])
 
     def test_missing_list_stops_after_32(self):
-        names = ["P%02d/1" % index for index in range(40)]
+        names = ["P%02d/1" % index for index in range(33)]
         for name in names:
             self.site.add_module(ZEN4, name)
         env = self._cpu_env(ZEN4, "zen2", modules=names)
@@ -848,14 +848,14 @@ class IntegrationTests(unittest.TestCase):
 
     def test_hung_gpu_query_is_stopped_and_not_cached(self):
         env = self._hang_env()
-        env["EESSI_TEST_GPU_HANG"] = "30"
+        env["EESSI_TEST_GPU_HANG"] = "2"
         path = guard.cache_file_path(env)
         started = time.monotonic()
-        proc = harness.run_guard(env, ["--timeout", "1"])
+        proc = harness.run_guard(env, ["--timeout", "0.2"])
         elapsed = time.monotonic() - started
         try:
             changes, printed = _assert_prolog(proc)
-            self.assertLess(elapsed, _stop_limit(1))
+            self.assertLess(elapsed, _stop_limit(0.2))
             self.assertTrue(changes["EESSI_ARCH_GUARD_FAILED"].endswith("->timeout"))
             self.assertTrue(printed)
             self.assertFalse(os.path.isfile(path))
@@ -874,14 +874,14 @@ class IntegrationTests(unittest.TestCase):
         env = self._cpu_env(ZEN4, "zen2")
         env["TMPDIR"] = self.site.root
         env["SLURM_JOB_ID"] = "6161"
-        env["EESSI_TEST_LMOD_HANG"] = "30"
+        env["EESSI_TEST_LMOD_HANG"] = "2"
         env["EESSI_TEST_HANG_PID"] = os.path.join(self.site.root, "hang.pid")
         started = time.monotonic()
-        proc = harness.run_guard(env, ["--timeout", "1"])
+        proc = harness.run_guard(env, ["--timeout", "0.2"])
         elapsed = time.monotonic() - started
         try:
             changes, _printed = _assert_prolog(proc)
-            self.assertLess(elapsed, _stop_limit(1))
+            self.assertLess(elapsed, _stop_limit(0.2))
             self.assertTrue(changes["EESSI_ARCH_GUARD_FAILED"].endswith("->timeout"))
             self.assertNotIn("EESSI_SOFTWARE_SUBDIR", changes)
             pid = int(Path(env["EESSI_TEST_HANG_PID"]).read_text(encoding="ascii"))
@@ -985,12 +985,12 @@ class IntegrationTests(unittest.TestCase):
         if os.geteuid() == 0:
             self.skipTest("root opens a directory of mode 000")
         env = self._hang_env()
-        env["EESSI_TEST_GPU_HANG"] = "30"
+        env["EESSI_TEST_GPU_HANG"] = "2"
         cache_dir = os.path.join(self.site.root, "cache")
         os.mkdir(cache_dir, 0)
         env["TMPDIR"] = cache_dir
         try:
-            proc = harness.run_guard(env, ["--timeout", "1"])
+            proc = harness.run_guard(env, ["--timeout", "0.2"])
             self.assertEqual(proc.returncode, 0, proc.stderr)
             self.assertEqual(proc.stderr, "")
             self.assertEqual(
@@ -1012,7 +1012,7 @@ class IntegrationTests(unittest.TestCase):
 
     def test_chain_keeps_the_config_timeout(self):
         conf = harness.PROGRAM.with_name("eessi-arch-guard.conf")
-        conf.write_text("timeout = 1\n", encoding="utf-8")
+        conf.write_text("timeout = 0.2\n", encoding="utf-8")
         subprocess.check_call(["sudo", "chown", "root:root", str(conf)])
         subprocess.check_call(["sudo", "chmod", "644", str(conf)])
         ok_path = os.path.join(self.site.root, "chain-ok.sh")
@@ -1020,13 +1020,13 @@ class IntegrationTests(unittest.TestCase):
             handle.write("#!/bin/sh\necho 'export FROM_CHAIN=yes'\n")
         os.chmod(ok_path, 0o755)
         env = self._hang_env()
-        env["EESSI_TEST_GPU_HANG"] = "30"
+        env["EESSI_TEST_GPU_HANG"] = "2"
         try:
             started = time.monotonic()
             proc = harness.run_guard(env, ["--chain", ok_path])
             elapsed = time.monotonic() - started
             changes, _printed = _assert_prolog(proc)
-            self.assertLess(elapsed, _stop_limit(1))
+            self.assertLess(elapsed, _stop_limit(0.2))
             self.assertEqual(changes["FROM_CHAIN"], "yes")
             self.assertTrue(changes["EESSI_ARCH_GUARD_FAILED"].endswith("->timeout"))
         finally:
@@ -1069,18 +1069,18 @@ class IntegrationTests(unittest.TestCase):
         env = self._cpu_env(ZEN4, "zen2")
         env["TMPDIR"] = private
         env["SLURM_JOB_ID"] = "6363"
-        env["EESSI_TEST_APPLY_HANG"] = "30"
+        env["EESSI_TEST_APPLY_HANG"] = "2"
         before = set(Path(private).glob("eessi-arch-guard-*"))
         worker = threading.Thread(target=foreign) if foreign else None
         if worker:
             worker.start()
         started = time.monotonic()
-        proc = harness.run_guard(env, ["--timeout", "1"])
+        proc = harness.run_guard(env, ["--timeout", "0.2"])
         elapsed = time.monotonic() - started
         if worker:
             worker.join()
         changes, _printed = _assert_prolog(proc)
-        self.assertLess(elapsed, _stop_limit(1))
+        self.assertLess(elapsed, _stop_limit(0.2))
         self.assertTrue(changes["EESSI_ARCH_GUARD_FAILED"].endswith("->timeout"))
         return before, set(Path(private).glob("eessi-arch-guard-*"))
 
@@ -1090,17 +1090,17 @@ class IntegrationTests(unittest.TestCase):
 
     def test_config_timeout_bounds_the_decision(self):
         conf = harness.PROGRAM.with_name("eessi-arch-guard.conf")
-        conf.write_text("timeout = 1\n", encoding="utf-8")
+        conf.write_text("timeout = 0.2\n", encoding="utf-8")
         subprocess.check_call(["sudo", "chown", "root:root", str(conf)])
         subprocess.check_call(["sudo", "chmod", "644", str(conf)])
         env = self._hang_env()
-        env["EESSI_TEST_GPU_HANG"] = "30"
+        env["EESSI_TEST_GPU_HANG"] = "2"
         try:
             started = time.monotonic()
             proc = harness.run_guard(env)
             elapsed = time.monotonic() - started
             changes, _printed = _assert_prolog(proc)
-            self.assertLess(elapsed, _stop_limit(1))
+            self.assertLess(elapsed, _stop_limit(0.2))
             self.assertTrue(changes["EESSI_ARCH_GUARD_FAILED"].endswith("->timeout"))
         finally:
             subprocess.check_call(["sudo", "rm", "-f", str(conf)])

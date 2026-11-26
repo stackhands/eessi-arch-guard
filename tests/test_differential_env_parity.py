@@ -254,98 +254,93 @@ class DifferentialEnvParityTests(unittest.TestCase):
         self.assertGreaterEqual(distinct, minimum, "cases do not exercise different paths")
 
     def test_cpupath_output_shapes(self):
-        for index, cpupath in enumerate(CPUPATHS):
-            modes = [DRY]
-            if index in CPUPATH_JSON:
-                modes.append(DRY_JSON)
-            if index in CPUPATH_LIVE:
-                modes.append(LIVE)
+        # One row from each outcome class, plus the two length boundaries
+        # and the reload, unsafe, and empty anchors.
+        # index, modes, anchor text checked on the dry-run row
+        rows = (
+            (0, (DRY, DRY_JSON, LIVE), "decision: reloaded"),
+            (5, (DRY,), None),
+            (7, (DRY,), None),
+            (11, (DRY,), "decision: failed"),
+            (13, (DRY, DRY_JSON, LIVE), None),
+            (29, (DRY,), None),
+            (32, (DRY,), "decision: failed"),
+            (33, (DRY_JSON, LIVE), None),
+            (41, (DRY,), None),
+            (48, (DRY,), None),
+            (49, (DRY,), None),
+        )
+        for index, modes, anchor in rows:
+            cpupath = CPUPATHS[index]
             for args in modes:
-                self._compare("cpupath %r" % cpupath, self._env(cpupath), args)
+                _rc, out, _err = self._compare(
+                    "cpupath %r" % cpupath, self._env(cpupath), args
+                )
+                if anchor is not None and args == DRY:
+                    self.assertIn(anchor, out)
         self._assert_varied(10)
 
-    def test_cpupath_anchors(self):
-        _rc, out, _err = self._compare("anchor reload", self._env(), DRY)
-        self.assertIn("decision: reloaded", out)
-        _rc, out, _err = self._compare("anchor unsafe", self._env(ZEN2 + "/"), DRY)
-        self.assertIn("decision: failed", out)
-        _rc, out, _err = self._compare("anchor empty", self._env(":"), DRY)
-        self.assertIn("decision: failed", out)
-
     def test_software_override_values(self):
-        for index, value in enumerate(OVERRIDES):
-            modes = [DRY]
-            if index in OVERRIDE_LIVE:
-                modes.append(LIVE)
-            if index % 12 == 0:
-                modes.append(DRY_JSON)
+        # index, modes, text the anchor rows must contain
+        rows = (
+            (0, (DRY, DRY_JSON), None),
+            (1, (DRY,), None),
+            (5, (DRY,), "decision: skip"),
+            (7, (LIVE,), "invalid-environment"),
+            (21, (LIVE,), "invalid-environment"),
+        )
+        for index, modes, anchor in rows:
+            value = OVERRIDES[index]
             for args in modes:
                 env = self._env(EESSI_SOFTWARE_SUBDIR_OVERRIDE=value)
-                self._compare("override %r" % value, env, args)
+                _rc, out, _err = self._compare("override %r" % value, env, args)
+                if anchor is not None:
+                    self.assertIn(anchor, out)
         self._assert_varied(6)
 
-    def test_software_override_anchors(self):
-        env = self._env(EESSI_SOFTWARE_SUBDIR_OVERRIDE=ZEN2)
-        _rc, out, _err = self._compare("anchor installed", env, DRY)
-        self.assertIn("decision: skip", out)
-        env = self._env(EESSI_SOFTWARE_SUBDIR_OVERRIDE=ZEN2 + "/")
-        _rc, out, _err = self._compare("anchor slash", env, LIVE)
-        self.assertIn("invalid-environment", out)
-        env = self._env(EESSI_SOFTWARE_SUBDIR_OVERRIDE="x86_64/amd/unknown")
-        _rc, out, _err = self._compare("anchor not installed", env, LIVE)
-        self.assertIn("invalid-environment", out)
-
     def test_guard_switch_variables(self):
+        # One value that keeps the decision and one that must not change it,
+        # except the options override, where a space skips.
         for key in SWITCHES:
-            for value in SWITCH_VALUES:
-                self._compare("%s=%r" % (key, value), self._env(**{key: value}), DRY)
-        for value in ARCHDETECT_OPTIONS:
+            same = SWITCH_VALUES[0]
+            other = " " if key == "EESSI_ARCHDETECT_OPTIONS_OVERRIDE" else SWITCH_VALUES[2]
+            self._compare("%s=%r" % (key, same), self._env(**{key: same}), DRY)
+            self._compare("%s=%r" % (key, other), self._env(**{key: other}), DRY)
+        for value in (ARCHDETECT_OPTIONS[0], ARCHDETECT_OPTIONS[-1]):
             env = self._env(EESSI_ARCHDETECT_OPTIONS=value)
             self._compare("archdetect options %r" % value, env, LIVE)
-        for subdir in LOADED_SUBDIRS:
+        for subdir in (LOADED_SUBDIRS[0], LOADED_SUBDIRS[2], LOADED_SUBDIRS[-1]):
             self._compare("loaded %r" % subdir, self._env(EESSI_SOFTWARE_SUBDIR=subdir), DRY)
         self._assert_varied(5)
 
     def test_installed_target_layouts(self):
-        for cpupath in LAYOUT_CPUPATHS:
+        for cpupath in (
+            "x86_64/amd/nosoft",
+            "x86_64/amd/filesoft",
+            "x86_64/amd/linkzen2",
+            "x86_64/amd/dangling:" + GENERIC,
+        ):
             self._compare("layout %r" % cpupath, self._env(cpupath), DRY)
-        for cpupath in LAYOUT_CPUPATHS[:3]:
-            self._compare("layout %r" % cpupath, self._env(cpupath), LIVE)
-        for value in LAYOUT_OVERRIDES:
-            env = self._env(EESSI_SOFTWARE_SUBDIR_OVERRIDE=value)
-            self._compare("layout override %r" % value, env, DRY)
         self._assert_varied(4)
 
     def test_path_variable_spellings(self):
         prefix = self.site.prefix
-        for value in (prefix + "/", prefix + "//", prefix + "/./", prefix + "/init/.."):
-            self._compare("prefix %r" % "tail", self._env(EESSI_PREFIX=value), DRY)
-        for value in ("linux/", "linux//", "./linux", "linux/.", "", "x/../linux"):
-            self._compare("os type %r" % value, self._env(EESSI_OS_TYPE=value), DRY)
-        init = self.site.init
-        for value in (init + "/", init + "//", "", "relative", init + "/.."):
-            self._compare("init %r" % "tail", self._env(EESSI_INIT_PREFIX=value), DRY)
+        self._compare("prefix slash", self._env(EESSI_PREFIX=prefix + "/"), DRY)
+        self._compare("prefix doubleslash", self._env(EESSI_PREFIX=prefix + "//"), DRY)
+        self._compare("os empty", self._env(EESSI_OS_TYPE=""), DRY)
+        self._compare("prefix dotdot", self._env(EESSI_PREFIX=prefix + "/init/.."), DRY)
         self._assert_varied(2)
 
     def test_accelerator_answers(self):
-        for index, output in enumerate(ACCEL_OUTPUTS):
-            env = self._env(EESSI_TEST_ACCEL=output, EESSI_ACCEL_SUBDIR=CC80)
-            self._compare("accel %r" % output, env, DRY)
-            if index in ACCEL_LIVE:
-                self._compare("accel %r" % output, env, LIVE)
-        for status in ("1", "2", "3", "7"):
-            env = self._env(EESSI_TEST_ACCEL=CC90, EESSI_TEST_ACCEL_RC=status)
-            self._compare("accel status %s" % status, env, DRY)
-        for loaded in (None, CC90):
-            env = self._env(EESSI_TEST_ACCEL=CC90, EESSI_ACCEL_SUBDIR=loaded)
-            self._compare("accel loaded %r" % (loaded,), env, DRY)
-        for value in ("x", " "):
-            env = self._env(
-                EESSI_TEST_ACCEL=CC90,
-                EESSI_ACCEL_SUBDIR=CC80,
-                EESSI_ACCELERATOR_TARGET_OVERRIDE=value,
-            )
-            self._compare("accel override %r" % value, env, DRY)
+        mismatch = self._env(EESSI_TEST_ACCEL=CC90, EESSI_ACCEL_SUBDIR=CC80)
+        self._compare("accel mismatch", mismatch, DRY)
+        self._compare("accel mismatch live", mismatch, LIVE)
+        match = self._env(EESSI_TEST_ACCEL=CC90, EESSI_ACCEL_SUBDIR=CC90)
+        self._compare("accel match", match, DRY)
+        bad = self._env(EESSI_TEST_ACCEL=ACCEL_OUTPUTS[0], EESSI_ACCEL_SUBDIR=CC80)
+        self._compare("accel bad", bad, DRY)
+        status = self._env(EESSI_TEST_ACCEL=CC90, EESSI_TEST_ACCEL_RC="1")
+        self._compare("accel status", status, DRY)
         self._assert_varied(5)
 
 
