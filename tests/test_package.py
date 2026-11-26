@@ -24,9 +24,7 @@ def run_python(args, path_dirs, pythonpath, cwd=None):
         "LC_ALL": "C",
         "HOME": "/tmp",
     }
-    return harness.run_with_timeout(
-        [sys.executable, *args], env=env, timeout=10.0, cwd=cwd
-    )
+    return harness.run_with_timeout([sys.executable, *args], env=env, timeout=10.0, cwd=cwd)
 
 
 class LauncherTests(unittest.TestCase):
@@ -44,24 +42,22 @@ class LauncherTests(unittest.TestCase):
         self.assertEqual((proc.returncode, proc.stdout, proc.stderr), (0, self.version, ""))
 
     def test_the_exit_status_and_streams_are_the_binarys(self) -> None:
-        proc = run_python(
-            ["-m", "eessi_arch_guard", "--check-revision"], [str(self.bindir)], SRC
-        )
+        proc = run_python(["-m", "eessi_arch_guard", "--check-revision"], [str(self.bindir)], SRC)
         self.assertEqual(proc.returncode, 2)
         self.assertIn("--stat", proc.stderr)
 
     def test_the_bundled_binary_comes_before_path(self) -> None:
         package = self.root / "site" / "eessi_arch_guard"
-        shutil.copytree(SRC / "eessi_arch_guard", package, ignore=shutil.ignore_patterns("__pycache__"))
+        shutil.copytree(
+            SRC / "eessi_arch_guard", package, ignore=shutil.ignore_patterns("__pycache__")
+        )
         (package / "bin").mkdir(exist_ok=True)
         shutil.copy2(harness.PROGRAM, package / "bin" / "eessi-arch-guard")
         decoy = self.root / "decoy"
         decoy.mkdir()
         (decoy / "eessi-arch-guard").write_bytes(b"\x7fELFnot a program")
         os.chmod(decoy / "eessi-arch-guard", 0o755)
-        proc = run_python(
-            ["-m", "eessi_arch_guard", "--version"], [str(decoy)], self.root / "site"
-        )
+        proc = run_python(["-m", "eessi_arch_guard", "--version"], [str(decoy)], self.root / "site")
         self.assertEqual((proc.returncode, proc.stdout), (0, self.version), proc.stderr)
 
     def test_no_binary_is_a_clear_error(self) -> None:

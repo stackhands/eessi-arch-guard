@@ -87,7 +87,12 @@ class RestoreCpuinfoLimitTests(unittest.TestCase):
             for mode in MODES:
                 with self.subTest(limit=limit, mode=" ".join(mode)):
                     differential.assert_golden(
-                        self, sheet, "limit %d %s" % (limit, " ".join(mode) or "text"), build, mode, limit
+                        self,
+                        sheet,
+                        "limit %d %s" % (limit, " ".join(mode) or "text"),
+                        build,
+                        mode,
+                        limit,
                     )
 
 

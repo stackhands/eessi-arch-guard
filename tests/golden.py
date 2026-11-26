@@ -20,7 +20,7 @@ from __future__ import annotations
 import os
 import re
 from pathlib import Path
-from typing import Dict, Optional, Sequence, Tuple
+from typing import Dict, Optional, Sequence
 from unittest import TestCase
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -87,7 +87,9 @@ class Sheet:
             self.recorded[label] = actual
             return
         case.assertIn(label, self.expected, "no golden section %r in %s" % (label, self.path))
-        case.assertEqual(actual, self.expected[label], "golden section %r of %s" % (label, self.path))
+        case.assertEqual(
+            actual, self.expected[label], "golden section %r of %s" % (label, self.path)
+        )
 
     def finish(self) -> None:
         """Write the recorded cases, or note a section no case checked."""

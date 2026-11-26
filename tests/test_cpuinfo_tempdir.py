@@ -16,8 +16,8 @@ and tests/golden/cpuinfo-tempdir-short.txt.
 
 from __future__ import annotations
 
-import re
 import os
+import re
 import sys
 import unittest
 from pathlib import Path
@@ -77,7 +77,12 @@ class CpuinfoTempdirTests(unittest.TestCase):
             for mode in MODES:
                 with self.subTest(limit=limit, mode=" ".join(mode)):
                     differential.assert_golden(
-                        self, sheet, "limit %d %s" % (limit, " ".join(mode) or "text"), build, mode, limit
+                        self,
+                        sheet,
+                        "limit %d %s" % (limit, " ".join(mode) or "text"),
+                        build,
+                        mode,
+                        limit,
                     )
 
 

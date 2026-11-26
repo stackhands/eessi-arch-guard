@@ -35,7 +35,9 @@ STRICT_FAILURE_EXIT = 78
 # The longest a stopped decision waits for each of its children after a kill.
 _POST_KILL_WAIT_SECONDS = 5.0
 _ENV_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
-_CACHE_NAME_RE = re.compile(r"\.eessi-arch-guard\.[0-9]+\.[A-Za-z0-9._-]+\.(prolog|shell)\.[0-9a-f]{16}")
+_CACHE_NAME_RE = re.compile(
+    r"\.eessi-arch-guard\.[0-9]+\.[A-Za-z0-9._-]+\.(prolog|shell)\.[0-9a-f]{16}"
+)
 _VERSION_RE = re.compile(r'^\s*\.version = "([^"]+)"', re.M)
 
 
@@ -59,7 +61,9 @@ def _one_line(text: str, limit: int = 500) -> str:
 
 def _cache_path(env, shell=False):
     """The cache file the program names for ``env``, as its --dry-run --json reports it."""
-    quiet = {k: v for k, v in env.items() if k not in ("EESSI_TEST_GPU_HANG", "EESSI_TEST_LMOD_HANG")}
+    quiet = {
+        k: v for k, v in env.items() if k not in ("EESSI_TEST_GPU_HANG", "EESSI_TEST_LMOD_HANG")
+    }
     proc = harness.run_guard(quiet, ["--dry-run", "--json"] + (["--shell"] if shell else []))
     assert proc.returncode == 0, proc.stderr
     return json.loads(proc.stdout)["cache"]["path"]
@@ -240,9 +244,7 @@ class IntegrationTests(unittest.TestCase):
 
     def test_accel_pinned_is_a_noop(self):
         self.site.write_cpuinfo("zen4")
-        env = harness.base_env(
-            self.site, ZEN4, ["R/4.4.2"], accel=CC90, gpu="1", gpu_cc="12.0"
-        )
+        env = harness.base_env(self.site, ZEN4, ["R/4.4.2"], accel=CC90, gpu="1", gpu_cc="12.0")
         env["EESSI_ACCELERATOR_TARGET_OVERRIDE"] = CC90
         proc = harness.run_guard(env)
         _assert_prolog(proc)
@@ -389,13 +391,13 @@ class IntegrationTests(unittest.TestCase):
         os.chmod(script, 0o755)
         env = self._cpu_env(ZEN4, "zen2")
         env["BASH_ENV"] = script
-        env["EESSI_TEST_SENTINEL"] = "cost $5 `id` \"q\""
+        env["EESSI_TEST_SENTINEL"] = 'cost $5 `id` "q"'
         proc = harness.run_guard(env)
         changes, _printed = _assert_prolog(proc)
         self.assertFalse(os.path.exists(self.site.bash_env_log))
         self.assertNotIn("INJECTED_STDOUT", proc.stdout)
         self.assertNotIn("BASH_ENV_RAN", proc.stdout)
-        self.assertEqual(changes["ROUNDTRIP"], "cost $5 `id` \"q\"")
+        self.assertEqual(changes["ROUNDTRIP"], 'cost $5 `id` "q"')
         self.assertEqual(changes["EESSI_SOFTWARE_SUBDIR"], ZEN2)
 
     def test_newline_module_name_is_not_an_export(self):
@@ -1425,9 +1427,7 @@ class IntegrationTests(unittest.TestCase):
         proc = harness.run_guard(env)
         changes, _printed = _assert_prolog(proc)
         self.assertEqual(changes.get("EESSI_SOFTWARE_SUBDIR"), icelake, proc.stdout)
-        self.assertEqual(
-            changes.get("EESSI_SOFTWARE_SUBDIR_OVERRIDE"), icelake, proc.stdout
-        )
+        self.assertEqual(changes.get("EESSI_SOFTWARE_SUBDIR_OVERRIDE"), icelake, proc.stdout)
 
     def test_graniterapids_without_waitpkg_falls_back(self):
         spr = "x86_64/intel/sapphirerapids"
@@ -1513,10 +1513,7 @@ class IntegrationTests(unittest.TestCase):
             "avx2 fma avx512f avx512bw avx512cd avx512dq avx512vl "
             "avx512_vnni avx512_vbmi2 avx512_bf16 amx_tile waitpkg"
         )
-        shared = (
-            "avx2 fma avx512f avx512bw avx512cd avx512dq avx512vl "
-            "avx512_vnni avx512_vbmi2"
-        )
+        shared = "avx2 fma avx512f avx512bw avx512cd avx512dq avx512vl avx512_vnni avx512_vbmi2"
         self.site.add_cpu(spr)
         self.site.add_cpu(icelake)
         self.site.add_module(spr, "R/4.4.2")
@@ -1562,9 +1559,7 @@ class IntegrationTests(unittest.TestCase):
             self.skipTest("fixture cpuinfo has processors 0-7, none are in the live affinity mask")
         first_pair = fixture_visible[:2]
         env["SLURM_CPU_BIND_LIST"] = (
-            str(first_pair[0])
-            if len(first_pair) == 1
-            else ",".join(str(cpu) for cpu in first_pair)
+            str(first_pair[0]) if len(first_pair) == 1 else ",".join(str(cpu) for cpu in first_pair)
         )
         proc = harness.run_guard(env)
         changes, _printed = _assert_prolog(proc)
@@ -1822,9 +1817,7 @@ class IntegrationTests(unittest.TestCase):
     def test_prepare_cpuinfo_rejects_fifo_and_directory(self):
         script = Path(self.site.init) / "eessi_archdetect.sh"
         script.write_text(
-            '#!/bin/sh\ncase "$*" in\n'
-            "*cpupath*) echo x86_64/amd/zen4 ;;\n"
-            "*) exit 2 ;;\nesac\n",
+            '#!/bin/sh\ncase "$*" in\n*cpupath*) echo x86_64/amd/zen4 ;;\n*) exit 2 ;;\nesac\n',
             encoding="utf-8",
         )
         script.chmod(0o755)
@@ -2085,9 +2078,7 @@ class IntegrationTests(unittest.TestCase):
 
             strict_env = dict(reload_env)
             strict_env.pop("TMPDIR", None)
-            strict_fail = harness.run_guard(
-                strict_env, ["--dry-run", "--strict", "--json"]
-            )
+            strict_fail = harness.run_guard(strict_env, ["--dry-run", "--strict", "--json"])
             self.assertEqual(strict_fail.returncode, STRICT_FAILURE_EXIT)
             strict_data = json.loads(strict_fail.stdout)
             self.assertEqual(strict_data["decision"], "failed")
@@ -2202,7 +2193,11 @@ class IntegrationTests(unittest.TestCase):
                     {"PATH": "/usr/bin:/bin", "TMPDIR": scratch},
                     ["--dry-run", "--json"],
                 ),
-                ("no site, decision json", {"PATH": "/usr/bin:/bin", "TMPDIR": scratch}, ["--json"]),
+                (
+                    "no site, decision json",
+                    {"PATH": "/usr/bin:/bin", "TMPDIR": scratch},
+                    ["--json"],
+                ),
                 (
                     "reload, strict, chain, text",
                     {

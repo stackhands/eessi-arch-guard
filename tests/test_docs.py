@@ -61,7 +61,9 @@ class DocsTests(unittest.TestCase):
         self.assertIn("--check-mount", mount)
         self.assertIn("site modules", mount)
         self.assertIn("exit status", mount.lower())
-        revision = (ROOT / "docs" / "orgmode" / "howto" / "check-the-client-revision.org").read_text()
+        revision = (
+            ROOT / "docs" / "orgmode" / "howto" / "check-the-client-revision.org"
+        ).read_text()
         self.assertIn("--check-revision", revision)
         self.assertIn("--min", revision)
 

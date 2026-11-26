@@ -100,7 +100,9 @@ class MountTests(unittest.TestCase):
             self.mountinfo(MOUNT),
         )
         self.assertEqual(proc.returncode, 1)
-        self.assertIn(f"FAIL site modules {SITE} and the EESSI modules are the same path\n", proc.stdout)
+        self.assertIn(
+            f"FAIL site modules {SITE} and the EESSI modules are the same path\n", proc.stdout
+        )
 
     def test_repeated_and_trailing_slashes_are_normalized(self) -> None:
         proc = run(
@@ -208,7 +210,11 @@ class MountTests(unittest.TestCase):
                     "MODULEPATH": f"/modules/all:{EESSI}",
                 }
                 proc = run(
-                    "--check-mount", "--require-input", "--mountinfo", self.mountinfo(MOUNT), env=env
+                    "--check-mount",
+                    "--require-input",
+                    "--mountinfo",
+                    self.mountinfo(MOUNT),
+                    env=env,
                 )
                 self.assertEqual(proc.returncode, 2, (proc.stdout, proc.stderr))
                 if site.strip():
@@ -270,12 +276,11 @@ class MountTests(unittest.TestCase):
 
     def test_a_missing_mountinfo_is_named(self) -> None:
         path = self.root / "absent"
-        proc = run(
-            "--check-mount", "--site", SITE, "--eessi", EESSI, "--mountinfo", str(path)
-        )
+        proc = run("--check-mount", "--site", SITE, "--eessi", EESSI, "--mountinfo", str(path))
         self.assertEqual(proc.returncode, 2)
         self.assertEqual(
-            proc.stderr, f"eessi-arch-guard: cannot read {path}: [Errno 2] No such file or directory\n"
+            proc.stderr,
+            f"eessi-arch-guard: cannot read {path}: [Errno 2] No such file or directory\n",
         )
 
 

@@ -27,7 +27,8 @@ WRAPPER = """#!/bin/sh
     echo "ARGV=$line"
     case "$line" in
     *--restore*)
-      tr '\\0' '\\n' < /proc/$p/environ | sed -n 's/^\\(HOME\\|TMPDIR\\|EESSI_ARCH_GUARD_WORKDIR\\)=/H_\\1=/p'
+      tr '\\0' '\\n' < /proc/$p/environ |
+        sed -n 's/^\\(HOME\\|TMPDIR\\|EESSI_ARCH_GUARD_WORKDIR\\)=/H_\\1=/p'
       w=$(tr '\\0' '\\n' < /proc/$p/environ | sed -n 's/^EESSI_ARCH_GUARD_WORKDIR=//p')
       if [ -d "$w" ]; then echo "ISDIR=yes"; fi
       ;;
