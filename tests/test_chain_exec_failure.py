@@ -79,11 +79,7 @@ class ChainExecFailureTests(unittest.TestCase):
                     name = "odd-directory " + name
                 with self.subTest(case=name):
                     proc = self._run(chain, mode)
-                    sheet.check(
-                        self,
-                        support.label(name),
-                        support.render_proc(proc, support.site_work(self.site)),
-                    )
+                    support.check(self, sheet, name, proc, self.site)
 
 
 if __name__ == "__main__":

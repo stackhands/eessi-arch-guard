@@ -1,12 +1,12 @@
-"""The Python and Zig guards must agree byte for byte on input that is not UTF-8.
+"""The guard handles input that is not UTF-8 byte for byte.
 
-The other parity tests compare decoded text, which cannot hold input that is
-not valid UTF-8 and would replace the bytes it cannot decode. These cases pass
-such bytes through the environment and through the output of a stand-in for
-eessi_archdetect.sh, run both programs with ``text`` off in
-``harness.run_with_timeout``, and compare the raw bytes of exit status,
-standard output, and standard error. The comparison skips when TOOL_BIN is
-unset.
+Decoded text cannot hold input that is not valid UTF-8 and would replace the
+bytes it cannot decode. These cases pass such bytes through the environment
+and through the output of a stand-in for eessi_archdetect.sh, run the guard
+with ``text`` off in ``harness.run_with_timeout``, and pin the raw bytes of
+exit status, standard output, and standard error in ``golden/raw-bytes.txt``.
+A byte outside printable ASCII shows in a sheet as a backslash escape. The
+cases must end in at least four different outcomes.
 """
 
 from __future__ import annotations
@@ -21,6 +21,7 @@ from typing import Dict
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import harness  # noqa: E402
+import retire_b_support as support  # noqa: E402
 
 ZEN2 = "x86_64/amd/zen2"
 ZEN4 = "x86_64/amd/zen4"
@@ -62,7 +63,7 @@ CASES = {
 MODES = ((), ("--dry-run",), ("--dry-run", "--json"))
 
 
-class RawBytesParityTests(unittest.TestCase):
+class RawBytesTests(unittest.TestCase):
     def setUp(self) -> None:
         self.site = harness.Site()
         self.addCleanup(self.site.close)
@@ -81,17 +82,13 @@ class RawBytesParityTests(unittest.TestCase):
         raw.update({os.fsencode(key): value for key, value in extra.items()})
         return raw
 
-    def _python(self, env: Dict[bytes, bytes], args):
-        argv = [sys.executable, "-I", str(harness.GUARD), *args]
-        return harness.run_with_timeout(argv, env=env, timeout=RUN_TIMEOUT, text=False)
-
     def _program(self, env: Dict[bytes, bytes], args):
-        argv = [str(harness.PROGRAM), *args]
+        argv = [*harness.GUARD_ARGV, *args]
         return harness.run_with_timeout(argv, env=env, timeout=RUN_TIMEOUT, text=False)
 
-    def test_runner_returns_bytes_that_are_not_utf8(self) -> None:
+    def test_the_runner_returns_bytes_that_are_not_utf8(self) -> None:
         env = self._env({"EESSI_TEST_NOTE": b"a\xffb"})
-        proc = self._python(env, ("--dry-run", "--json"))
+        proc = self._program(env, ("--dry-run", "--json"))
         self.assertEqual(proc.returncode, 0, proc.stderr)
         self.assertIsInstance(proc.stdout, bytes)
         self.assertEqual(json.loads(proc.stdout)["kind"], "decision")
@@ -100,19 +97,17 @@ class RawBytesParityTests(unittest.TestCase):
         raw_run = harness.run_with_timeout(["/bin/printf", "\\377"], env={}, text=False)
         self.assertEqual(raw_run.stdout, b"\xff")
 
-    def test_programs_agree_byte_for_byte(self) -> None:
-        harness.skip_unless_tool_bin(self)
+    def test_output_byte_for_byte(self) -> None:
+        sheet = support.sheet(self, "raw-bytes")
         outcomes = set()
         for label, extra in CASES.items():
             env = self._env(extra)
             for args in MODES:
-                python = self._python(env, args)
-                program = self._program(env, args)
+                proc = self._program(env, args)
+                name = "%s %s" % (label, " ".join(args) or "live")
                 with self.subTest(case=label, args=args):
-                    self.assertEqual(program.returncode, python.returncode)
-                    self.assertEqual(program.stderr, python.stderr)
-                    self.assertEqual(program.stdout, python.stdout)
-                outcomes.add((python.returncode, python.stdout, python.stderr))
+                    support.check(self, sheet, name, proc, self.site)
+                outcomes.add((proc.returncode, proc.stdout, proc.stderr))
         self.assertGreaterEqual(len(outcomes), 4, "cases do not exercise different paths")
 
 

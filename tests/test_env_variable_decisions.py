@@ -1,11 +1,12 @@
-"""Python and Zig guards must agree on cpupath, override, and accelerator inputs.
+"""The decision for cpupath, override, and accelerator inputs.
 
-Each case runs the Python guard and the program named by TOOL_BIN on the same
-environment and compares exit status, standard output, and standard error. The
-cases are a fixed table over a generated fake tree, with a stand-in for
-eessi_archdetect.sh that prints what a test variable holds. The tests skip
-when TOOL_BIN is unset, because the Python guard alone has nothing to be
-compared with.
+Each case runs the guard on one environment and pins exit status, standard
+output, and standard error in a golden sheet, ``golden/env-<test name>.txt``.
+The cases are a fixed table over a generated fake tree, with a stand-in for
+eessi_archdetect.sh that prints what a test variable holds. The anchor tests
+state the outcome of a few cases in words as well, so that a sheet cannot
+record a wrong answer unnoticed, and each table test requires that its cases
+end in several different outcomes.
 """
 
 from __future__ import annotations
@@ -17,7 +18,9 @@ from typing import Dict, Iterable, List, Optional, Tuple
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+import golden  # noqa: E402
 import harness  # noqa: E402
+import retire_b_support as support  # noqa: E402
 
 ZEN2 = "x86_64/amd/zen2"
 ZEN4 = "x86_64/amd/zen4"
@@ -194,13 +197,8 @@ ACCEL_OUTPUTS = [
 ACCEL_LIVE = {3, 11}
 
 
-def _env_key(text: str) -> str:
-    return text.encode("ascii", "backslashreplace").decode("ascii")
-
-
-class DifferentialEnvParityTests(unittest.TestCase):
+class EnvVariableDecisionTests(unittest.TestCase):
     def setUp(self):
-        harness.skip_unless_tool_bin(self)
         self.site = harness.Site()
         self.addCleanup(self.site.close)
         for cpu in (ZEN2, ZEN4, GENERIC):
@@ -217,6 +215,8 @@ class DifferentialEnvParityTests(unittest.TestCase):
         stub.write_text(ARCHDETECT_STUB, encoding="utf-8")
         stub.chmod(0o755)
         self.outcomes: List[Tuple[int, str, str]] = []
+        name = self._testMethodName.replace("test_", "env-").replace("_", "-")
+        self.sheet = support.sheet(self, name)
 
     def _env(self, cpupath: str = GOOD_CPUPATH, **extra: Optional[str]) -> Dict[str, str]:
         env = harness.base_env(self.site, ZEN4, ["R/4.4.2"], gpu="none")
@@ -228,28 +228,30 @@ class DifferentialEnvParityTests(unittest.TestCase):
                 env[key] = value
         return env
 
+    def _show(self, value: object) -> str:
+        """``repr(value)`` with the site named, cut to a length a label can hold."""
+        shown = golden.normalize(repr(value), support.site_work(self.site))
+        if len(shown) > 60:
+            shown = "%s...(%d characters)" % (shown[:40], len(shown))
+        return shown
+
     def _compare(
         self, label: str, env: Dict[str, str], args: Iterable[str]
     ) -> Tuple[int, str, str]:
         argv = list(args)
-        python = harness.run_with_timeout(
-            [sys.executable, "-I", str(harness.GUARD), *argv], env=env, timeout=RUN_TIMEOUT
+        proc = harness.run_with_timeout(
+            [*harness.GUARD_ARGV, *argv], env=env, timeout=RUN_TIMEOUT
         )
-        program = harness.run_with_timeout(
-            [str(harness.PROGRAM), *argv], env=env, timeout=RUN_TIMEOUT
-        )
-        shown = "%s %s" % (_env_key(label), " ".join(argv))
+        shown = support.label("%s %s" % (label, " ".join(argv) or "live"))
         with self.subTest(case=shown):
-            self.assertEqual(program.returncode, python.returncode, shown)
-            self.assertEqual(program.stderr, python.stderr, shown)
-            self.assertEqual(program.stdout, python.stdout, shown)
-        outcome = (python.returncode, python.stdout, python.stderr)
+            support.check(self, self.sheet, shown, proc, self.site)
+        outcome = (proc.returncode, proc.stdout, proc.stderr)
         self.outcomes.append(outcome)
         return outcome
 
     def _assert_varied(self, minimum: int) -> None:
-        # A table whose cases all end the same way would pass for any pair of
-        # programs that agree on one answer.
+        # A table whose cases all end the same way would pass for a program
+        # that gave one answer to every input.
         distinct = len({outcome for outcome in self.outcomes})
         self.assertGreaterEqual(distinct, minimum, "cases do not exercise different paths")
 
@@ -261,7 +263,8 @@ class DifferentialEnvParityTests(unittest.TestCase):
             if index in CPUPATH_LIVE:
                 modes.append(LIVE)
             for args in modes:
-                self._compare("cpupath %r" % cpupath, self._env(cpupath), args)
+                name = "cpupath %d %s" % (index, self._show(cpupath))
+                self._compare(name, self._env(cpupath), args)
         self._assert_varied(10)
 
     def test_cpupath_anchors(self):
@@ -281,7 +284,7 @@ class DifferentialEnvParityTests(unittest.TestCase):
                 modes.append(DRY_JSON)
             for args in modes:
                 env = self._env(EESSI_SOFTWARE_SUBDIR_OVERRIDE=value)
-                self._compare("override %r" % value, env, args)
+                self._compare("override %d %s" % (index, self._show(value)), env, args)
         self._assert_varied(6)
 
     def test_software_override_anchors(self):
@@ -298,54 +301,55 @@ class DifferentialEnvParityTests(unittest.TestCase):
     def test_guard_switch_variables(self):
         for key in SWITCHES:
             for value in SWITCH_VALUES:
-                self._compare("%s=%r" % (key, value), self._env(**{key: value}), DRY)
+                self._compare("%s=%s" % (key, self._show(value)), self._env(**{key: value}), DRY)
         for value in ARCHDETECT_OPTIONS:
             env = self._env(EESSI_ARCHDETECT_OPTIONS=value)
-            self._compare("archdetect options %r" % value, env, LIVE)
+            self._compare("archdetect options %s" % self._show(value), env, LIVE)
         for subdir in LOADED_SUBDIRS:
-            self._compare("loaded %r" % subdir, self._env(EESSI_SOFTWARE_SUBDIR=subdir), DRY)
+            env = self._env(EESSI_SOFTWARE_SUBDIR=subdir)
+            self._compare("loaded %s" % self._show(subdir), env, DRY)
         self._assert_varied(5)
 
     def test_installed_target_layouts(self):
         for cpupath in LAYOUT_CPUPATHS:
-            self._compare("layout %r" % cpupath, self._env(cpupath), DRY)
+            self._compare("layout %s" % self._show(cpupath), self._env(cpupath), DRY)
         for cpupath in LAYOUT_CPUPATHS[:3]:
-            self._compare("layout %r" % cpupath, self._env(cpupath), LIVE)
+            self._compare("layout %s" % self._show(cpupath), self._env(cpupath), LIVE)
         for value in LAYOUT_OVERRIDES:
             env = self._env(EESSI_SOFTWARE_SUBDIR_OVERRIDE=value)
-            self._compare("layout override %r" % value, env, DRY)
+            self._compare("layout override %s" % self._show(value), env, DRY)
         self._assert_varied(4)
 
     def test_path_variable_spellings(self):
         prefix = self.site.prefix
         for value in (prefix + "/", prefix + "//", prefix + "/./", prefix + "/init/.."):
-            self._compare("prefix %r" % "tail", self._env(EESSI_PREFIX=value), DRY)
+            self._compare("prefix %s" % self._show(value), self._env(EESSI_PREFIX=value), DRY)
         for value in ("linux/", "linux//", "./linux", "linux/.", "", "x/../linux"):
-            self._compare("os type %r" % value, self._env(EESSI_OS_TYPE=value), DRY)
+            self._compare("os type %s" % self._show(value), self._env(EESSI_OS_TYPE=value), DRY)
         init = self.site.init
         for value in (init + "/", init + "//", "", "relative", init + "/.."):
-            self._compare("init %r" % "tail", self._env(EESSI_INIT_PREFIX=value), DRY)
+            self._compare("init %s" % self._show(value), self._env(EESSI_INIT_PREFIX=value), DRY)
         self._assert_varied(2)
 
     def test_accelerator_answers(self):
         for index, output in enumerate(ACCEL_OUTPUTS):
             env = self._env(EESSI_TEST_ACCEL=output, EESSI_ACCEL_SUBDIR=CC80)
-            self._compare("accel %r" % output, env, DRY)
+            self._compare("accel %d %s" % (index, self._show(output)), env, DRY)
             if index in ACCEL_LIVE:
-                self._compare("accel %r" % output, env, LIVE)
+                self._compare("accel %d %s" % (index, self._show(output)), env, LIVE)
         for status in ("1", "2", "3", "7"):
             env = self._env(EESSI_TEST_ACCEL=CC90, EESSI_TEST_ACCEL_RC=status)
             self._compare("accel status %s" % status, env, DRY)
         for loaded in (None, CC90):
             env = self._env(EESSI_TEST_ACCEL=CC90, EESSI_ACCEL_SUBDIR=loaded)
-            self._compare("accel loaded %r" % (loaded,), env, DRY)
+            self._compare("accel loaded %s" % self._show(loaded), env, DRY)
         for value in ("x", " "):
             env = self._env(
                 EESSI_TEST_ACCEL=CC90,
                 EESSI_ACCEL_SUBDIR=CC80,
                 EESSI_ACCELERATOR_TARGET_OVERRIDE=value,
             )
-            self._compare("accel override %r" % value, env, DRY)
+            self._compare("accel override %s" % self._show(value), env, DRY)
         self._assert_varied(5)
 
 

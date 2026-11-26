@@ -96,9 +96,7 @@ class EbStackExecErrorTests(unittest.TestCase):
         for label, option, path, _expected in self._cases():
             with self.subTest(case=label):
                 proc = self._program(option, path)
-                sheet.check(
-                    self, support.label(label), support.render_proc(proc, support.site_work(self.site))
-                )
+                support.check(self, sheet, label, proc, self.site)
 
 
 if __name__ == "__main__":

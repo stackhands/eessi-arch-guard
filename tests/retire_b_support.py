@@ -73,3 +73,8 @@ def sheet(case: unittest.TestCase, name: str) -> golden.Sheet:
 def site_work(site) -> Sequence[str]:
     """The directories of ``site`` that a golden sheet replaces with ``@WORK@``."""
     return [site.root, os.path.realpath(site.root)]
+
+
+def check(case: unittest.TestCase, sheet_: golden.Sheet, name: str, proc, site) -> None:
+    """Check the run ``proc`` on ``site`` against the section ``name`` of ``sheet_``."""
+    sheet_.check(case, label(name), render_proc(proc, site_work(site)))

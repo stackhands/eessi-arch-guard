@@ -1,11 +1,11 @@
-"""The Python and Zig guards must read syslog ports as ASCII digits only.
+"""A syslog port is read as ASCII digits only.
 
-``str.isdigit`` accepts digits from other scripts and superscript digits, so a
-port written in them passes the Python check. ``int`` then accepts the
-script digits and raises on the superscripts, which ended the guard decision
-with an exception. The cases run both programs on one generated tree and
-compare exit status, standard output, and standard error. The comparison
-skips when TOOL_BIN is unset.
+A port written in digits of another script, or in superscript or circled
+digits, is not a valid syslog target: the report shows no target, standard
+error names the target as not valid, and the guard still decides. The cases
+give the target through the option and through the environment variable.
+The first test checks which targets are accepted, and ``golden/syslog-port.txt``
+pins the exit status and both streams of each case.
 """
 
 from __future__ import annotations
@@ -19,6 +19,7 @@ from typing import Dict, Optional
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import harness  # noqa: E402
+import retire_b_support as support  # noqa: E402
 
 ZEN2 = "x86_64/amd/zen2"
 ZEN4 = "x86_64/amd/zen4"
@@ -45,7 +46,7 @@ REJECTED = (
 TARGETS = (*ACCEPTED, *REJECTED)
 
 
-class SyslogPortParityTests(unittest.TestCase):
+class SyslogPortTests(unittest.TestCase):
     def setUp(self) -> None:
         self.site = harness.Site()
         self.addCleanup(self.site.close)
@@ -60,18 +61,14 @@ class SyslogPortParityTests(unittest.TestCase):
             env["EESSI_ARCH_GUARD_SYSLOG"] = target
         return env
 
-    def _python(self, env: Dict[str, str], *args: str):
-        argv = [sys.executable, "-I", str(harness.GUARD), "--dry-run", "--json", *args]
-        return harness.run_with_timeout(argv, env=env, timeout=RUN_TIMEOUT)
-
     def _program(self, env: Dict[str, str], *args: str):
-        argv = [str(harness.PROGRAM), "--dry-run", "--json", *args]
+        argv = [*harness.GUARD_ARGV, "--dry-run", "--json", *args]
         return harness.run_with_timeout(argv, env=env, timeout=RUN_TIMEOUT)
 
-    def test_python_guard_accepts_only_ascii_digit_ports(self) -> None:
+    def test_only_ascii_digit_ports_are_accepted(self) -> None:
         for target in TARGETS:
             with self.subTest(target=target):
-                proc = self._python(self._env(), "--syslog", target)
+                proc = self._program(self._env(), "--syslog", target)
                 self.assertEqual(proc.returncode, 0, proc.stderr)
                 doc = json.loads(proc.stdout)
                 if target in ACCEPTED:
@@ -82,19 +79,20 @@ class SyslogPortParityTests(unittest.TestCase):
                     self.assertIn("not a valid syslog target", proc.stderr)
                     self.assertNotIn("Traceback", proc.stderr)
 
-    def test_programs_agree_on_ports(self) -> None:
-        harness.skip_unless_tool_bin(self)
+    def test_output_for_ports(self) -> None:
+        sheet = support.sheet(self, "syslog-port")
         for target in TARGETS:
             for label, args, env in (
                 ("option", ("--syslog", target), self._env()),
                 ("variable", (), self._env(target)),
             ):
-                python = self._python(env, *args)
-                program = self._program(env, *args)
+                proc = self._program(env, *args)
                 with self.subTest(target=target, via=label):
-                    self.assertEqual(program.returncode, python.returncode)
-                    self.assertEqual(program.stderr, python.stderr)
-                    self.assertEqual(program.stdout, python.stdout)
+                    sheet.check(
+                        self,
+                        support.label("%s %r" % (label, target)),
+                        support.render_proc(proc, support.site_work(self.site)),
+                    )
 
 
 if __name__ == "__main__":

@@ -1,10 +1,10 @@
-"""The Python and Zig guards must treat padding around a timeout alike.
+"""Padding around a --timeout value.
 
-``float`` skips ASCII whitespace and whitespace outside ASCII, but not the
-ASCII separators U+001C to U+001F, which ``str.strip`` removes. A timeout
-padded with one of them is invalid for the Python guard. The cases run both
-programs on one generated tree and compare exit status, standard output, and
-standard error. The comparison skips when TOOL_BIN is unset.
+The value may have ASCII whitespace and whitespace outside ASCII around the
+number, but not the ASCII separators U+001C to U+001F: a timeout padded with
+one of them is invalid, the report shows the default of 60 seconds, and
+standard error says so. The first test checks which values are accepted, and
+``golden/timeout-padding.txt`` pins the exit status and both streams of each.
 """
 
 from __future__ import annotations
@@ -18,6 +18,7 @@ from typing import Dict
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import harness  # noqa: E402
+import retire_b_support as support  # noqa: E402
 
 ZEN2 = "x86_64/amd/zen2"
 ZEN4 = "x86_64/amd/zen4"
@@ -51,7 +52,7 @@ TIMEOUTS = (*ACCEPTED, *REJECTED)
 DEFAULT_TIMEOUT = 60.0
 
 
-class TimeoutPaddingParityTests(unittest.TestCase):
+class TimeoutPaddingTests(unittest.TestCase):
     def setUp(self) -> None:
         self.site = harness.Site()
         self.addCleanup(self.site.close)
@@ -61,19 +62,14 @@ class TimeoutPaddingParityTests(unittest.TestCase):
         self.site.write_cpuinfo("zen2")
         self.env: Dict[str, str] = harness.base_env(self.site, ZEN4, ["R/4.4.2"], gpu="none")
 
-    def _python(self, text: str):
-        argv = [sys.executable, "-I", str(harness.GUARD), "--dry-run", "--json"]
-        argv += ["--timeout", text]
-        return harness.run_with_timeout(argv, env=self.env, timeout=RUN_TIMEOUT)
-
     def _program(self, text: str):
-        argv = [str(harness.PROGRAM), "--dry-run", "--json", "--timeout", text]
+        argv = [*harness.GUARD_ARGV, "--dry-run", "--json", "--timeout", text]
         return harness.run_with_timeout(argv, env=self.env, timeout=RUN_TIMEOUT)
 
-    def test_python_guard_rejects_separator_padding(self) -> None:
+    def test_separator_padding_is_rejected(self) -> None:
         for text in TIMEOUTS:
             with self.subTest(timeout=text):
-                proc = self._python(text)
+                proc = self._program(text)
                 self.assertEqual(proc.returncode, 0, proc.stderr)
                 doc = json.loads(proc.stdout)
                 if text in ACCEPTED:
@@ -83,15 +79,16 @@ class TimeoutPaddingParityTests(unittest.TestCase):
                     self.assertEqual(doc["timeout"], DEFAULT_TIMEOUT)
                     self.assertIn("--timeout is not a positive number", proc.stderr)
 
-    def test_programs_agree_on_padded_timeouts(self) -> None:
-        harness.skip_unless_tool_bin(self)
+    def test_output_for_padded_timeouts(self) -> None:
+        sheet = support.sheet(self, "timeout-padding")
         for text in TIMEOUTS:
-            python = self._python(text)
-            program = self._program(text)
+            proc = self._program(text)
             with self.subTest(timeout=text):
-                self.assertEqual(program.returncode, python.returncode)
-                self.assertEqual(program.stderr, python.stderr)
-                self.assertEqual(program.stdout, python.stdout)
+                sheet.check(
+                    self,
+                    support.label("timeout %r" % text),
+                    support.render_proc(proc, support.site_work(self.site)),
+                )
 
 
 if __name__ == "__main__":

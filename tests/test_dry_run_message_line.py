@@ -62,11 +62,7 @@ class DryRunMessageLineTests(unittest.TestCase):
                 label = "loaded %r %s" % (loaded, " ".join(mode))
                 with self.subTest(case=label):
                     proc = self._run(loaded, mode)
-                    sheet.check(
-                        self,
-                        support.label(label),
-                        support.render_proc(proc, support.site_work(self.site)),
-                    )
+                    support.check(self, sheet, label, proc, self.site)
 
 
 if __name__ == "__main__":
