@@ -19,11 +19,10 @@ import threading
 import time
 import unittest
 from pathlib import Path
+from typing import NamedTuple, Optional
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
-
-import eessi_arch_guard as guard  # noqa: E402
+import golden  # noqa: E402
 import harness  # noqa: E402
 from slurm_model import apply_task_prolog  # noqa: E402
 
@@ -31,6 +30,85 @@ ZEN2 = "x86_64/amd/zen2"
 ZEN4 = "x86_64/amd/zen4"
 CC90 = "accel/nvidia/cc90"
 CC120 = "accel/nvidia/cc120"
+
+STRICT_FAILURE_EXIT = 78
+# The longest a stopped decision waits for each of its children after a kill.
+_POST_KILL_WAIT_SECONDS = 5.0
+_ENV_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+_CACHE_NAME_RE = re.compile(r"\.eessi-arch-guard\.[0-9]+\.[A-Za-z0-9._-]+\.(prolog|shell)\.[0-9a-f]{16}")
+_VERSION_RE = re.compile(r'^\s*\.version = "([^"]+)"', re.M)
+
+
+class _Outcome(NamedTuple):
+    """The content of a decision cache file."""
+
+    changes: dict
+    message: Optional[str]
+    kind: str
+    detail: Optional[str] = None
+
+
+def _one_line(text: str, limit: int = 500) -> str:
+    """``text`` on one line, controls as spaces, bounded to ``limit`` characters."""
+    chars = [" " if ch in "\r\n\0" or ord(ch) < 32 or ord(ch) == 127 else ch for ch in text]
+    cleaned = "".join(chars).strip()
+    if len(cleaned) > limit:
+        return cleaned[: limit - 3] + "..."
+    return cleaned
+
+
+def _cache_path(env, shell=False):
+    """The cache file the program names for ``env``, as its --dry-run --json reports it."""
+    quiet = {k: v for k, v in env.items() if k not in ("EESSI_TEST_GPU_HANG", "EESSI_TEST_LMOD_HANG")}
+    proc = harness.run_guard(quiet, ["--dry-run", "--json"] + (["--shell"] if shell else []))
+    assert proc.returncode == 0, proc.stderr
+    return json.loads(proc.stdout)["cache"]["path"]
+
+
+def _write_cache(path, outcome):
+    """Write a private cache file with the content of ``outcome``."""
+    payload = {
+        "v": 1,
+        "kind": outcome.kind,
+        "message": outcome.message,
+        "detail": outcome.detail,
+        "changes": outcome.changes,
+    }
+    data = json.dumps(payload, ensure_ascii=True).encode("ascii") + b"\n"
+    tmp = "%s.%d.tmp" % (path, os.getpid())
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+    try:
+        os.write(fd, data)
+        os.fchmod(fd, 0o600)
+    finally:
+        os.close(fd)
+    os.replace(tmp, path)
+
+
+def _cgroup_cpus():
+    """The processors the cgroup v2 cpuset of this process allows, or None."""
+    try:
+        with open("/proc/self/cgroup", encoding="ascii") as handle:
+            line = next(entry for entry in handle if entry.startswith("0::"))
+        directory = "/sys/fs/cgroup" + line.rstrip("\n")[3:]
+        with open(directory + "/cpuset.cpus.effective", encoding="ascii") as handle:
+            spec = handle.read().strip()
+    except (OSError, StopIteration):
+        return None
+    cpus = set()
+    for part in filter(None, spec.split(",")):
+        low, _, high = part.partition("-")
+        cpus.update(range(int(low), int(high or low) + 1))
+    return cpus or None
+
+
+def _program_bytes() -> bytes:
+    return harness.PROGRAM.read_bytes()
+
+
+def _program_version() -> str:
+    zon = harness.ROOT / "build.zig.zon"
+    return _VERSION_RE.search(zon.read_text(encoding="utf-8")).group(1)
 
 
 def _site():
@@ -53,7 +131,7 @@ def _assert_prolog(proc, code=0):
         assert line.startswith(("export ", "unset ", "print ")), line
     changes, printed = apply_task_prolog(proc.stdout)
     for key, value in changes.items():
-        assert guard.ENV_NAME_RE.fullmatch(key), key
+        assert _ENV_NAME_RE.fullmatch(key), key
         if value is not None:
             assert "\n" not in value and "\r" not in value
     return changes, printed
@@ -61,7 +139,7 @@ def _assert_prolog(proc, code=0):
 
 def _stop_limit(timeout: float) -> float:
     """Decision timeout plus the worst-case post-kill waits."""
-    return timeout + 3 * guard.POST_KILL_WAIT_SECONDS
+    return timeout + 3 * _POST_KILL_WAIT_SECONDS
 
 
 def _pid_alive(pid: int) -> bool:
@@ -215,7 +293,7 @@ class IntegrationTests(unittest.TestCase):
         # The cache lands in the shared /tmp, so the job is this process alone.
         env["SLURM_JOB_ID"] = "4242%d" % os.getpid()
         env["SLURM_STEP_ID"] = "batch"
-        path = guard.cache_file_path(env)
+        path = _cache_path(env)
         self.assertIsNotNone(path)
         self.assertTrue(path.startswith("/tmp/"))
         old = os.umask(0)
@@ -260,7 +338,7 @@ class IntegrationTests(unittest.TestCase):
         env["TMPDIR"] = shared
         env["HOME"] = os.path.join(self.site.root, "home")
         proc = harness.run_guard(env, ["--strict", "--shell"])
-        self.assertEqual(proc.returncode, guard.STRICT_FAILURE_EXIT, proc.stderr)
+        self.assertEqual(proc.returncode, STRICT_FAILURE_EXIT, proc.stderr)
         self.assertIn("'%s->restore-failed'" % ZEN4, proc.stdout)
         self.assertEqual(
             proc.stderr,
@@ -275,7 +353,7 @@ class IntegrationTests(unittest.TestCase):
         env = self._cpu_env(ZEN4, "zen2")
         env["TMPDIR"] = self.site.root
         env["SLURM_JOB_ID"] = "515151"
-        path = guard.cache_file_path(env)
+        path = _cache_path(env)
         canary = path + ".canary"
         with open(canary, "w", encoding="utf-8") as handle:
             handle.write(
@@ -458,9 +536,9 @@ class IntegrationTests(unittest.TestCase):
         env["SLURM_JOB_ID"] = "4343"
         # A cached line is not measured again, so this one is refused at
         # output and every task of the step takes the skip path.
-        guard._write_cache(
-            guard.cache_file_path(env),
-            guard.Outcome({"SITE_DATA": "x" * 5000}, None, "reloaded", None),
+        _write_cache(
+            _cache_path(env),
+            _Outcome({"SITE_DATA": "x" * 5000}, None, "reloaded", None),
         )
         printed_by_task = {}
         for localid in ("0", "1", "3"):
@@ -504,7 +582,7 @@ class IntegrationTests(unittest.TestCase):
             ("--timeout", "--timeout is not a positive number of seconds at most 2147483.647"),
         ):
             proc = harness.run_guard(env, [option, "--strict"])
-            changes, _printed = _assert_prolog(proc, code=guard.STRICT_FAILURE_EXIT)
+            changes, _printed = _assert_prolog(proc, code=STRICT_FAILURE_EXIT)
             self.assertIn("archdetect-failed", changes["EESSI_ARCH_GUARD_FAILED"])
             self.assertEqual(proc.stderr, "eessi-arch-guard: %s\n" % warning)
         self.assertEqual(harness.log_lines(self.site.log), [])
@@ -602,7 +680,7 @@ class IntegrationTests(unittest.TestCase):
         self.assertNotIn("EESSI_ARCH_GUARD_RELOADED", proc.stdout)
         self.assertEqual(harness.log_lines(self.site.log), [])
 
-    def test_chain_exec_failure_skips_with_python_errno_message(self):
+    def test_chain_exec_failure_skips_with_errno_message(self):
         env = self._cpu_env(ZEN4, "zen2")
         bad_shebang = os.path.join(self.site.root, "chain-bad-shebang.sh")
         with open(bad_shebang, "w", encoding="utf-8") as handle:
@@ -624,7 +702,7 @@ class IntegrationTests(unittest.TestCase):
             (
                 bad_shebang,
                 ["--strict"],
-                guard.STRICT_FAILURE_EXIT,
+                STRICT_FAILURE_EXIT,
                 f"print eessi-arch-guard: skipped, FileNotFoundError: "
                 f"[Errno 2] No such file or directory: {bad_shebang!r}\n",
             ),
@@ -644,7 +722,7 @@ class IntegrationTests(unittest.TestCase):
                 f"eessi-arch-guard: skipped, FileNotFoundError: "
                 f"[Errno 2] No such file or directory: {long_path!r}"
             )
-            cases += ((long_path, [], 0, f"print {guard.one_line(message)}\n"),)
+            cases += ((long_path, [], 0, f"print {_one_line(message)}\n"),)
         for path, extra, expected_code, expected_out in cases:
             with self.subTest(path=path, extra=extra):
                 proc = harness.run_guard(env, ["--chain", path, *extra])
@@ -652,7 +730,7 @@ class IntegrationTests(unittest.TestCase):
                 self.assertEqual(proc.stdout, expected_out)
                 self.assertEqual(proc.stderr, "")
 
-    def test_json_decision_with_oversized_subdir_matches_python(self):
+    def test_json_decision_with_oversized_subdir(self):
         long_was = "a" * 5000
         env = {"PATH": "/usr/bin:/bin", "LC_ALL": "C", "EESSI_SOFTWARE_SUBDIR": long_was}
         proc = harness.run_guard(env, ["--json"])
@@ -719,20 +797,15 @@ class IntegrationTests(unittest.TestCase):
             conf.unlink(missing_ok=True)
 
     def test_config_beside_a_link_found_through_path(self):
-        # Python's __file__ is the path execve was given, which a PATH search
-        # makes the link it found: the config beside the link is the one
-        # read, made absolute and normalized as os.path.abspath does.
+        # The program's own path is the path execve was given, which a PATH
+        # search makes the link it found: the config beside the link is the
+        # one read, made absolute and normalized.
         target_dir = os.path.join(self.site.root, "target")
         link_dir = os.path.join(self.site.root, "link")
         os.makedirs(target_dir)
         os.makedirs(link_dir)
         program = os.path.join(target_dir, "guard")
-        if harness.TOOL_BIN:
-            shutil.copy(harness.PROGRAM, program)
-        else:
-            body = harness.GUARD.read_text(encoding="utf-8").split("\n", 1)[1]
-            with open(program, "w", encoding="utf-8") as handle:
-                handle.write("#!%s -I\n%s" % (sys.executable, body))
+        shutil.copy(harness.PROGRAM, program)
         os.chmod(program, 0o755)
         os.symlink(program, os.path.join(link_dir, "eessi-arch-guard"))
         for directory in (target_dir, link_dir):
@@ -847,7 +920,7 @@ class IntegrationTests(unittest.TestCase):
     def test_hung_gpu_query_is_stopped_and_not_cached(self):
         env = self._hang_env()
         env["EESSI_TEST_GPU_HANG"] = "30"
-        path = guard.cache_file_path(env)
+        path = _cache_path(env)
         started = time.monotonic()
         proc = harness.run_guard(env, ["--timeout", "1"])
         elapsed = time.monotonic() - started
@@ -897,7 +970,7 @@ class IntegrationTests(unittest.TestCase):
         env = self._cpu_env(ZEN4, "zen2")
         env["TMPDIR"] = self.site.root
         env["SLURM_JOB_ID"] = "6262"
-        path = guard.cache_file_path(env)
+        path = _cache_path(env)
         lock_path = path + ".lock"
         fd = os.open(lock_path, os.O_CREAT | os.O_RDWR, 0o600)
         fcntl.flock(fd, fcntl.LOCK_EX)
@@ -955,10 +1028,10 @@ class IntegrationTests(unittest.TestCase):
     def test_limit_does_not_undo_a_cached_decision(self):
         env = self._hang_env(loaded=ZEN4, node="zen2")
         env["EESSI_TEST_GPU_HANG"] = "30"
-        path = guard.cache_file_path(env)
-        guard._write_cache(
+        path = _cache_path(env)
+        _write_cache(
             path,
-            guard.Outcome(
+            _Outcome(
                 {"SENTINEL": "cached-decision", "EESSI_ARCH_GUARD_RELOADED": "from-cache"},
                 "cached",
                 "reloaded",
@@ -1124,8 +1197,7 @@ class IntegrationTests(unittest.TestCase):
                     pass
 
     def test_timeout_past_what_poll_can_wait_is_refused(self):
-        # The Python guard waits for a command with poll(), which takes at
-        # most 2**31 - 1 ms. A longer timeout is refused in both builds, and
+        # A wait takes at most 2**31 - 1 ms. A longer timeout is refused and
         # the decision runs under the default.
         env = self._cpu_env(ZEN4, "zen2")
         proc = harness.run_guard(env, ["--timeout", "2147483.647"])
@@ -1156,9 +1228,9 @@ class IntegrationTests(unittest.TestCase):
         # listed-first tree is absent and the GPU is an A100 (cc 8.0).
         icelake = "x86_64/intel/icelake"
         skylake = "x86_64/intel/skylake_avx512"
-        source = harness.GUARD.read_text(encoding="utf-8")
-        self.assertNotIn(icelake, source)
-        self.assertNotIn(skylake, source)
+        source = _program_bytes()
+        self.assertNotIn(icelake.encode(), source)
+        self.assertNotIn(skylake.encode(), source)
         self.site.add_cpu(skylake)
         self.site.add_module(skylake, "R/4.4.2")
         self.site.write_cpuinfo(matches="%s:%s" % (icelake, skylake))
@@ -1212,8 +1284,8 @@ class IntegrationTests(unittest.TestCase):
         self.assertIn(spr, changes["EESSI_ARCH_GUARD_RELOADED"])
         self.assertIn(icelake, changes["EESSI_ARCH_GUARD_RELOADED"])
         self.assertTrue(printed)
-        source = harness.GUARD.read_text(encoding="utf-8")
-        self.assertNotIn(icelake, source)
+        source = _program_bytes()
+        self.assertNotIn(icelake.encode(), source)
 
     def test_pinned_reload_drops_the_loaded_module_paths(self):
         # The EESSI module unloads the tree it computes from
@@ -1311,8 +1383,8 @@ class IntegrationTests(unittest.TestCase):
         changes, _printed = _assert_prolog(proc)
         self.assertEqual(changes["EESSI_SOFTWARE_SUBDIR"], skylake)
         self.assertEqual(changes["EESSI_SOFTWARE_SUBDIR_OVERRIDE"], skylake)
-        source = harness.GUARD.read_text(encoding="utf-8")
-        self.assertNotIn(skylake, source)
+        source = _program_bytes()
+        self.assertNotIn(skylake.encode(), source)
 
     def test_real_sapphirerapids_keeps_the_target(self):
         spr = "x86_64/intel/sapphirerapids"
@@ -1424,11 +1496,11 @@ class IntegrationTests(unittest.TestCase):
         # lines share. The first line alone still names Sapphire Rapids.
         spr = "x86_64/intel/sapphirerapids"
         icelake = "x86_64/intel/icelake"
-        sched = guard.sched_cpus()
+        sched = os.sched_getaffinity(0)
         if not sched:
             self.skipTest("sched_getaffinity returned no CPUs")
         pool = set(sched)
-        cgroup = guard.cgroup_cpus()
+        cgroup = _cgroup_cpus()
         if cgroup is not None:
             pool &= set(cgroup)
         if not pool:
@@ -1882,18 +1954,13 @@ class IntegrationTests(unittest.TestCase):
         changes, _printed = _assert_prolog(second)
         self.assertEqual(changes["EESSI_SOFTWARE_SUBDIR"], haswell)
 
-    def test_help_version_and_shebang(self):
-        first = harness.GUARD.read_text(encoding="utf-8").splitlines()[0]
-        self.assertEqual(first, "#!/usr/bin/python3 -I")
+    def test_help_and_version(self):
         proc = harness.run_guard({"PATH": "/usr/bin:/bin"}, ["--version"])
-        if harness.TOOL_BIN:
-            # The Zig build adds its build after the version (COMPAT.md).
-            self.assertRegex(
-                proc.stdout,
-                r"\A" + re.escape(guard.__version__) + r" \([^()\n]+, [^()\n]+\)\n\Z",
-            )
-        else:
-            self.assertEqual(proc.stdout.strip(), guard.__version__)
+        # The version is followed by the build (COMPAT.md).
+        self.assertRegex(
+            proc.stdout,
+            r"\A" + re.escape(_program_version()) + r" \([^()\n]+, [^()\n]+\)\n\Z",
+        )
         proc = harness.run_guard({"PATH": "/usr/bin:/bin"}, ["--help"])
         self.assertIn("--shell", proc.stdout)
         self.assertIn("--dry-run", proc.stdout)
@@ -2019,10 +2086,10 @@ class IntegrationTests(unittest.TestCase):
             strict_fail = harness.run_guard(
                 strict_env, ["--dry-run", "--strict", "--json"]
             )
-            self.assertEqual(strict_fail.returncode, guard.STRICT_FAILURE_EXIT)
+            self.assertEqual(strict_fail.returncode, STRICT_FAILURE_EXIT)
             strict_data = json.loads(strict_fail.stdout)
             self.assertEqual(strict_data["decision"], "failed")
-            self.assertEqual(strict_data["exit"], guard.STRICT_FAILURE_EXIT)
+            self.assertEqual(strict_data["exit"], STRICT_FAILURE_EXIT)
             self.assertTrue(strict_data["marker"].endswith("->restore-failed"))
             self.assertEqual(sorted(os.listdir(scratch)), [])
             self.assertEqual(harness.log_lines(self.site.log), [])
@@ -2075,11 +2142,11 @@ class IntegrationTests(unittest.TestCase):
             env["TMPDIR"] = scratch
             env["SLURM_JOB_ID"] = "5150"
             env["SLURM_STEP_ID"] = "0"
-            cache_path = guard.cache_file_path(env)
+            cache_path = _cache_path(env)
             self.assertIsNotNone(cache_path)
-            guard._write_cache(
+            _write_cache(
                 cache_path,
-                guard.Outcome(
+                _Outcome(
                     {"EESSI_ARCH_GUARD_RELOADED": f"{ZEN4}->{ZEN2}"},
                     "cached reload",
                     "reloaded",
@@ -2093,6 +2160,12 @@ class IntegrationTests(unittest.TestCase):
             self.assertEqual(proc.returncode, 0, proc.stderr)
             data = json.loads(proc.stdout)
             self.assertEqual(data["cache"]["path"], cache_path)
+            self.assertEqual(os.path.dirname(cache_path), scratch)
+            self.assertRegex(
+                os.path.basename(cache_path),
+                r"\A\.eessi-arch-guard\.%d\.[A-Za-z0-9._-]+\.5150\.0\.prolog\.[0-9a-f]{16}\Z"
+                % os.getuid(),
+            )
             self.assertTrue(data["cache"]["hit"])
             self.assertEqual(data["cache"]["cached_kind"], "reloaded")
             self.assertEqual(data["decision"], "reloaded")
@@ -2103,20 +2176,33 @@ class IntegrationTests(unittest.TestCase):
         finally:
             shutil.rmtree(scratch, ignore_errors=True)
 
-    def test_dry_run_python_and_zig_parity(self):
-        harness.skip_unless_tool_bin(self)
-        scratch = tempfile.mkdtemp(prefix="eag-dryrun-parity-")
+    def _golden_run(self, sheet, label, env, args, work):
+        proc = harness.run_guard(env, args)
+        text = golden.render(proc.returncode, proc.stdout, proc.stderr, work=work)
+        sheet.check(self, label, _CACHE_NAME_RE.sub("@CACHE@", text))
+        return proc
+
+    def test_dry_run_output(self):
+        sheet = golden.Sheet("integration-dry-run")
+        self.addCleanup(sheet.finish)
+        scratch = tempfile.mkdtemp(prefix="eag-dryrun-output-")
         os.chmod(scratch, 0o700)
-        chain_script = os.path.join(self.site.root, "parity-chain.sh")
+        chain_script = os.path.join(self.site.root, "dry-run-chain.sh")
         with open(chain_script, "w", encoding="utf-8") as handle:
             handle.write("#!/bin/sh\necho 'export P=1'\n")
         os.chmod(chain_script, 0o755)
+        work = [scratch, self.site.root]
         try:
             cases = [
-                ({"PATH": "/usr/bin:/bin", "TMPDIR": scratch}, ["--dry-run"]),
-                ({"PATH": "/usr/bin:/bin", "TMPDIR": scratch}, ["--dry-run", "--json"]),
-                ({"PATH": "/usr/bin:/bin", "TMPDIR": scratch}, ["--json"]),
+                ("no site, text", {"PATH": "/usr/bin:/bin", "TMPDIR": scratch}, ["--dry-run"]),
                 (
+                    "no site, json",
+                    {"PATH": "/usr/bin:/bin", "TMPDIR": scratch},
+                    ["--dry-run", "--json"],
+                ),
+                ("no site, decision json", {"PATH": "/usr/bin:/bin", "TMPDIR": scratch}, ["--json"]),
+                (
+                    "reload, strict, chain, text",
                     {
                         **self._cpu_env(ZEN4, "zen2", modules=("R/4.4.2",)),
                         "TMPDIR": scratch,
@@ -2128,6 +2214,7 @@ class IntegrationTests(unittest.TestCase):
                     ["--dry-run", "--strict", "--chain", chain_script, "--timeout", "15"],
                 ),
                 (
+                    "reload, strict, chain, json",
                     {
                         **self._cpu_env(ZEN4, "zen2", modules=("R/4.4.2",)),
                         "TMPDIR": scratch,
@@ -2147,24 +2234,16 @@ class IntegrationTests(unittest.TestCase):
                     ],
                 ),
             ]
-            for env, args in cases:
-                zig_proc = harness.run_guard(env, args)
-                py_proc = subprocess.run(
-                    [sys.executable, "-I", str(harness.GUARD), *args],
-                    capture_output=True,
-                    encoding="utf-8",
-                    env=env,
-                    check=False,
-                )
-                self.assertEqual(zig_proc.returncode, py_proc.returncode, args)
-                self.assertEqual(zig_proc.stderr, py_proc.stderr, args)
-                self.assertEqual(zig_proc.stdout, py_proc.stdout, args)
+            for label, env, args in cases:
+                with self.subTest(label=label):
+                    self._golden_run(sheet, label, env, args, work)
             self.assertEqual(os.listdir(scratch), [])
         finally:
             shutil.rmtree(scratch, ignore_errors=True)
 
-    def test_invalid_environment_values_python_and_zig_parity(self):
-        harness.skip_unless_tool_bin(self)
+    def test_invalid_environment_values(self):
+        sheet = golden.Sheet("integration-invalid-environment")
+        self.addCleanup(sheet.finish)
         cases = [
             ("EESSI_SOFTWARE_SUBDIR_OVERRIDE", "   "),
             ("EESSI_SOFTWARE_SUBDIR_OVERRIDE", "x86_64/amd/zen4/"),
@@ -2175,26 +2254,14 @@ class IntegrationTests(unittest.TestCase):
         for key, value in cases:
             env = self._cpu_env(ZEN4, "zen4", modules=("R/4.4.2",))
             env[key] = value
-            zig_proc = subprocess.run(
-                [str(harness.PROGRAM)],
-                capture_output=True,
-                check=False,
-                env=env,
-            )
-            py_proc = subprocess.run(
-                [sys.executable, "-I", str(harness.GUARD)],
-                capture_output=True,
-                check=False,
-                env=env,
-            )
-            self.assertEqual(zig_proc.returncode, py_proc.returncode, (key, value))
-            self.assertEqual(zig_proc.stderr, py_proc.stderr, (key, value))
-            self.assertEqual(zig_proc.stdout, py_proc.stdout, (key, value))
-            self.assertIn(b"EESSI_ARCH_GUARD_FAILED", zig_proc.stdout, (key, value))
-            self.assertIn(b"invalid-environment", zig_proc.stdout, (key, value))
+            with self.subTest(key=key, value=value):
+                proc = self._golden_run(sheet, "%s=%r" % (key, value), env, [], [self.site.root])
+                self.assertIn("EESSI_ARCH_GUARD_FAILED", proc.stdout, (key, value))
+                self.assertIn("invalid-environment", proc.stdout, (key, value))
 
-    def test_usage_error_python_and_zig_parity(self):
-        harness.skip_unless_tool_bin(self)
+    def test_usage_errors(self):
+        sheet = golden.Sheet("integration-usage-errors")
+        self.addCleanup(sheet.finish)
         cases = [
             ["--unknown-option"],
             ["--"],
@@ -2207,32 +2274,14 @@ class IntegrationTests(unittest.TestCase):
         ]
         env = {"PATH": "/usr/bin:/bin", "LC_ALL": "C"}
         for args in cases:
-            zig_proc = subprocess.run(
-                [str(harness.PROGRAM), *args],
-                capture_output=True,
-                check=False,
-                env=env,
-            )
-            py_proc = subprocess.run(
-                [sys.executable, "-I", str(harness.GUARD), *args],
-                capture_output=True,
-                check=False,
-                env=env,
-            )
-            self.assertEqual(zig_proc.returncode, py_proc.returncode, args)
-            self.assertEqual(zig_proc.stderr, py_proc.stderr, args)
-            self.assertEqual(zig_proc.stdout, py_proc.stdout, args)
+            with self.subTest(args=args):
+                self._golden_run(sheet, " ".join(repr(a) for a in args), env, args, [])
 
     def test_dangling_config_symlink_is_ignored_in_prolog_and_dry_run(self):
         prog_dir = os.path.join(self.site.root, "dangling-cfg")
         os.makedirs(prog_dir)
         program = os.path.join(prog_dir, "eessi-arch-guard")
-        if harness.TOOL_BIN:
-            shutil.copy(harness.PROGRAM, program)
-        else:
-            body = harness.GUARD.read_text(encoding="utf-8").split("\n", 1)[1]
-            with open(program, "w", encoding="utf-8") as handle:
-                handle.write("#!%s -I\n%s" % (sys.executable, body))
+        shutil.copy(harness.PROGRAM, program)
         os.chmod(program, 0o755)
         conf = os.path.join(prog_dir, "eessi-arch-guard.conf")
         os.symlink("missing-target.conf", conf)
@@ -2273,7 +2322,7 @@ class IntegrationTests(unittest.TestCase):
         self.assertIn("was: x86_64/?/zen4", lines)
         self.assertIn("marker: x86_64/?/zen4->archdetect-failed", lines)
 
-    def test_sigint_during_chain_matches_python_skip_path(self):
+    def test_sigint_during_chain_takes_the_skip_path(self):
         ready = os.path.join(self.site.root, "chain-ready")
         chain = os.path.join(self.site.root, "slow-chain.sh")
         with open(chain, "w", encoding="utf-8") as handle:
@@ -2283,7 +2332,7 @@ class IntegrationTests(unittest.TestCase):
 
         for extra, expected_code, is_json in (
             ([], 0, False),
-            (["--strict"], guard.STRICT_FAILURE_EXIT, False),
+            (["--strict"], STRICT_FAILURE_EXIT, False),
             (["--json"], 0, True),
         ):
             with self.subTest(extra=extra):
