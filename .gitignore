@@ -25,3 +25,6 @@ zig-pkg/
 /.pixi/
 /.lycheecache
 src/eessi_arch_guard/bin/
+
+# Compiled launcher extension, built in place for the checkout tests.
+src/eessi_arch_guard/*.so

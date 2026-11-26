@@ -2,15 +2,16 @@
 
 The guard is the static binary. The wheel for a platform carries it in
 ``eessi_arch_guard/bin``; ``main`` runs it with the arguments it was given,
-replacing this process, so Slurm sees the binary and nothing else.
+replacing this process through the ``_launch`` extension (``execv(2)``), so
+Slurm sees the binary and nothing else.
 """
 
 from __future__ import annotations
 
-import os
 import sys
 from typing import Optional, Sequence
 
+from . import _launch
 from ._locate import NAME, bundled, locate, on_path
 
 __version__ = "0.3.1"
@@ -28,7 +29,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         )
         return 127
     try:
-        os.execv(binary, [binary, *args])
+        _launch.execv(binary, [binary, *args])
     except OSError as exc:
         sys.stderr.write("eessi-arch-guard: cannot run %s: %s\n" % (binary, exc.strerror))
         return 126

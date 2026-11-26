@@ -1,35 +1,28 @@
-"""Build hook: a wheel that carries the binary is a platform wheel.
+"""Build the _launch extension.
+
+GIL CPython builds it against the limited API (Py_LIMITED_API 3.9), so one
+wheel tagged cp39-abi3 serves CPython 3.9 and later. A free-threaded CPython
+does not take abi3 wheels and does not support the limited API before 3.15, so
+there the extension is a plain build tagged cp313t or cp314t.
 
 CI copies the static binary to src/eessi_arch_guard/bin/eessi-arch-guard
-before it builds the wheel. The binary has no dynamic dependencies, so the
-wheel is tagged py3-none-manylinux2014_ARCH. Without the binary the wheel is
-pure Python and the launcher finds a binary on PATH.
+before it builds the wheel. Without it the wheel carries the extension only
+and the launcher finds a binary on PATH.
 """
 
-from pathlib import Path
+import sysconfig
 
-from setuptools import setup
+from setuptools import Extension, setup
 
-try:
-    from setuptools.command.bdist_wheel import bdist_wheel
-except ImportError:  # setuptools older than 70.1
-    from wheel.bdist_wheel import bdist_wheel
+LIMITED = not sysconfig.get_config_var("Py_GIL_DISABLED")
 
-BINARY = Path(__file__).resolve().parent / "src" / "eessi_arch_guard" / "bin" / "eessi-arch-guard"
+extension = Extension(
+    "eessi_arch_guard._launch",
+    sources=["src/eessi_arch_guard/_launch.c"],
+    define_macros=[("Py_LIMITED_API", "0x03090000")] if LIMITED else [],
+    py_limited_api=LIMITED,
+)
 
+options = {"bdist_wheel": {"py_limited_api": "cp39"}} if LIMITED else {}
 
-class PlatformWheel(bdist_wheel):
-    def finalize_options(self) -> None:
-        super().finalize_options()
-        self.root_is_pure = not BINARY.is_file()
-
-    def get_tag(self):
-        python, abi, plat = super().get_tag()
-        if self.root_is_pure:
-            return python, abi, plat
-        if plat.startswith("linux_"):
-            plat = "manylinux2014_" + plat[len("linux_") :]
-        return "py3", "none", plat
-
-
-setup(cmdclass={"bdist_wheel": PlatformWheel})
+setup(ext_modules=[extension], options=options)
