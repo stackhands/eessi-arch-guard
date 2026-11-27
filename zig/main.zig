@@ -215,6 +215,20 @@ fn chainFailure(arena: Allocator, env: envmap.Map, kind: []const u8, detail: []c
     linux.exit_group(code);
 }
 
+/// A failed `fsx.absPath`: out of memory, or the working directory that a
+/// relative path needs cannot be read, as `os.getcwd` raises it. A removed
+/// working directory is a FileNotFoundError, and the skip line carries its
+/// text.
+pub fn absPathFailure(err: (sys.Error || Allocator.Error)) noreturn {
+    switch (err) {
+        error.OutOfMemory => oom(),
+        else => |e| emergencyExit(
+            if (e == error.NotFound) "FileNotFoundError" else "OSError",
+            sys.describe(e),
+        ),
+    }
+}
+
 /// Out of memory, as a MemoryError reaching Python's main.
 pub fn oom() noreturn {
     emergencyExit("MemoryError", "out of memory");
@@ -584,7 +598,7 @@ pub fn readConfigFile(arena: Allocator, path: []const u8) Config {
 /// site_config: /etc/eessi-arch-guard.conf, else the file beside the
 /// program as it was invoked; the first that exists decides.
 fn siteConfig(arena: Allocator, invoked: []const u8) Config {
-    const beside = configBeside(arena, invoked) catch oom();
+    const beside = configBeside(arena, invoked) catch |err| absPathFailure(err);
     for ([_][]const u8{ "/etc/" ++ config_name, beside }) |path| {
         if (!exists(path)) continue;
         if (configUntrusted(arena, path)) |reason|
@@ -643,7 +657,7 @@ const config_name = "eessi-arch-guard.conf";
 
 /// site_config's second candidate, os.path.join(os.path.dirname(
 /// os.path.abspath(invoked)), "eessi-arch-guard.conf").
-fn configBeside(gpa: Allocator, invoked: []const u8) Allocator.Error![]u8 {
+fn configBeside(gpa: Allocator, invoked: []const u8) (sys.Error || Allocator.Error)![]u8 {
     const abs = try fsx.absPath(gpa, invoked);
     defer gpa.free(abs);
     const cut = std.mem.findScalarLast(u8, abs, '/') orelse return gpa.dupe(u8, config_name);
@@ -1391,7 +1405,15 @@ fn checkSubmit(arena: Allocator, args: Args, env: envmap.Map, settings: ?Setting
         return finishCheckSubmit(arena, args, partition, constraint, 2, target, @intCast(loaded.len), &.{}, reason, &.{line});
     };
     const child_args = [_][]const u8{ eb_stack, "stack", "arch", "--arch", target, "--easystack", easystack, "--installed", installed_path, "--unsupported", unsupported };
-    const result = proc.run(arena, fsx.absPath(arena, eb_stack) catch oom(), &child_args, child_env, .{
+    const eb_stack_abs = fsx.absPath(arena, eb_stack) catch |err| switch (err) {
+        error.OutOfMemory => oom(),
+        else => |e| {
+            const reason = arena.print("could not run eb-stack: {s}", .{sys.describe(e)}) catch oom();
+            const line = arena.print("eessi-arch-guard: check-submit: {s}", .{reason}) catch oom();
+            return finishCheckSubmit(arena, args, partition, constraint, 2, target, @intCast(loaded.len), &.{}, reason, &.{line});
+        },
+    };
+    const result = proc.run(arena, eb_stack_abs, &child_args, child_env, .{
         .stdout_limit = 8 << 20,
         .stderr_limit = 8 << 20,
         .timeout_ms = null,
@@ -1937,6 +1959,30 @@ test "normPath follows posixpath.normpath" {
     try std.testing.checkAllAllocationFailures(std.testing.allocator, expectNormPath, .{ "/a/./b/../c", "/a/c" });
 }
 
+/// Leave the working directory removed, for a test; `restore` puts it back.
+pub const RemovedCwd = struct {
+    here_z: [sys.path_max:0]u8,
+
+    pub fn enter() !RemovedCwd {
+        var self: RemovedCwd = undefined;
+        var buf: [sys.path_max]u8 = undefined;
+        const here = try fsx.realpath(fsx.cwd, ".", &buf);
+        _ = try sys.z(&self.here_z, here);
+        var gone_buf: [sys.path_max]u8 = undefined;
+        const gone = try std.fmt.bufPrint(&gone_buf, "{s}/.zig-cache/eag-removed-cwd-{d}", .{ here, linux.getpid() });
+        var gone_z_buf: [sys.path_max:0]u8 = undefined;
+        const gone_z = try sys.z(&gone_z_buf, gone);
+        try std.testing.expectEqual(@as(usize, 0), linux.mkdirat(fsx.cwd, gone_z.ptr, 0o700));
+        try std.testing.expectEqual(@as(usize, 0), linux.chdir(gone_z.ptr));
+        try sys.unlinkat(fsx.cwd, gone, linux.AT.REMOVEDIR);
+        return self;
+    }
+
+    pub fn restore(self: *RemovedCwd) void {
+        _ = linux.chdir(&self.here_z);
+    }
+};
+
 fn expectConfigBeside(gpa: Allocator, invoked: []const u8, want: []const u8) !void {
     const got = try configBeside(gpa, invoked);
     defer gpa.free(got);
@@ -1955,6 +2001,15 @@ test "configBeside is the config in the directory of the normalized path" {
     defer t.free(want);
     try expectConfigBeside(t, "./link/eessi-arch-guard", want);
     try std.testing.checkAllAllocationFailures(t, expectConfigBeside, .{ "link/../link/eessi-arch-guard", want });
+}
+
+test "configBeside reports a removed working directory for a relative path" {
+    var gone = try RemovedCwd.enter();
+    defer gone.restore();
+    try std.testing.expectError(error.NotFound, configBeside(std.testing.allocator, "bin/eessi-arch-guard"));
+    const abs = try configBeside(std.testing.allocator, "/opt/bin/eessi-arch-guard");
+    defer std.testing.allocator.free(abs);
+    try std.testing.expectEqualStrings("/opt/bin/eessi-arch-guard.conf", abs);
 }
 
 test "extendModuleRoots follows EESSI-extend's user and project prefixes" {

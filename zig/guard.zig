@@ -252,11 +252,15 @@ fn runCaptured(c: *Ctx, argv: []const []const u8, env: Map, input: ?[]const u8, 
         return error.CannotRun;
     };
     // The process library wants an absolute path where Python hands a
-    // relative one to exec. fsx.absPath leaves the path relative when the
-    // current directory cannot be read, and then exec finds no file.
+    // relative one to exec. When the current directory cannot be read,
+    // fsx.absPath fails and the path stays relative, and then exec finds no
+    // file.
     var absent = false;
     if (std.mem.findScalar(u8, argv[0], '/') != null) {
-        const exe = fsx.absPath(c.arena, argv[0]) catch main_mod.oom();
+        const exe = fsx.absPath(c.arena, argv[0]) catch |err| switch (err) {
+            error.OutOfMemory => main_mod.oom(),
+            else => argv[0],
+        };
         if (!std.fs.path.isAbsolute(exe)) {
             why.* = notFound(c, argv[0]);
             return error.CannotRun;
@@ -268,7 +272,10 @@ fn runCaptured(c: *Ctx, argv: []const []const u8, env: Map, input: ?[]const u8, 
     var entries = std.mem.splitScalar(u8, env.get("PATH") orelse default_path, ':');
     while (entries.next()) |dir| {
         const joined = std.fs.path.join(c.arena, &.{ dir, argv[0] }) catch main_mod.oom();
-        const exe = fsx.absPath(c.arena, joined) catch main_mod.oom();
+        const exe = fsx.absPath(c.arena, joined) catch |err| switch (err) {
+            error.OutOfMemory => main_mod.oom(),
+            else => joined,
+        };
         if (!std.fs.path.isAbsolute(exe)) continue;
         return runExe(c, exe, argv, envp, input, new_session, why, &absent) catch |err| switch (err) {
             error.CannotRun => {
@@ -2764,6 +2771,18 @@ test "privateFailure names the file for an open and not for a write" {
     sys.last_errno = .INTR;
     try std.testing.expectEqualStrings("[Errno 4] Interrupted system call", privateFailure(&c, error.Unexpected, "/dev/null", .close));
     try std.testing.expectEqualStrings("InterruptedError", osErrorClass(.INTR));
+}
+
+test "runCaptured reports a relative program as not found when the working directory is removed" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const a = arena_state.allocator();
+    var c: Ctx = .{ .arena = a, .env = .empty, .strict = false, .self_exe = "" };
+    var gone = try main_mod.RemovedCwd.enter();
+    defer gone.restore();
+    var why: []const u8 = "";
+    try std.testing.expectError(error.CannotRun, runCaptured(&c, &.{"./tools/archdetect"}, .empty, null, false, &why));
+    try std.testing.expectEqualStrings("[Errno 2] No such file or directory: './tools/archdetect'", why);
 }
 
 test "cpuinfo lines are read as Python strips, splits and counts digits" {

@@ -243,7 +243,8 @@ class CacheTemporaryFileTests(CacheCase):
         self.assertEqual(proc.returncode, 0, proc.stderr)
         self.assertIn("EESSI_SOFTWARE_SUBDIR=%s" % ZEN2, proc.stdout)
         self.assertEqual(leftover, [])
-        self.assertTrue(os.path.exists(path))
+        with open(path, encoding="utf-8") as handle:
+            self.assertEqual(handle.read(), "stale")
 
     def test_a_failed_close_with_no_cache_leaves_no_temporary_file(self):
         proc, leftover = self.fail("close")
