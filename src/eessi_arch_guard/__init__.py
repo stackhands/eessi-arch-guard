@@ -14,7 +14,7 @@ from typing import Optional, Sequence
 from . import _launch
 from ._locate import NAME, bundled, locate, on_path
 
-__version__ = "0.4.0"
+__version__ = "0.4.1"
 __all__ = ["NAME", "__version__", "bundled", "locate", "main", "on_path"]
 
 
