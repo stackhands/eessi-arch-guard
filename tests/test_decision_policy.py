@@ -98,6 +98,34 @@ class SkipTests(PolicyCase):
         self.assertIn("EESSI_ARCH_GUARD_RELOADED", changes)
         self.assertEqual(self.dry(env)["decision"], "reloaded")
 
+    def test_unsafe_software_override_does_not_replace_detected_cpu(self):
+        # eessi_archdetect.sh prints EESSI_SOFTWARE_SUBDIR_OVERRIDE and exits
+        # when it is set. The shipped stub does not, so this wrapper does.
+        script = Path(self.site.init) / "eessi_archdetect.sh"
+        body = script.read_text(encoding="utf-8")
+        prefix = """#!/bin/bash
+if [ "${1:-}" = "-a" ] && [ "${2:-}" = "cpupath" ]; then
+    if [ -n "${EESSI_SOFTWARE_SUBDIR_OVERRIDE:-}" ]; then
+        printf '%s\\n' "$EESSI_SOFTWARE_SUBDIR_OVERRIDE"
+        exit 0
+    fi
+fi
+"""
+        script.write_text(prefix + body, encoding="utf-8")
+        script.chmod(0o755)
+        # Empty is not a pin. A relative escape and a colon-separated list are
+        # not safe subdirectories, so neither may replace the detected CPU.
+        values = ("", "../../oops", ZEN4 + ":x86_64/generic")
+        for value in values:
+            with self.subTest(value=value):
+                env = self.env(EESSI_SOFTWARE_SUBDIR_OVERRIDE=value)
+                changes, printed = prolog(harness.run_guard(env))
+                self.assertEqual(changes.get("EESSI_SOFTWARE_SUBDIR"), ZEN2, printed)
+                self.assertIn("EESSI_ARCH_GUARD_RELOADED", changes)
+                report = self.dry(env)
+                self.assertEqual(report["decision"], "reloaded", report)
+                self.assertEqual(report["now"], ZEN2)
+
     def test_missing_software_directory_is_loud_and_configurable(self):
         bare = harness.Site()
         self.addCleanup(bare.close)
