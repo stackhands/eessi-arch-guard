@@ -12,7 +12,8 @@
 #     The Zig build reads its own from build.zig.zon, and the release workflow
 #     compares all three with the tag;
 #   - README.md: the download command;
-#   - docs/orgmode: the lines that show `--version` printing the bare version.
+#   - docs/orgmode: the version of the lines that show `--version` output, and
+#     of the install command of the how-to.
 #
 # Not done here, because it is prose: the `--version` example with
 # a commit in docs/orgmode/reference/cli.org; and the "Checked with ..." line
@@ -54,10 +55,11 @@ set_in pyproject.toml "0,/^version = /s/^(version = )\"${old_re}\"\$/\1\"${new}\
 set_in src/eessi_arch_guard/__init__.py "s/^(__version__ = )\"${old_re}\"\$/\1\"${new}\"/"
 set_in build.zig.zon "s/^( *\.version = )\"${old_re}\",\$/\1\"${new}\",/"
 set_in README.md "s/^(v=)${old_re}( arch=)/\1${new}\2/"
-# `--version` prints the version alone on a line.
+# `--version` prints the version, then the build in parentheses.
 for page in howto/install-the-prolog.org tutorials/first-guarded-job.org reference/cli.org; do
-    set_in "docs/orgmode/${page}" "s/^( *)${old_re}\$/\1${new}/"
+    set_in "docs/orgmode/${page}" "s/^( *)${old_re}( \\(.*)?\$/\1${new}\2/"
 done
+set_in docs/orgmode/howto/install-the-prolog.org "s/^( *v=)${old_re}( arch=)/\1${new}\2/"
 
 echo "release-prepare: ${old} -> ${new}"
 git status --short | awk '{print $1}' | sort | uniq -c
