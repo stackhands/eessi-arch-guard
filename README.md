@@ -47,7 +47,7 @@ Release archives include bash and zsh completion files plus a man page, kept in 
 The static binary is the prolog. It runs once per task, takes about 3.5 ms cold, and needs no Python or library on the node. Take it from a [release](https://github.com/stackhands/eessi-arch-guard/releases) and install it as root:
 
 ```bash
-v=0.4.0 arch=x86_64   # or aarch64
+v=0.4.1 arch=x86_64   # or aarch64
 curl -LO "https://github.com/stackhands/eessi-arch-guard/releases/download/v${v}/eessi-arch-guard-${v}-${arch}-linux-musl"
 curl -LO "https://github.com/stackhands/eessi-arch-guard/releases/download/v${v}/SHA256SUMS"
 sha256sum --check --ignore-missing SHA256SUMS

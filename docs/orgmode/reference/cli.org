@@ -158,7 +158,7 @@ The version, then the target, build mode, Zig version and the commit given to =z
 Built with =zig build -Drelease=true -Dtarget=x86_64-linux-musl -Dcommit=a418152=:
 
 #+begin_example
-0.4.0 (x86_64-linux-musl, safe, zig 0.17.1, a418152)
+0.4.1 (x86_64-linux-musl, safe, zig 0.17.1, a418152)
 #+end_example
 
 The Python package's =eessi_arch_guard.__version__= and the =--version= of the bundled binary name the same version.

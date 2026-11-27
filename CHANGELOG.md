@@ -2,6 +2,13 @@
 
 <!-- towncrier release notes start -->
 
+## [0.4.1] - 2026-11-27
+
+### Bugfixes
+
+- The release workflow ran the Python suite on the runner's system Python, whose setuptools rejects the SPDX `license` of `pyproject.toml`, so 0.4.0 shipped no GitHub release. The workflow now sets up Python 3.12, upgrades setuptools, installs Lua and jsonschema so the tests that need them run, and runs the same steps as CI, and the publish job checks for two binaries, six wheels and the share archive. 0.4.1 is the first release of the 0.4.0 changes with binaries and wheels.
+
+
 ## [0.4.0] - 2026-11-27
 
 ### Features
