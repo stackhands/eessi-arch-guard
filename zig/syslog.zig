@@ -120,19 +120,15 @@ pub fn resolve(
     if (cli_text) |c| {
         raw = c;
         source = "--syslog";
-    } else if (env.get("EESSI_ARCH_GUARD_SYSLOG")) |ev| {
-        if (ev.len > 0) {
-            raw = ev;
-            source = "EESSI_ARCH_GUARD_SYSLOG";
-        }
-    } else if (settings) |st| {
-        if (st.get("syslog")) |cv| {
-            if (cv.len > 0) {
-                raw = cv;
-                source = "config syslog";
-            }
-        }
-    }
+    } else if (env.get("EESSI_ARCH_GUARD_SYSLOG")) |ev| if (ev.len > 0) {
+        raw = ev;
+        source = "EESSI_ARCH_GUARD_SYSLOG";
+    };
+    // An empty environment value is unset, as an empty config value is.
+    if (raw == null) if (settings) |st| if (st.get("syslog")) |cv| if (cv.len > 0) {
+        raw = cv;
+        source = "config syslog";
+    };
 
     var log_all = std.mem.eql(u8, env.get("EESSI_ARCH_GUARD_SYSLOG_ALL") orelse "", "1");
     if (!log_all) if (settings) |st| if (st.get("syslog_all")) |v| {
@@ -542,4 +538,25 @@ test "resolve separates target_warning and pen_warning" {
     try std.testing.expectEqualStrings(default_pen, r.pen);
     try std.testing.expectEqualStrings("eessi-arch-guard: --syslog is not a valid syslog target: bad-target", r.target_warning.?);
     try std.testing.expectEqualStrings("eessi-arch-guard: EESSI_ARCH_GUARD_SYSLOG_PEN is not a positive integer: bad-pen", r.pen_warning.?);
+}
+
+test "an empty syslog environment value keeps the site config target" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const a = arena_state.allocator();
+    var settings: std.StringArrayHashMapUnmanaged([]const u8) = .empty;
+    try settings.put(a, "syslog", "journald");
+
+    var env: envmap.Map = .empty;
+    try env.put(a, "EESSI_ARCH_GUARD_SYSLOG", "");
+    const from_config = resolve(a, null, env, settings);
+    try std.testing.expect(from_config.target_warning == null);
+    try std.testing.expect(from_config.target != null);
+    try std.testing.expectEqual(Scheme.journal_unix, from_config.target.?.scheme);
+    try std.testing.expectEqualStrings("/run/systemd/journal/socket", from_config.target.?.host_or_path);
+
+    try env.put(a, "EESSI_ARCH_GUARD_SYSLOG", "syslog");
+    const from_env = resolve(a, null, env, settings);
+    try std.testing.expectEqual(Scheme.rfc5424_unix, from_env.target.?.scheme);
+    try std.testing.expectEqualStrings("/dev/log", from_env.target.?.host_or_path);
 }
