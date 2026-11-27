@@ -167,4 +167,4 @@ git switch main
 - [[file:../explanation/how-it-decides.org][How the guard decides]] what a node's target is.
 - [[file:../reference/cli.org][The eessi-arch-guard command]], for every option.
 
-Checked with Zig 0.17.1, Python 3.12 and eessi-arch-guard at release =v0.3.1= on =main=.
+Checked with Zig 0.17.1, Python 3.12 and eessi-arch-guard at release =v0.4.0= on =main=.
