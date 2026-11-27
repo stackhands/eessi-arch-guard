@@ -449,10 +449,9 @@ pub fn emitEmergency(
     const was_side = if (was.len > 0 and !text.hasLineBreakOrNul(was)) was else "unrecognized";
     const token = arena.print("{s}->{s}", .{ was_side, kind }) catch "unrecognized->error";
     ch.put(arena, "EESSI_ARCH_GUARD_FAILED", token) catch {};
-    const msg = arena.print("eessi-arch-guard: skipped, {s}: {s}", .{ kind, detail }) catch "eessi-arch-guard: skipped";
     emitDecision(arena, .{ .target = target, .log_all = resolved.log_all, .pen = resolved.pen }, .{
         .changes = ch,
-        .message = msg,
+        .message = detail,
         .kind = .failed,
     }, env, false, strict);
 }
@@ -542,4 +541,58 @@ test "resolve separates target_warning and pen_warning" {
     try std.testing.expectEqualStrings(default_pen, r.pen);
     try std.testing.expectEqualStrings("eessi-arch-guard: --syslog is not a valid syslog target: bad-target", r.target_warning.?);
     try std.testing.expectEqualStrings("eessi-arch-guard: EESSI_ARCH_GUARD_SYSLOG_PEN is not a positive integer: bad-pen", r.pen_warning.?);
+}
+
+test "emergency syslog message is the exception text" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const a = arena_state.allocator();
+
+    var path_buf: [64]u8 = undefined;
+    const path = std.mem.printSentinel(&path_buf, "/tmp/ag-em-{d}.sock", .{linux.getpid()}, 0) catch unreachable;
+    _ = linux.unlink(path);
+
+    var addr: linux.sockaddr.un = .{ .family = linux.AF.UNIX, .path = @splat(0) };
+    @memcpy(addr.path[0..path.len], path);
+    const addr_len: linux.socklen_t = @intCast(@offsetOf(linux.sockaddr.un, "path") + path.len + 1);
+    const s_rc = linux.socket(linux.AF.UNIX, linux.SOCK.DGRAM | linux.SOCK.CLOEXEC, 0);
+    try std.testing.expect(linux.errno(s_rc) == .SUCCESS);
+    const fd: linux.fd_t = @intCast(s_rc);
+    defer {
+        _ = linux.close(fd);
+        _ = linux.unlink(path);
+    }
+    const tv: linux.timeval = .{ .sec = 1, .usec = 0 };
+    _ = linux.setsockopt(fd, linux.SOL.SOCKET, linux.SO.RCVTIMEO, std.mem.asBytes(&tv), @sizeOf(linux.timeval));
+    const b_rc = linux.bind(fd, @ptrCast(&addr), addr_len);
+    try std.testing.expect(linux.errno(b_rc) == .SUCCESS);
+
+    var env: envmap.Map = .empty;
+    try env.put(a, "EESSI_SOFTWARE_SUBDIR", "x86_64/amd/zen2");
+    var letters: [520]u8 = undefined;
+    @memset(&letters, 'A');
+    const detail = try a.print("bad\nline\xff{s}", .{&letters});
+    emitEmergency(a, .{
+        .target = .{ .scheme = .journal_unix, .host_or_path = path },
+    }, env, "OSError", detail, false);
+
+    var buf: [4096]u8 = undefined;
+    const n_rc = linux.recvfrom(fd, &buf, buf.len, 0, null, null);
+    try std.testing.expect(linux.errno(n_rc) == .SUCCESS);
+    const pkt = buf[0..n_rc];
+
+    var expect_msg: [500]u8 = undefined;
+    const head = "bad line?";
+    @memcpy(expect_msg[0..head.len], head);
+    @memset(expect_msg[head.len..497], 'A');
+    @memcpy(expect_msg[497..], "...");
+
+    const message_at = std.mem.indexOf(u8, pkt, "MESSAGE=") orelse return error.TestUnexpectedResult;
+    const rest = pkt[message_at + "MESSAGE=".len ..];
+    const end = std.mem.indexOfScalar(u8, rest, '\n') orelse return error.TestUnexpectedResult;
+    try std.testing.expectEqualStrings(&expect_msg, rest[0..end]);
+    try std.testing.expect(std.mem.indexOf(u8, pkt, "skipped") == null);
+    try std.testing.expect(std.mem.indexOfScalar(u8, pkt, 0xff) == null);
+    try std.testing.expect(std.mem.indexOf(u8, pkt, "ARCH_GUARD_CAUSE=OSError\n") != null);
+    try std.testing.expect(std.mem.indexOf(u8, pkt, "ARCH_GUARD_WAS=x86_64/amd/zen2\n") != null);
 }

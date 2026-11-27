@@ -1,0 +1,1 @@
+An operating system error during a decision is written to syslog as the exception text, the same text the Python guard puts in the message. The Zig guard used to prefix that text with the skip banner and then cut the line at 500 characters, so a long path lost its tail.
