@@ -1382,7 +1382,7 @@ class IntegrationTests(unittest.TestCase):
                     self.assertNotIn(row["source_excludes"].encode(), source)
 
     def test_alderlake_aliases_without_waitpkg_fall_back(self):
-        aliases = ("raptorlake", "meteorlake", "gracemont", "lunarlake")
+        aliases = ("raptorlake", "meteorlake", "gracemont", "lunarlake", "wildcatlake")
         icelake = "x86_64/intel/icelake"
         self.site.add_cpu(icelake)
         self.site.add_module(icelake, "R/4.4.2")

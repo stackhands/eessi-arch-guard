@@ -55,6 +55,7 @@ pub const waitpkg_marches = [_][]const u8{
     "sapphirerapids",
     "sierraforest",
     "tremont",
+    "wildcatlake",
 };
 
 /// What a decision came to.
