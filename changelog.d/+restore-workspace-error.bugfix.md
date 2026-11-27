@@ -1,1 +1,0 @@
-The Zig restore helper reports a restore workspace that cannot be created with the OSError text Python gives, including the errno and the path. It does the same when it cannot make the directory for its shell scripts, where it used a fixed sentence before.

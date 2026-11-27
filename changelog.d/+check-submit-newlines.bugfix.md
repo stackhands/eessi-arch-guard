@@ -1,1 +1,0 @@
-Read the output of a failing eb-stack in check-submit with the line ends that Python reads, so the message and the flagged module lines match the Python guard. The set is a carriage return with or without a line feed and the eight more characters that `str.splitlines` ends a line at.
