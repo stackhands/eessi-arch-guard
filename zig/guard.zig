@@ -1328,7 +1328,15 @@ pub fn probeCpu(c: *Ctx, env: Map) Stop!CpuProbe {
     };
     defer if (prepared.cleanup) |p| unlinkPath(p);
     var why: []const u8 = "";
-    const r = runBash(c, &.{ script, "-a", "cpupath" }, prepared.child, &why) catch |err| switch (err) {
+    // The script prints EESSI_SOFTWARE_SUBDIR_OVERRIDE and exits when it is
+    // set, ahead of the CPU it would detect. A value that is not a pin is
+    // still in this environment; drop it so it cannot replace that CPU.
+    var detect = prepared.child;
+    if ((detect.get("EESSI_SOFTWARE_SUBDIR_OVERRIDE") orelse empty).len > 0) {
+        detect = envmap.clone(c.arena, prepared.child) catch return .{ .status = .@"error", .err = "out of memory" };
+        _ = detect.orderedRemove("EESSI_SOFTWARE_SUBDIR_OVERRIDE");
+    }
+    const r = runBash(c, &.{ script, "-a", "cpupath" }, detect, &why) catch |err| switch (err) {
         error.Deadline, error.Terminated => |e| return e,
         else => return .{ .status = .@"error", .err = c.arena.print("could not run archdetect: {s}", .{why}) catch "could not run archdetect" },
     };

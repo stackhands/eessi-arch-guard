@@ -1,0 +1,1 @@
+Detection no longer takes an unsafe `EESSI_SOFTWARE_SUBDIR_OVERRIDE` as the node CPU. The guard drops a value it refuses as a pin before it runs `eessi_archdetect.sh`. A value such as `x86_64/amd/zen4:x86_64/generic` used to replace the detected target, so a zen4 load on a zen2 node did nothing.
