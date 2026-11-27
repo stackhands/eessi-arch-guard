@@ -20,6 +20,7 @@ const sys = common.sys;
 const fsx = common.fsx;
 const proc = common.proc;
 const cli = common.cli;
+const argparse = common.argparse;
 const json = common.json;
 const Allocator = std.mem.Allocator;
 const Py = json.Py;
@@ -303,102 +304,74 @@ pub const Args = struct {
     min: ?[]const u8 = null,
 };
 
-/// _option_value: the word after argv[i.*], with i.* moved onto it, unless
-/// it starts with "-" and so is an option of its own; "" then, and when
-/// there is no word after it.
-fn optionValue(argv: []const []const u8, i: *usize) []const u8 {
-    if (i.* + 1 >= argv.len or std.mem.startsWith(u8, argv[i.* + 1], "-")) return "";
-    i.* += 1;
-    return argv[i.*];
-}
+const cli_spec: argparse.CommandSpec = .{
+    .prog = tool,
+    .usage = "",
+    .help = help_text,
+    .version = version_text,
+    .policy = .prolog_lenient,
+    .options = &.{
+        .{ .name = "shell" },
+        .{ .name = "strict" },
+        .{ .name = "dry-run" },
+        .{ .name = "restore" },
+        .{ .name = "json" },
+        .{ .name = "chain", .kind = .optional_value },
+        .{ .name = "timeout", .kind = .optional_value },
+        .{ .name = "syslog", .kind = .optional_value },
+        .{ .name = "check-submit" },
+        .{ .name = "partition", .kind = .optional_value },
+        .{ .name = "constraint", .kind = .optional_value },
+        .{ .name = "eb-stack", .kind = .optional_value },
+        .{ .name = "target", .kind = .optional_value },
+        .{ .name = "check-mount" },
+        .{ .name = "check-revision" },
+        .{ .name = "repo", .kind = .optional_value },
+        .{ .name = "site", .kind = .optional_value },
+        .{ .name = "eessi", .kind = .optional_value },
+        .{ .name = "modulepath", .kind = .optional_value },
+        .{ .name = "mountinfo", .kind = .optional_value },
+        .{ .name = "require-input" },
+        .{ .name = "stat", .kind = .optional_value },
+        .{ .name = "min", .kind = .optional_value },
+    },
+};
 
 /// parse_args: documented flags only; anything else is skipped.
-pub fn parseArgs(argv: []const []const u8) Args {
-    var a: Args = .{};
-    var i: usize = 0;
-    while (i < argv.len) : (i += 1) {
-        const arg = argv[i];
-        if (std.mem.eql(u8, arg, "--shell")) {
-            a.shell = true;
-        } else if (std.mem.eql(u8, arg, "--strict")) {
-            a.strict = true;
-        } else if (std.mem.eql(u8, arg, "--dry-run")) {
-            a.dry_run = true;
-        } else if (std.mem.eql(u8, arg, "--restore")) {
-            a.restore = true;
-        } else if (std.mem.eql(u8, arg, "--json")) {
-            a.json = true;
-        } else if (std.mem.eql(u8, arg, "-h") or std.mem.eql(u8, arg, "--help")) {
-            a.help = true;
-        } else if (std.mem.eql(u8, arg, "--version")) {
-            a.version = true;
-        } else if (std.mem.eql(u8, arg, "--chain")) {
-            a.chain = optionValue(argv, &i);
-        } else if (std.mem.startsWith(u8, arg, "--chain=")) {
-            a.chain = arg["--chain=".len..];
-        } else if (std.mem.eql(u8, arg, "--timeout")) {
-            a.timeout = optionValue(argv, &i);
-        } else if (std.mem.startsWith(u8, arg, "--timeout=")) {
-            a.timeout = arg["--timeout=".len..];
-        } else if (std.mem.eql(u8, arg, "--syslog")) {
-            a.syslog = optionValue(argv, &i);
-        } else if (std.mem.startsWith(u8, arg, "--syslog=")) {
-            a.syslog = arg["--syslog=".len..];
-        } else if (std.mem.eql(u8, arg, "--check-submit")) {
-            a.check_submit = true;
-        } else if (std.mem.eql(u8, arg, "--partition")) {
-            a.partition = optionValue(argv, &i);
-        } else if (std.mem.startsWith(u8, arg, "--partition=")) {
-            a.partition = arg["--partition=".len..];
-        } else if (std.mem.eql(u8, arg, "--constraint")) {
-            a.constraint = optionValue(argv, &i);
-        } else if (std.mem.startsWith(u8, arg, "--constraint=")) {
-            a.constraint = arg["--constraint=".len..];
-        } else if (std.mem.eql(u8, arg, "--eb-stack")) {
-            a.eb_stack = optionValue(argv, &i);
-        } else if (std.mem.startsWith(u8, arg, "--eb-stack=")) {
-            a.eb_stack = arg["--eb-stack=".len..];
-        } else if (std.mem.eql(u8, arg, "--target")) {
-            a.target = optionValue(argv, &i);
-        } else if (std.mem.startsWith(u8, arg, "--target=")) {
-            a.target = arg["--target=".len..];
-        } else if (std.mem.eql(u8, arg, "--repo")) {
-            a.repo = optionValue(argv, &i);
-        } else if (std.mem.startsWith(u8, arg, "--repo=")) {
-            a.repo = arg["--repo=".len..];
-        } else if (std.mem.eql(u8, arg, "--site")) {
-            a.site = optionValue(argv, &i);
-        } else if (std.mem.startsWith(u8, arg, "--site=")) {
-            a.site = arg["--site=".len..];
-        } else if (std.mem.eql(u8, arg, "--eessi")) {
-            a.eessi = optionValue(argv, &i);
-        } else if (std.mem.startsWith(u8, arg, "--eessi=")) {
-            a.eessi = arg["--eessi=".len..];
-        } else if (std.mem.eql(u8, arg, "--modulepath")) {
-            a.modulepath = optionValue(argv, &i);
-        } else if (std.mem.startsWith(u8, arg, "--modulepath=")) {
-            a.modulepath = arg["--modulepath=".len..];
-        } else if (std.mem.eql(u8, arg, "--mountinfo")) {
-            a.mountinfo = optionValue(argv, &i);
-        } else if (std.mem.startsWith(u8, arg, "--mountinfo=")) {
-            a.mountinfo = arg["--mountinfo=".len..];
-        } else if (std.mem.eql(u8, arg, "--stat")) {
-            a.stat = optionValue(argv, &i);
-        } else if (std.mem.startsWith(u8, arg, "--stat=")) {
-            a.stat = arg["--stat=".len..];
-        } else if (std.mem.eql(u8, arg, "--min")) {
-            a.min = optionValue(argv, &i);
-        } else if (std.mem.startsWith(u8, arg, "--min=")) {
-            a.min = arg["--min=".len..];
-        } else if (std.mem.eql(u8, arg, "--check-mount")) {
-            a.check_mount = true;
-        } else if (std.mem.eql(u8, arg, "--check-revision")) {
-            a.check_revision = true;
-        } else if (std.mem.eql(u8, arg, "--require-input")) {
-            a.require_input = true;
-        }
-    }
-    return a;
+pub fn parseArgs(gpa: Allocator, argv: []const []const u8) Allocator.Error!Args {
+    var outcome = try argparse.parse(gpa, &cli_spec, argv);
+    defer outcome.deinit(gpa);
+    const p = switch (outcome) {
+        .ok => |parsed| parsed,
+        .action_done, .usage_error => unreachable,
+    };
+    return .{
+        .shell = p.seen("shell"),
+        .restore = p.seen("restore"),
+        .help = p.help_requested,
+        .version = p.version_requested,
+        .strict = p.seen("strict"),
+        .dry_run = p.seen("dry-run"),
+        .json = p.seen("json"),
+        .chain = p.value("chain"),
+        .timeout = p.value("timeout"),
+        .syslog = p.value("syslog"),
+        .check_submit = p.seen("check-submit"),
+        .partition = p.value("partition"),
+        .constraint = p.value("constraint"),
+        .eb_stack = p.value("eb-stack"),
+        .target = p.value("target"),
+        .check_mount = p.seen("check-mount"),
+        .check_revision = p.seen("check-revision"),
+        .repo = p.value("repo"),
+        .site = p.value("site"),
+        .eessi = p.value("eessi"),
+        .modulepath = p.value("modulepath"),
+        .mountinfo = p.value("mountinfo"),
+        .require_input = p.seen("require-input"),
+        .stat = p.value("stat"),
+        .min = p.value("min"),
+    };
 }
 
 fn contains(argv: []const []const u8, word: []const u8) bool {
@@ -1470,7 +1443,7 @@ fn checkSubmit(arena: Allocator, args: Args, env: envmap.Map, settings: ?Setting
 }
 
 fn realMain(arena: Allocator, argv0: []const u8, argv: []const []const u8, envp: proc.Envp) u8 {
-    const args = parseArgs(argv);
+    const args = parseArgs(arena, argv) catch emergencyExit("MemoryError", "out of memory");
     if (args.help) {
         cli.put(1, help_text);
         return 0;
@@ -1714,22 +1687,23 @@ test {
 }
 
 test "parseArgs" {
-    const a = parseArgs(&.{ "--shell", "--chain", "--strict", "--timeout=5", "x" });
+    const gpa = std.testing.allocator;
+    const a = try parseArgs(gpa, &.{ "--shell", "--chain", "--strict", "--timeout=5", "x" });
     try std.testing.expect(a.shell and a.strict);
     try std.testing.expectEqualStrings("", a.chain.?);
     try std.testing.expectEqualStrings("5", a.timeout.?);
-    const b = parseArgs(&.{"--timeout"});
+    const b = try parseArgs(gpa, &.{"--timeout"});
     try std.testing.expectEqualStrings("", b.timeout.?);
-    const c = parseArgs(&.{ "--timeout", "-h", "--chain", "/bin/true", "--chain=-x" });
+    const c = try parseArgs(gpa, &.{ "--timeout", "-h", "--chain", "/bin/true", "--chain=-x" });
     try std.testing.expect(c.help);
     try std.testing.expectEqualStrings("", c.timeout.?);
     try std.testing.expectEqualStrings("-x", c.chain.?);
-    const d = parseArgs(&.{ "--chain", "", "--timeout", "7" });
+    const d = try parseArgs(gpa, &.{ "--chain", "", "--timeout", "7" });
     try std.testing.expectEqualStrings("", d.chain.?);
     try std.testing.expectEqualStrings("7", d.timeout.?);
-    const e = parseArgs(&.{ "--dry-run", "--json" });
+    const e = try parseArgs(gpa, &.{ "--dry-run", "--json" });
     try std.testing.expect(e.dry_run and e.json);
-    const f = parseArgs(&.{ "--check-submit", "--json", "--partition", "cpu", "--constraint=zen4", "--eb-stack", "/opt/bin/eb-stack" });
+    const f = try parseArgs(gpa, &.{ "--check-submit", "--json", "--partition", "cpu", "--constraint=zen4", "--eb-stack", "/opt/bin/eb-stack" });
     try std.testing.expect(f.check_submit and f.json);
     try std.testing.expectEqualStrings("cpu", f.partition.?);
     try std.testing.expectEqualStrings("zen4", f.constraint.?);

@@ -49,16 +49,16 @@ test "submitTarget names an unmapped partition" {
 }
 
 test "check-submit options are opt in" {
-    const plain = m.parseArgs(&.{});
+    const plain = try m.parseArgs(std.testing.allocator, &.{});
     try std.testing.expect(!plain.check_submit);
     try std.testing.expect(!plain.json);
     try std.testing.expect(plain.partition == null);
     try std.testing.expect(plain.constraint == null);
     try std.testing.expect(plain.eb_stack == null);
-    const args = m.parseArgs(&.{ "--check-submit", "--partition", "cpu", "--constraint=zen4", "--eb-stack", "/opt/bin/eb-stack" });
+    const args = try m.parseArgs(std.testing.allocator, &.{ "--check-submit", "--partition", "cpu", "--constraint=zen4", "--eb-stack", "/opt/bin/eb-stack" });
     try std.testing.expect(args.check_submit);
     try std.testing.expectEqualStrings("cpu", args.partition.?);
     try std.testing.expectEqualStrings("zen4", args.constraint.?);
     try std.testing.expectEqualStrings("/opt/bin/eb-stack", args.eb_stack.?);
-    try std.testing.expect(m.parseArgs(&.{ "--check-submit", "--json" }).json);
+    try std.testing.expect((try m.parseArgs(std.testing.allocator, &.{ "--check-submit", "--json" })).json);
 }

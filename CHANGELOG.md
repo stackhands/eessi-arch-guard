@@ -55,6 +55,7 @@
 
 ### Misc
 
+- The Zig guard parses its command line with `zig-common`'s `argparse` module under `Policy.prolog_lenient`, in place of its own `parseArgs` loop.
 - A parity test compares the Python and Zig guards on a restore under a file size limit. The limit cuts the scoped cpuinfo copy short after the restore scripts are written.
 - Add a stub planner runner to the shared test runner module. It runs a guard in check-submit mode against a stub in place of eb-stack, so tests need no copy of that setup.
 - Compare the Python guard and the program under test under limits on file size, each on a fresh site, so the fake Lmod log of one run no longer reaches the other.

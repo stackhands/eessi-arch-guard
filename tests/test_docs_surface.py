@@ -11,9 +11,12 @@ class DocsSurfaceTests(unittest.TestCase):
     def test_readme_lists_every_flag_and_env_name(self):
         main = (ROOT / "zig" / "main.zig").read_text(encoding="utf-8")
         readme = (ROOT / "README.md").read_text(encoding="utf-8")
-        start = main.index("fn parseArgs")
-        body = main[start : main.index("\nfn ", start + 1)]
-        flags = set(re.findall(r'"(-{1,2}[A-Za-z][A-Za-z0-9-]*)', body))
+        # The flags are the options of cli_spec; argparse adds -h, --help and
+        # --version to every command.
+        start = main.index("const cli_spec")
+        body = main[start : main.index("\n};", start)]
+        flags = {"--" + name for name in re.findall(r'\.name = "([A-Za-z][A-Za-z0-9-]*)"', body)}
+        flags |= {"-h", "--help", "--version"}
         self.assertGreaterEqual(
             flags, {"--shell", "--restore", "--json", "--help", "--version", "--chain", "-h"}
         )
