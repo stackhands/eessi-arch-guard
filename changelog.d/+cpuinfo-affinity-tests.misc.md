@@ -1,1 +1,0 @@
-`tests/test_cpuinfo_tempdir_parity.py` and `tests/test_restore_cpuinfo_limit_parity.py` now give the processors of their cpuinfo fixture the numbers of processors the host lets the test use. They pass on a host whose affinity mask has only processors past 7.

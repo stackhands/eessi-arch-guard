@@ -1,1 +1,0 @@
-Intersect every `flags`, `features`, and `isa` line inside a processor record when cpuinfo is rewritten down to the processors a task may run, so a later line that drops `waitpkg` is not hidden by a richer first line.

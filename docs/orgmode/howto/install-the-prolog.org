@@ -18,7 +18,7 @@ After that, a task that inherits the European Environment for Scientific Softwar
 - The release binary for the node's architecture, from the [[https://github.com/stackhands/eessi-arch-guard/releases][releases page]], with =SHA256SUMS=:
 
   #+begin_src bash
-  v=0.3.1 arch=x86_64   # or aarch64
+  v=0.4.0 arch=x86_64   # or aarch64
   curl -LO "https://github.com/stackhands/eessi-arch-guard/releases/download/v${v}/eessi-arch-guard-${v}-${arch}-linux-musl"
   curl -LO "https://github.com/stackhands/eessi-arch-guard/releases/download/v${v}/SHA256SUMS"
   sha256sum --check --ignore-missing SHA256SUMS
@@ -39,7 +39,7 @@ After that, a task that inherits the European Environment for Scientific Softwar
    #+end_src
 
    #+begin_example
-   0.3.1 (x86_64-linux-musl, safe, zig 0.17.1, abc1234)
+   0.4.0 (x86_64-linux-musl, safe, zig 0.17.1, abc1234)
    #+end_example
 
    The line is the version, the target, the optimisation mode, the Zig version and the commit the release was built from.

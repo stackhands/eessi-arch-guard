@@ -39,7 +39,7 @@ zig build -Drelease=true
 #+end_src
 
 #+begin_example
-0.3.1 (x86_64-linux-musl, safe, zig 0.17.1, unknown)
+0.4.0 (x86_64-linux-musl, safe, zig 0.17.1, unknown)
 #+end_example
 
 The example scripts run =zig-out/bin/eessi-arch-guard=, or the file named by =TOOL_BIN=.

@@ -1,1 +1,0 @@
-Give each test process, and each site a test builds, a private temporary directory, so two runs of the test suite at the same time no longer share the job cache files, restore workspaces and cpuinfo copies of their guard runs under `/tmp`.
