@@ -112,6 +112,9 @@ check("the env off wins over the conf", sp.toolchain_hidden("GCC/13.2.0", "GCC",
 check("a custom env hides only what it names", sp.toolchain_hidden("foss/2023b", "foss", sp.effective_spec("GCC", conf_on)), false)
 check("no key hides nothing", sp.toolchain_hidden("GCC/13.2.0", "GCC", sp.effective_spec(nil, "timeout = 60\n")), false)
 check("the last key wins", sp.toolchain_hidden("GCC/13.2.0", "GCC", sp.effective_spec(nil, "hide_toolchains = 1\nhide_toolchains = 0\n")), false)
+check("a carriage return keeps the last value", sp.conf_value("hide_toolchains = 0\rhide_toolchains = 1\r", "hide_toolchains"), "1")
+check("a carriage return ends a comment", sp.conf_value("# c\rhide_toolchains = 1\r", "hide_toolchains"), "1")
+check("a trailing carriage return is still one value", sp.conf_value("hide_toolchains = 1\r", "hide_toolchains"), "1")
 
 sp.conf_paths = { "/no/such/eessi-arch-guard.conf" }
 os.getenv = function(name)

@@ -189,14 +189,18 @@ function M.toolchain_hidden(fullName, sn, spec)
     return false
 end
 
--- The same line grammar as the guard: strip, skip blanks and comments,
--- split at the first "=", last key wins. An empty value is unset.
+-- The same line grammar as the guard: a line feed, a carriage return,
+-- or a carriage return followed by a line feed, ends a line. Strip,
+-- skip blanks and comments, split at the first "=", last key wins.
+-- An empty value is unset.
 function M.conf_value(text, key)
     if type(text) ~= "string" or type(key) ~= "string" then
         return nil
     end
     local found = nil
-    for line in (text .. "\n"):gmatch("(.-)\r?\n") do
+    local normalized = text:gsub("\r\n", "\n")
+    normalized = normalized:gsub("\r", "\n")
+    for line in (normalized .. "\n"):gmatch("(.-)\n") do
         local stripped = line:match("^%s*(.-)%s*$")
         if stripped ~= "" and stripped:sub(1, 1) ~= "#" then
             local eq = stripped:find("=", 1, true)
