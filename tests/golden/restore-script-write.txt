@@ -1,0 +1,8 @@
+=== efbig
+rc: 1
+--- stdout
+
+--- stderr
+eessi-arch-guard: restore failed: [Errno 27] File too large
+
+--- end

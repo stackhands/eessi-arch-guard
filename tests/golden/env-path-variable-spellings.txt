@@ -1,0 +1,132 @@
+=== prefix slash --dry-run
+rc: 0
+--- stdout
+mode: prolog
+strict: false
+announce: true
+config: none
+chain: none
+timeout: 60
+syslog: none
+syslog_all: false
+syslog_pen: 32473
+job: none
+step: none
+localid: unset
+cache: none
+decision: reloaded
+was: x86_64/amd/zen4
+now: x86_64/amd/zen2
+was_accel: none
+now_accel: none
+compare_accel: true
+pin: none
+eessi: EESSI/2025.06
+modules: R/4.4.2
+marker: x86_64/amd/zen4->x86_64/amd/zen2
+detail: none
+message: eessi-arch-guard: would reload modules for x86_64/amd/zen2 (loaded for x86_64/amd/zen4)
+exit: 0
+
+--- stderr
+
+--- end
+=== prefix doubleslash --dry-run
+rc: 0
+--- stdout
+mode: prolog
+strict: false
+announce: true
+config: none
+chain: none
+timeout: 60
+syslog: none
+syslog_all: false
+syslog_pen: 32473
+job: none
+step: none
+localid: unset
+cache: none
+decision: reloaded
+was: x86_64/amd/zen4
+now: x86_64/amd/zen2
+was_accel: none
+now_accel: none
+compare_accel: true
+pin: none
+eessi: EESSI/2025.06
+modules: R/4.4.2
+marker: x86_64/amd/zen4->x86_64/amd/zen2
+detail: none
+message: eessi-arch-guard: would reload modules for x86_64/amd/zen2 (loaded for x86_64/amd/zen4)
+exit: 0
+
+--- stderr
+
+--- end
+=== os empty --dry-run
+rc: 0
+--- stdout
+mode: prolog
+strict: false
+announce: true
+config: none
+chain: none
+timeout: 60
+syslog: none
+syslog_all: false
+syslog_pen: 32473
+job: none
+step: none
+localid: unset
+cache: none
+decision: failed
+was: x86_64/amd/zen4
+now: none
+was_accel: none
+now_accel: none
+compare_accel: true
+pin: none
+eessi: none
+modules: none
+marker: x86_64/amd/zen4->archdetect-failed
+detail: none
+message: eessi-arch-guard: archdetect failed (EESSI_PREFIX, EESSI_OS_TYPE, or EESSI_INIT_PREFIX is missing or unsafe); environment left as it was
+exit: 0
+
+--- stderr
+
+--- end
+=== prefix dotdot --dry-run
+rc: 0
+--- stdout
+mode: prolog
+strict: false
+announce: true
+config: none
+chain: none
+timeout: 60
+syslog: none
+syslog_all: false
+syslog_pen: 32473
+job: none
+step: none
+localid: unset
+cache: none
+decision: failed
+was: x86_64/amd/zen4
+now: none
+was_accel: none
+now_accel: none
+compare_accel: true
+pin: none
+eessi: none
+modules: none
+marker: x86_64/amd/zen4->archdetect-failed
+detail: none
+message: eessi-arch-guard: archdetect failed (EESSI_PREFIX, EESSI_OS_TYPE, or EESSI_INIT_PREFIX is missing or unsafe); environment left as it was
+exit: 0
+
+--- stderr
+
+--- end

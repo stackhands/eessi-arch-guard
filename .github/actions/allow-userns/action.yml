@@ -1,0 +1,13 @@
+name: Allow unprivileged user namespaces
+description: Lift Ubuntu's AppArmor limit on unprivileged user namespaces where present
+runs:
+  using: composite
+  steps:
+    # The cgroup tests bind a tree over /sys/fs/cgroup in an unprivileged
+    # user namespace, which AppArmor refuses on newer Ubuntu by default.
+    - name: allow unprivileged user namespaces
+      shell: bash
+      run: |
+        if [ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]; then
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+        fi

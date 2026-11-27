@@ -1,0 +1,48 @@
+=== bash on PATH, garbage
+rc: 0
+--- stdout
+{"announce": true, "cache": {"cached_kind": null, "hit": false, "path": null}, "cached": false, "cause": "archdetect-failed", "chain": {"path": null, "source": "none", "status": "none"}, "compare_accel": true, "config": {"path": null, "status": "none", "warning": null}, "decision": "failed", "detail": null, "eessi": null, "exit": 0, "exit_semantic": "ok", "job": {"id": null, "localid": null, "step": null}, "kind": "decision", "marker": "x86_64/amd/zen4->archdetect-failed", "message": "eessi-arch-guard: archdetect failed (could not run archdetect: [Errno 8] Exec format error: 'bash'); environment left as it was", "mode": "prolog", "modules": [], "now": null, "now_accel": null, "pin": null, "reload_needed": true, "schema_version": 1, "shell": false, "strict": false, "syslog": {"all": false, "pen": "32473", "target": null}, "timeout": 60.0, "was": "x86_64/amd/zen4", "was_accel": null}
+
+--- stderr
+
+--- end
+=== Lmod command, garbage
+rc: 0
+--- stdout
+{"cached": false, "cause": "restore-failed", "decision": "failed", "detail": null, "exit": 0, "exit_semantic": "ok", "kind": "decision", "message": "eessi-arch-guard: restore failed (eessi-arch-guard: restore failed: [Errno 8] Exec format error: '@WORK@/garbage/bash'); environment left as it was", "now": null, "reload_needed": true, "schema_version": 1, "shell": false, "strict": false, "was": "x86_64/amd/zen4"}
+
+--- stderr
+
+--- end
+=== bash on PATH, shebang
+rc: 0
+--- stdout
+{"announce": true, "cache": {"cached_kind": null, "hit": false, "path": null}, "cached": false, "cause": "archdetect-failed", "chain": {"path": null, "source": "none", "status": "none"}, "compare_accel": true, "config": {"path": null, "status": "none", "warning": null}, "decision": "failed", "detail": null, "eessi": null, "exit": 0, "exit_semantic": "ok", "job": {"id": null, "localid": null, "step": null}, "kind": "decision", "marker": "x86_64/amd/zen4->archdetect-failed", "message": "eessi-arch-guard: archdetect failed (could not run archdetect: [Errno 2] No such file or directory: 'bash'); environment left as it was", "mode": "prolog", "modules": [], "now": null, "now_accel": null, "pin": null, "reload_needed": true, "schema_version": 1, "shell": false, "strict": false, "syslog": {"all": false, "pen": "32473", "target": null}, "timeout": 60.0, "was": "x86_64/amd/zen4", "was_accel": null}
+
+--- stderr
+
+--- end
+=== Lmod command, shebang
+rc: 0
+--- stdout
+{"cached": false, "cause": "restore-failed", "decision": "failed", "detail": null, "exit": 0, "exit_semantic": "ok", "kind": "decision", "message": "eessi-arch-guard: restore failed (eessi-arch-guard: restore failed: [Errno 2] No such file or directory: '@WORK@/shebang/bash'); environment left as it was", "now": null, "reload_needed": true, "schema_version": 1, "shell": false, "strict": false, "was": "x86_64/amd/zen4"}
+
+--- stderr
+
+--- end
+=== Lmod command, single quote
+rc: 0
+--- stdout
+{"cached": false, "cause": "restore-failed", "decision": "failed", "detail": null, "exit": 0, "exit_semantic": "ok", "kind": "decision", "message": "eessi-arch-guard: restore failed (eessi-arch-guard: restore failed: [Errno 8] Exec format error: \"@WORK@/it's lmod\"); environment left as it was", "now": null, "reload_needed": true, "schema_version": 1, "shell": false, "strict": false, "was": "x86_64/amd/zen4"}
+
+--- stderr
+
+--- end
+=== Lmod command, both quotes
+rc: 0
+--- stdout
+{"cached": false, "cause": "restore-failed", "decision": "failed", "detail": null, "exit": 0, "exit_semantic": "ok", "kind": "decision", "message": "eessi-arch-guard: restore failed (eessi-arch-guard: restore failed: [Errno 8] Exec format error: '@WORK@/a\\'b\"c'); environment left as it was", "now": null, "reload_needed": true, "schema_version": 1, "shell": false, "strict": false, "was": "x86_64/amd/zen4"}
+
+--- stderr
+
+--- end

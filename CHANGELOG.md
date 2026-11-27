@@ -2,6 +2,74 @@
 
 <!-- towncrier release notes start -->
 
+## [0.4.0] - 2026-11-27
+
+### Features
+
+- The static binary is the prolog and the only implementation of the guard. The Python guard, the shadow comparison and the tests that compared the two are gone. `pip install` of the wheel gives a package whose `eessi-arch-guard` console script and `python3 -m eessi_arch_guard` start the bundled binary with the same arguments, else one on `PATH`. The wheel for a platform carries the binary, `share/sitepath.py`, `share/cvmfsrev.py` and `SitePackage.lua`, bash and zsh completions and a man page. COMPAT.md records what differs from the Python guard of releases before 0.4.
+- The wheels declare free-threading support and carry a C extension, `eessi_arch_guard._launch`, built against the CPython stable ABI, that calls `execv(2)` for the launcher. A `cp39-abi3` wheel serves every CPython from 3.9 that has the GIL; the free-threaded 3.13t and 3.14t, which install no abi3 wheel, get a `cp313t` and a `cp314t` wheel. cibuildwheel builds each in the manylinux2014 image for x86_64 and aarch64, and `tools/check_wheel.py` checks the tag, the single `_launch` extension, the bundled binary and the free-threading classifier. CI imports `_launch` on 3.13t and 3.14t and checks the GIL stays off, and calls it from many threads.
+- `eessi-arch-guard --check-mount` checks that the EESSI repository is on a cvmfs mount and that the site module directory precedes the EESSI one on `MODULEPATH`, and `eessi-arch-guard --check-revision --stat FILE [--min N]` reads and compares the cvmfs client revision. `share/sitepath.py` and `share/cvmfsrev.py` keep their command lines and run these. Messages of the two start with `eessi-arch-guard:` and a revision of more than 64 bits is not read.
+
+### Bugfixes
+
+- A cpuset walk whose directory starts with `//` stops after the filesystem root instead of reading `cpuset.cpus.effective` from the working directory.
+- A failed close of the cache lock makes the Zig guard skip with the `OSError` of that close, as `os.close` raises it in Python. The guard used to ignore it and print the decision, cached or new, where Python printed the skip line. After a timeout, `SIGTERM` or another `OSError`, the Zig guard keeps that first stop and drops the failed close. Python's `finally` block reports the close in that case, and COMPAT.md lists the difference. An interrupted close of the lock is a failed close in both builds: `os.close` does not retry it, as `PEP 475` exempts it, so both skip with `InterruptedError`.
+- A failed close of the cache temporary file, such as a lost write on the Network File System (NFS), no longer makes the Python guard close the descriptor a second time. The second close raised `OSError: [Errno 9] Bad file descriptor` out of the cache write, so the guard printed its skip line instead of its decision, or closed an unrelated descriptor that had reused the number. The temporary file is removed, the cache name is left as it was, and the guard prints its decision.
+- A failed close of the scoped cpuinfo copy now makes the Zig guard skip with the `OSError` of that close, as `os.close` raises it in Python. The guard used to ignore it and run the CPU detection on a copy that might lack some of its data. The close error replaces a write error, as the `finally` block does in Python. An interrupted close is a failure in both, because `os.close` does not retry it and raises `InterruptedError`.
+- Both guards now match the words processor and flags in a cpuinfo with the case folding of Python's regular expressions. A long s counts as an s, and both guards choose the same directory. A processor line is also read as a field of its block, as Python reads it, so a header spelled with a long s makes the processors differ in both guards.
+- CPU affinity preparation skips FIFO paths and directories promptly instead of trying to read them as cpuinfo.
+- Configuration files are reopened without following links and have their type and trust metadata checked again before reading.
+- Intersect every `flags`, `features`, and `isa` line inside a processor record when cpuinfo is rewritten down to the processors a task may run, so a later line that drops `waitpkg` is not hidden by a richer first line.
+- Make check-submit of the Python guard report an eb-stack failure whose output has bytes that are not UTF-8, with exit status 2 and the text of the failure, as the Zig guard does. Before, the Python guard stopped with a UnicodeDecodeError and exit status 0.
+- Read a Slurm CPU bind value as Python does, so the Zig guard no longer ignores a value that the Python guard accepts.
+- Read the output of a failing eb-stack in check-submit with the line ends that Python reads, so the message and the flagged module lines match the Python guard. The set is a carriage return with or without a line feed and the eight more characters that `str.splitlines` ends a line at.
+- Split cgroup.controllers on Unicode whitespace, as the Python guard does, so both guards accept the same cpuset directories.
+- The Zig guard builds against `zig-common` develop's widened lock timeout API without changing its lock timeout behavior.
+- The Zig guard lower-cases a cpuinfo field name with the Unicode 13.0.0 tables of Python 3.9, the oldest supported Python. It used those of Unicode 15.0.0. A capital that a later Unicode added, such as U+10570, now stays as Python 3.9 and 3.10 leave it, and `COMPAT.md` names the newer Pythons that lower-case it. The generator `tools/gen_pylower.py` stops on any other Unicode version. On Python 3.9, `tests/test_pylower_table.py` checks every code point. It used to skip on a newer Python, and now checks the code points both versions assign. A capital sigma after U+1734, which Unicode 14.0.0 stopped counting as case-ignorable, stays final as on Python 3.9, and `COMPAT.md` lists it too.
+- The Zig guard now lower-cases a cpuinfo field name as `str.lower()` does, for every script rather than plain letters only. Two processors that spell a field with letters of different case, such as the Kelvin sign and `k`, now share that field in both programs, and both make the scoped cpuinfo copy under the same conditions. `tools/gen_pylower.py` generates the mapping table from Python, and `tests/test_pylower_table.py` checks it against the interpreter over every code point.
+- The Zig guard picks its temporary directory with the shared `fsx.TempDir` chooser, for the check-submit planner directory, the scoped cpuinfo copy and the last fallback of the restore workspace. That chooser probes each candidate with a file write, as Python's `tempfile.gettempdir` does. When no candidate takes a file, check-submit reports the same error text as the Python guard.
+- The Zig guard reads the lines of a cpuinfo with Python's rules for whitespace and decimal digits. It scopes a cpuinfo as the Python guard does.
+- The Zig guard reads the timeout option and setting with the decimal digits of any script. Python's `float()` reads them the same way. The Zig guard used to fall back to the default timeout.
+- The Zig guard reports the `OSError` of a failed close of the restore scripts or of the check-submit planner inputs, as Python does. The restore helper fails with `restore failed: [Errno 5] Input/output error`, and check-submit exits 2 with `could not run eb-stack:` and the same text. The Zig guard used to drop the close and run the scripts or `eb-stack` on files that the Network File System (NFS) or a quota might have lost. The close error replaces a write error in both, and it comes before a failed chmod of `apply.sh`.
+- The Zig restore helper reports a restore workspace that cannot be created with the OSError text Python gives, including the errno and the path. It does the same when it cannot make the directory for its shell scripts, where it used a fixed sentence before.
+- The Zig restore helper reports the error Python prints when it cannot write the shell code it runs, instead of a fixed message.
+- The Zig restore helper writes each restore script with one `write(2)`, as Python does, so a short write leaves a short script that bash runs instead of failing the restore.
+- The `emeraldrapids` CPU subdirectory requires `waitpkg`, the same rule as `sapphirerapids`, because GCC's emeraldrapids march uses the Sapphire Rapids feature mask.
+- The `wildcatlake` CPU subdirectory requires `waitpkg`, the same rule as `pantherlake`, because GCC's wildcatlake march uses the Panther Lake feature mask.
+- The guard rejects Raptor Lake, Meteor Lake, Gracemont and Lunar Lake targets when
+  the available CPUs lack the waitpkg flag.
+- When the task may use only some of the processors of the node and the scoped cpuinfo copy cannot be made, because no temporary directory takes a file or its open or write fails, the Zig guard skips with the error Python raises instead of running the CPU detection on the unscoped cpuinfo. The copy is made with `fsx.mkstemp`, as `tempfile.mkstemp` makes it.
+- `--restore` reports the same stderr as the Python guard for a request that is not UTF-8, not JSON, or not an object, and it reads an array or object nested 31, 32, or 33 deep.
+- `read_cpu_flags` treats FIFO paths and directories as unreadable instead of waiting for input or reading the wrong file type.
+- `sitepath.py --mountinfo` rejects FIFO paths and directories promptly with its existing read-error status.
+- check-submit strips the failure text of eb-stack with Python's whitespace rules. A stderr of Unicode whitespace alone no longer hides the stdout. The Python guard reports the stdout in that case.
+- pip install now installs share/cvmfsrev.py beside sitepath.py.
+
+### Docs
+
+- COMPAT.md states at its top that it describes v0.2.0 while the source is 0.3.x.
+- The README Install section makes the Python guard the default prolog and the static binary opt-in, and links the how-tos for the Lmod hooks, the site path check and the cvmfs revision script.
+- The how-tos for sitepath.py and cvmfsrev.py name the installed path under share/eessi-arch-guard.
+- `COMPAT.md` lists U+1171E, the Ahom consonant sign medial ra, beside U+1734: Unicode 16.0.0 (Python 3.14) stopped counting it as case-ignorable, so a capital sigma after it lower-cases as medial `σ` there and as final `ς` in the guard, which keeps Unicode 13.0.0. `tests/test_pylower_table.py` expects that difference on 3.14.
+- `COMPAT.md` no longer lists a timeout in non-ASCII digits or a `flags` name that only case folding matches as places where the Zig guard differs, since both now behave as in Python.
+
+### Misc
+
+- The Zig guard parses its command line with `zig-common`'s `argparse` module under `Policy.prolog_lenient`, in place of its own `parseArgs` loop.
+- A parity test compares the Python and Zig guards on a restore under a file size limit. The limit cuts the scoped cpuinfo copy short after the restore scripts are written.
+- Add a stub planner runner to the shared test runner module. It runs a guard in check-submit mode against a stub in place of eb-stack, so tests need no copy of that setup.
+- Compare the Python guard and the program under test under limits on file size, each on a fresh site, so the fake Lmod log of one run no longer reaches the other.
+- Give each test process, and each site a test builds, a private temporary directory, so two runs of the test suite at the same time no longer share the job cache files, restore workspaces and cpuinfo copies of their guard runs under `/tmp`.
+- New `TOOL_BIN` tests in `tests/test_cpuinfo_field_case_parity.py` compare the two guards on cpuinfo fields that another processor spells with plain letters in another case, and check whether each guard places the scoped copy.
+- Pin zig-common to the main commit that adds the decimal digit and temporary file helpers the guard needs.
+- Pin zig-common to v0.14.0. Its `fsx.absPath` returns an error for a relative path when the working directory has been removed, and the guard handles it: a config path beside a relative program path ends the run with the `FileNotFoundError` skip line, a relative eb-stack path makes `--check-submit` report that it could not run eb-stack, and a relative program is not found when the guard runs it. Its `state.writePrivate` checks the close of the cache temporary file, so the Zig guard removes the file and leaves the cache name as it was after a failed close, as the Python guard does, and `COMPAT.md` no longer lists the difference.
+- The tests run the binary only. Where a test compared the Python guard with the binary it compares the binary's output with a file under `tests/golden/`; `RECORD=1` rewrites those files.
+- `src/eessi_arch_guard.py` has one non-blocking regular-file reader for paths that must not accept FIFOs or directories.
+- `tests/test_cpuinfo_tempdir_parity.py` and `tests/test_restore_cpuinfo_limit_parity.py` now give the processors of their cpuinfo fixture the numbers of processors the host lets the test use. They pass on a host whose affinity mask has only processors past 7.
+- `tests/test_locale_independence.py` checks that `harness.run_with_timeout` decodes UTF-8 output after the process locale is set to "C", also in an interpreter with UTF-8 mode off, that output that is not UTF-8 still raises, and that `test_unit` puts back the locale it found. `docs/examples/shell_demo.py` and `docs/tools/test_export.py` decode their subprocess output as UTF-8 whatever the locale.
+- `tests/test_tracer_build.py` builds `tests/fs_fail.c` and `tests/close_fail.c` with gcc under `-Wall -Wextra -Werror` at `-O0` to `-O3` and `-Os`, and fails on any warning. It skips without gcc or off x86_64.
+
+
 ## [0.3.1] - 2026-11-24
 
 ### Bugfixes

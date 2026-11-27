@@ -1,10 +1,13 @@
-# eessi-arch-guard 0.2.0: the interface a port keeps
+# The Python guard of releases before 0.4: the interface the binary keeps
 
-Source: `src/eessi_arch_guard.py` at the `v0.2.0` tag, 1823 lines, `__version__ = "0.2.0"` (line 32); read the "L" numbers with `git show v0.2.0:src/eessi_arch_guard.py`, since `main` has moved on.
-All "L" numbers are lines of that file unless a test or doc file is named. Python semantics that a
-port must reproduce are called out in the Notes column.
+The Python guard is gone; the static binary is the only implementation. This file records what the Python guard did at `v0.2.0` and where the binary differs, for a site that moves from the Python guard to the binary. The command line, the exit codes, the environment, the output and the files are the binary's, except in the last section, "Where the binary differs on purpose".
 
-Entry points: `if __name__ == "__main__": sys.exit(main())` (L1822-1823); `main` L1806-1819; `_main` L1740-1803.
+> Version note: sections 1 to 9 describe the Python guard at `v0.2.0`; 0.3.x changes appear only in rows that name them. Rows cite lines of that tag, read with `git show v0.2.0:src/eessi_arch_guard.py`; the file is no longer in the tree. No script generates or checks this file.
+
+Source: `src/eessi_arch_guard.py` at the `v0.2.0` tag, 1823 lines, `__version__ = "0.2.0"` (line 32).
+All "L" numbers are lines of that file. Python semantics the binary reproduces are called out in the Notes column.
+
+Entry points of the Python guard: `main` L1806-1819; `_main` L1740-1803.
 Slurm runs the file as `TaskProlog` with no arguments, so the argument-less path is the production path.
 
 ## 1. Command-line options
@@ -198,10 +201,10 @@ All values come from `os.environ` copied at L1751 unless a row says the helper r
 | Path | Direction | Format / rules | Trust checks | Lines |
 |---|---|---|---|---|
 | `/etc/eessi-arch-guard.conf` | read | first candidate | see next row | L1619 |
-| `<dirname(abspath(script))>/eessi-arch-guard.conf` | read | second candidate, used only if the first does not `os.path.lexists` (a dangling symlink counts as existing and is ignored as a symlink). The first existing candidate wins even if untrusted: no fall-through. `script` is `__file__`: the path Python ran the file by, symlinks not resolved, or the module's path in `site-packages` for the console script `pip` installs. The Zig build takes the path it was started by from `AT_EXECFN`, the path `execve` was given, which is where a script's `__file__` comes from: started by name through `PATH`, both read beside the link `PATH` found. | `lstat`: symlink rejected; non-regular rejected; `st_uid != 0` rejected; `st_mode & 0o022` rejected. Only the file itself is checked (not parent directories, not `S_ISUID`). | L1616-1637, L1553-1566 |
+| `<dirname(abspath(script))>/eessi-arch-guard.conf` | read | second candidate, used only if the first does not `os.path.lexists` (a dangling symlink counts as existing and is ignored as a symlink). The first existing candidate wins even if untrusted: no fall-through. `script` is `__file__`: the path Python ran the file by, symlinks not resolved, or the module's path in `site-packages` for the console script `pip` installs. The Zig build takes the path it was started by from `AT_EXECFN`, the path `execve` was given, which is where a script's `__file__` comes from: started by name through `PATH`, both read beside the link `PATH` found. | `lstat`: symlink rejected; non-regular rejected; `st_uid != 0` rejected; `st_mode & 0o022` rejected. Opened non-blocking without following a symlink, then `fstat` repeats the regular-file, owner, and mode checks. Only the file itself is checked (not parent directories, not `S_ISUID`). | `_config_untrusted`, `_read_regular_bytes`, `site_config` |
 | config grammar | `blob.splitlines()` on bytes (`\n`, `\r`, `\r\n`); each line `strip()`ped (ASCII whitespace); skip if empty, starts with `#`, or has no `=`; split on the first `=`; key and value stripped; key must be valid UTF-8 and non-empty (otherwise skipped silently); a non-UTF-8 value is decoded `utf-8`/`surrogateescape` and its key is added to the "bad" list (warning, key kept); duplicate keys: last wins; no inline comments, quotes or continuation; no size cap (whole file read). Recognised keys: `chain` (empty counts as unset), `timeout`. Unknown keys ignored. | n/a | L1569-1597, L1604-1607 |
 | `chain` validity | value must start with `/`, contain no `\n \r \0`, be a regular file (`isfile`), and `os.access(X_OK)`. No owner/mode check on the chain executable. | n/a | L1610-1613 |
-| `/proc/cpuinfo` or `$EESSI_PROC_CPUINFO` | read | Up to 16 MiB (`_CPUINFO_READ_MAX = 16 * 1024 * 1024`), decoded UTF-8 `replace`; every line matching `(?im)^flags[ \t]*:[ \t]*(.*)$` is split on whitespace; the effective flag set is the intersection over all such lines; no match or unreadable: empty set (then every WAITPKG march is rejected). No trust check. | none | L636-658, L710 |
+| `/proc/cpuinfo` or `$EESSI_PROC_CPUINFO` | read | Opened non-blocking and required to be a regular file. Up to 16 MiB (`_CPUINFO_READ_MAX = 16 * 1024 * 1024`), decoded UTF-8 `replace`; every line matching `(?im)^flags[ \t]*:[ \t]*(.*)$` is split on whitespace; the effective flag set is the intersection over all such lines; no match, unreadable, or non-regular: empty set (then every WAITPKG march is rejected). No owner or mode check. | `fstat` file type after open | `_read_regular_bytes`, `read_cpu_flags`, `_prepare_cpuinfo` |
 | `<EESSI_INIT_PREFIX>/eessi_archdetect.sh` | executed (through `bash`) | `os.path.isfile` (follows symlinks); executable bit not required. | none | L689-691, L736-738 |
 | `<EESSI_PREFIX>/software/<EESSI_OS_TYPE>/<candidate>/software` | stat | `os.path.isdir`; first candidate in archdetect order that exists. | none | L713-718 |
 | Cache directory | open | Non-strict: `$TMPDIR` if non-empty, `safe_absolute` and a directory, else `/tmp` if a directory, else no cache. Strict: `restore_work_base(env)` (below), else no cache. Opened `O_RDONLY\|O_DIRECTORY\|O_CLOEXEC` (a symlinked directory is followed; no owner/mode check on the directory). | n/a | L1235-1246, L1313, L1374, L1428 |
@@ -273,51 +276,6 @@ All values come from `os.environ` copied at L1751 unless a row says the helper r
 | `_ACTIVE` | Module-global holder of the current `DecisionLimit`; `None` means no deadline and no new session (`run_captured` degenerates to `subprocess.run`). | L501, L550-558, L1480-1510 |
 | Other numeric limits | `PROLOG_LINE_MAX = 4094` (L112); `MAX_ARCH_STDOUT = 65536` (L106); `MAX_MODULE_NAME = 256` (L105); `DIAGNOSE_LIMIT = 32` (L104); cpuinfo read 16 MiB (L637); cache read 8 MiB (L1327); `one_line` limit 500 (L211). | as listed |
 
-## 10. Python-only internals (tests import or inspect them)
-
-All tests live under `eessi-arch-guard/tests/`. `harness.py` L14-18 supports `TOOL_BIN` to run the program-level tests against another binary; tests that import `eessi_arch_guard as guard`, mock it, or read its source test only the Python build and need separate equivalents. Program-level tests (subprocess via `harness.run_guard`) in `test_integration.py` are the cross-implementation contract tests. `test_unit.py` has a custom `load_tests` that wraps `UnitTests` methods (L783-789).
-
-| Internal | Test file | Test name (line of `def`) |
-|---|---|---|
-| `module_name_ok` | test_unit.py | `test_module_name_grammar` (L74) |
-| `module_name_ok`, `parse_loaded_modules` | test_fuzz.py | `test_hostile_module_names_are_rejected` (L45) |
-| `module_name_ok` | test_year_modules.py | `test_only_four_ascii_digits_extend_unversioned_grammar` (L32) |
-| `parse_loaded_modules` | test_year_modules.py | `test_year_keeps_loaded_module_order` (L50) |
-| `safe_rel_subdir` | test_unit.py | `test_cpu_candidate_rejects_traversal` (L94), `test_select_first_directory` (L714) |
-| `ACCEL_RE` | test_unit.py | `test_accel_grammar` (L102) |
-| `ENV_NAME_RE` | test_integration.py (inside `_assert_prolog`, L45-53), test_fuzz.py (L57 test) | `test_hostile_exports_cannot_inject` (L57) |
-| `render_bytes` | test_unit.py | `test_prolog_value_is_literal` (L109), `test_shell_quote_round_trip` (L140), `test_print_newline_cannot_become_export` (L159), `test_unsafe_restore_value_publishes_nothing_else` (L237), `test_bad_module_name_does_not_restore` (L252) |
-| `render_bytes` | test_fuzz.py | `test_hostile_exports_cannot_inject` (L57), `test_shell_mode_does_not_execute_payloads` (L90) |
-| `render_bytes`, `PROLOG_LINE_MAX` | test_unit.py | `test_export_line_over_the_slurm_17_11_cap_is_refused` (L422) |
-| `message_bytes`, `_fit_encoded`, `PROLOG_LINE_MAX` | test_unit.py | `test_message_trim_keeps_a_character_boundary` (L394) |
-| `environment_delta` | test_unit.py | `test_newline_value_aborts_delta` (L116), `test_newline_name_aborts_delta` (L124), `test_soft_drop_keeps_the_rest` (L132), `test_slurm_never_emit` (L167) |
-| `environment_delta` | test_fuzz.py | `test_hostile_exports_cannot_inject` (L57) |
-| `cache_digest` | test_unit.py | `test_cache_key_omits_arch_guard` (L175) |
-| `cache_directory` | test_unit.py | `test_cache_directory_falls_back` (L182) |
-| `cache_directory`, `restore_work_base`, `_STRICT_MODE` (patched) | test_workspaces.py | `test_strict_restore_honors_existing_private_tmpdir` (L17), `test_strict_mode_without_private_workspace_has_no_cache_fallback` (L54) |
-| `restore_work_base` | test_workspaces.py | `test_explicit_workspace_has_priority` (L22), `test_untrusted_explicit_workspace_is_refused_without_creation` (L27), `test_explicit_symlink_is_refused` (L38), `test_existing_state_workspace_handles_missing_job_tmpdir` (L45) |
-| `call_restore`, `_wire_map`, `run_captured` (patched) | test_workspaces.py | `test_restore_helper_and_its_cleanup_stay_under_selected_parent` (L62) |
-| `main`, `Outcome`, `site_config` (patched), `_STRICT_MODE` | test_workspaces.py | `test_strict_call_does_not_leak_policy_into_default_calls` (L87) |
-| `main`, `Outcome`, `limited_decide`, `site_config`, `write_fd`, `_chain_path_ok`, `run_chain` (all patched) | test_strict_status.py | `test_failed_decision_has_strict_status_in_each_output_mode` (L24), `test_default_failed_decision_remains_fail_open` (L34), `test_unexpected_decision_exception_is_strict_in_each_output_mode` (L44), `test_unexpected_decision_exception_keeps_default_status` (L52), `test_outer_startup_exception_is_strict` (L56), `test_interrupted_decision_is_strict` (L64), `test_successful_and_intentional_noop_decisions_remain_zero` (L68), `test_chained_prolog_failure_preserves_its_status` (L74) |
-| `decide`, `CpuProbe`, `AccelProbe`, `RestoreResult`, `Outcome` (injected `cpu_probe`/`accel_probe`/`restore`) | test_unit.py | `test_not_loaded_is_silent` (L188), `test_opt_out_and_overrides_are_silent` (L194), `test_same_target_does_not_restore` (L206), `test_cpu_mismatch_publishes_delta` (L223), `test_unsafe_restore_value_publishes_nothing_else` (L237), `test_bad_module_name_does_not_restore` (L252), `test_no_software_dir_is_loud_and_configurable` (L273), `test_archdetect_error_is_loud` (L291), `test_accel_difference_is_part_of_the_label` (L301), `test_accel_override_skips_accel_probe` (L314), `test_missing_lmod_is_loud_on_mismatch` (L326) |
-| `cached_decide`, `main`, `Outcome` | test_unit.py | `test_main_exception_exits_zero` (L338), `test_interrupt_exits_zero` (L352), `test_untrusted_lock_bypasses_the_cache` (L540) |
-| `_write_cache`, `_read_cache`, `cache_file_path` | test_unit.py | `test_interrupted_cache_write_leaves_no_temporary_file` (L433), `test_cache_read_needs_an_owned_private_regular_file` (L499), `test_cache_read_does_not_block_on_a_fifo` (L515), `test_cached_changes_obey_the_never_touch_list` (L530) |
-| `cache_file_path`, `cached_decide`, `decide` (patched), `Outcome` | test_unit.py | `test_cache_is_kept_per_output_mode` (L467) |
-| `cache_file_path`, `_write_cache`, `Outcome` | test_integration.py | `test_tmpdir_absent_uses_tmp_mode_0600` (L199), `test_cache_symlink_is_not_followed` (L226), `test_hung_gpu_query_is_stopped_and_not_cached` (L587), `test_lock_wait_ends_at_the_limit` (L636), `test_limit_does_not_undo_a_cached_decision` (L695) |
-| `parse_config`, `parse_config_bytes`, `config_chain`, `_config_untrusted` | test_unit.py | `test_chain_config_parser_and_untrusted_file` (L371) |
-| `to_wire`, `from_wire` | test_unit.py | `test_wire_round_trip_keeps_the_byte` (L562) |
-| `parse_timeout`, `resolve_timeout`, `parse_args`, `DEFAULT_TIMEOUT`, `TIMEOUT_MAX` | test_unit.py | `test_timeout_values` (L581) |
-| `DecisionLimit`, `_ACTIVE`, `_Terminated`, `run_captured` | test_unit.py | `test_signal_while_a_child_starts_still_kills_it` (L601) |
-| `limited_decide`, `_ACTIVE`, `CpuProbe` | test_unit.py | `test_limit_and_sigterm_end_the_decision` (L639) |
-| `candidate_supports_cpu`, `read_cpu_flags`, `WAITPKG_MARCHES` | test_unit.py | `test_waitpkg_march_requires_the_flag` (L658) |
-| `POST_KILL_WAIT_SECONDS` | test_integration.py | `_stop_limit` helper (L59-61) used by the hang/timeout tests (L587 onward) |
-| `__version__` | test_integration.py | `test_help_version_and_shebang` (L926): also asserts the first source line is exactly `#!/usr/bin/python3 -I` |
-| source scan (flags in `parse_args` body between `def parse_args` and `def _announce`, and every `"[A-Z][A-Z0-9_]+"` literal in the source must appear in README) | test_unit.py | `test_readme_lists_every_flag_and_env_name` (L696) |
-| `pyproject.toml` license text | test_unit.py | `test_license_expression_has_no_license_classifier` (L709) |
-| program-level, any build (no Python import): `harness.run_guard` with stubs in `tests/stubs/` and `tests/fake_lmod.py` | test_integration.py | all other tests in the file (L101-L938), including `test_chain_success_and_failure` (L442), `test_bad_config_byte_keeps_the_other_keys` (L465), `test_untrusted_config_is_ignored` (L487), `test_sigterm_stops_the_decision` (L658), `test_config_timeout_bounds_the_decision` (L785) |
-| program-level | test_real_lmod.py | `test_zen4_loaded_env_reloads_on_zen2` (L56) |
-| program-level | test_year_modules.py | `test_real_lmod_restores_year_and_versioned_module_on_new_cpu` (L57) |
-
 ## Appendix A. Discrepancies and open points found while reading
 
 | Item | Detail | Lines |
@@ -327,24 +285,24 @@ All tests live under `eessi-arch-guard/tests/`. `harness.py` L14-18 supports `TO
 | `render_bytes` dry run | The decision runs `render_bytes` itself (prolog mode) to detect over-long lines; a cached outcome is not re-checked, so an over-long cached line raises `ValueError` in `_main` and becomes an emergency skip (exit 0, or 78 under strict). | L1211-1220, L1788-1794 |
 | Not determined | The behaviour of the real `eessi_archdetect.sh` (only the stub in `tests/stubs/` was read); behaviour of real Lmod output; the tutorial, how-to and topic pages of the Markdown manual that `docs/orgmode/` replaced were not read line by line. | n/a |
 
-## Where the Zig build differs on purpose
+## Where the binary differs on purpose
 
-The rows above describe the Python guard at 0.2.0. The Zig build in `zig/` keeps everything above except the following.
+The rows above describe the Python guard at 0.2.0. The binary keeps everything above except the following, and it adds `--check-mount` and `--check-revision`, which replace `share/sitepath.py` and `share/cvmfsrev.py` as standalone Python programs (the scripts remain as launchers with the same options; their messages start with `eessi-arch-guard:` instead of the script name).
 
-| case | Python guard | Zig build |
+| case | Python guard | binary |
 |---|---|---|
 | `--version` | the version | the same version, then the build: `VERSION (TARGET, MODE, zig ZIG_VERSION, COMMIT)`; COMMIT comes from `-Dcommit`, `unknown` without it |
 | restore helper | `python3 -I -X utf8 eessi_arch_guard.py --restore` | the same binary with `--restore`; the request and reply keep their JSON shape |
-| a request to `--restore` that is not UTF-8, not JSON or not an object | exit 1 with the Python exception text | exit 1 with a fixed text naming which of the three it was |
-| a request to `--restore` nesting arrays or objects deeper than 32, where the guard's own requests nest two deep | read | refused as not JSON, exit 1 |
 | the chained prolog's stdin | inherited | `/dev/null` |
-| the config file | checked with `lstat`, then read by path | the same checks with `lstat`, then opened without following a link and checked again on the open file; a file swapped in between is ignored; at most 1 MiB is read |
+| the config file size | no size cap | at most 1 MiB is read |
 | a config read error | the `OSError` text | `PATH: ErrorName` |
 | the message encoding | the locale's preferred encoding, which Python's UTF-8 mode makes UTF-8 under the C, POSIX and UTF-8 locales | always UTF-8; a non-UTF-8 legacy locale gives different bytes for a non-ASCII message |
 | a cache entry holding a lone surrogate outside U+DC80..U+DCFF | read, then failing when written out | refused, and the decision is made again |
 | the skip line after an unexpected failure | `skipped, ExceptionName: text` | `skipped, panic: text`, `skipped, signal: SIGSEGV` and the like; a crash signal still exits 0 (78 with `--strict`) |
 | a path in the skip line for an `OSError` that holds a character past U+00FF Python does not print, such as U+2028 | escaped, as `repr()` escapes it | kept as it is |
 | archdetect or Lmod output past 64 MiB, stderr past 1 MiB | read whole | refused as a failed run; stderr is cut |
-| a timeout written with non-ASCII digits, such as `５` | accepted, as `float()` takes any Unicode decimal digit | refused with the timeout warning; the default is kept |
 | a cache file with a leading-zero number, NaN, Infinity, or nesting deeper than 32 | `NaN` and `Infinity` accepted, the rest refused | all refused, and the decision is made again |
-| a cpuinfo line whose name is `flags` only under Unicode case folding (`flagſ`) | a flags line | not a flags line |
+| a cpuinfo field name with a capital that Unicode 13.0.0 does not assign, such as U+10570 | lower-cased on Python 3.11 and later, whose Unicode is newer | left as it is, as Python 3.9 and 3.10 leave it |
+| a capital sigma in a cpuinfo field name after a letter and U+1734, the Hanunoo sign pamudpod | medial `σ` on Python 3.11 and later, whose Unicode no longer counts U+1734 as case-ignorable | final `ς`, as Unicode 13.0.0 and Python 3.9 and 3.10 have it |
+| a capital sigma in a cpuinfo field name after a letter and U+1171E, the Ahom consonant sign medial ra | medial `σ` on Python 3.14 and later, whose Unicode 16.0.0 no longer counts U+1171E as case-ignorable | final `ς`, as Unicode 13.0.0 and Python 3.9 to 3.13 have it |
+| a failed close of the cache lock after the deadline, `SIGTERM` or another `OSError` | `finally: os.close(lockfd)` raises the close's `OSError` over the first one, and the guard prints its skip line | the guard keeps the timeout, the termination or the first `OSError` and drops the failed close |

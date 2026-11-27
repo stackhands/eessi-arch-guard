@@ -1,0 +1,168 @@
+=== limit 4 text
+rc: 0
+--- stdout
+export EESSI_ARCH_GUARD_FAILED=x86_64/intel/sapphirerapids->archdetect-failed
+print eessi-arch-guard: archdetect failed (exit -25); environment left as it was
+
+--- stderr
+
+--- end
+=== limit 4 --json
+rc: 0
+--- stdout
+{"cached": false, "cause": "archdetect-failed", "decision": "failed", "detail": null, "exit": 0, "exit_semantic": "ok", "kind": "decision", "message": "eessi-arch-guard: archdetect failed (exit -25); environment left as it was", "now": null, "reload_needed": true, "schema_version": 1, "shell": false, "strict": false, "was": "x86_64/intel/sapphirerapids"}
+
+--- stderr
+
+--- end
+=== limit 4 --dry-run
+rc: 0
+--- stdout
+mode: prolog
+strict: false
+announce: true
+config: none
+chain: none
+timeout: 60
+syslog: none
+syslog_all: false
+syslog_pen: 32473
+job: none
+step: none
+localid: unset
+cache: none
+decision: failed
+was: x86_64/intel/sapphirerapids
+now: none
+was_accel: none
+now_accel: none
+compare_accel: true
+pin: none
+eessi: none
+modules: none
+marker: x86_64/intel/sapphirerapids->archdetect-failed
+detail: none
+message: eessi-arch-guard: archdetect failed (exit -25); environment left as it was
+exit: 0
+
+--- stderr
+
+--- end
+=== limit 4 --dry-run --json
+rc: 0
+--- stdout
+{"announce": true, "cache": {"cached_kind": null, "hit": false, "path": null}, "cached": false, "cause": "archdetect-failed", "chain": {"path": null, "source": "none", "status": "none"}, "compare_accel": true, "config": {"path": null, "status": "none", "warning": null}, "decision": "failed", "detail": null, "eessi": null, "exit": 0, "exit_semantic": "ok", "job": {"id": null, "localid": null, "step": null}, "kind": "decision", "marker": "x86_64/intel/sapphirerapids->archdetect-failed", "message": "eessi-arch-guard: archdetect failed (exit -25); environment left as it was", "mode": "prolog", "modules": [], "now": null, "now_accel": null, "pin": null, "reload_needed": true, "schema_version": 1, "shell": false, "strict": false, "syslog": {"all": false, "pen": "32473", "target": null}, "timeout": 60.0, "was": "x86_64/intel/sapphirerapids", "was_accel": null}
+
+--- stderr
+
+--- end
+=== limit 4 --shell
+rc: 0
+--- stdout
+export EESSI_ARCH_GUARD_FAILED='x86_64/intel/sapphirerapids->archdetect-failed'
+
+--- stderr
+eessi-arch-guard: archdetect failed (exit -25); environment left as it was
+
+--- end
+=== limit 4 --strict
+rc: 78
+--- stdout
+export EESSI_ARCH_GUARD_FAILED=x86_64/intel/sapphirerapids->archdetect-failed
+print eessi-arch-guard: archdetect failed (exit -25); environment left as it was
+
+--- stderr
+
+--- end
+=== limit 4 --strict --json
+rc: 78
+--- stdout
+{"cached": false, "cause": "archdetect-failed", "decision": "failed", "detail": null, "exit": 78, "exit_semantic": "strict-failure", "kind": "decision", "message": "eessi-arch-guard: archdetect failed (exit -25); environment left as it was", "now": null, "reload_needed": true, "schema_version": 1, "shell": false, "strict": true, "was": "x86_64/intel/sapphirerapids"}
+
+--- stderr
+
+--- end
+=== limit 300 text
+rc: 0
+--- stdout
+export EESSI_ARCH_GUARD_FAILED=x86_64/intel/sapphirerapids->no-software-dir
+print eessi-arch-guard: no EESSI software directory for this node under @WORK@/prefix (candidates x86_64/generic); modules were loaded for x86_64/intel/sapphirerapids; environment left as it was
+
+--- stderr
+
+--- end
+=== limit 300 --json
+rc: 0
+--- stdout
+{"cached": false, "cause": "no-software-dir", "decision": "failed", "detail": null, "exit": 0, "exit_semantic": "ok", "kind": "decision", "message": "eessi-arch-guard: no EESSI software directory for this node under @WORK@/prefix (candidates x86_64/generic); modules were loaded for x86_64/intel/sapphirerapids; environment left as it was", "now": null, "reload_needed": true, "schema_version": 1, "shell": false, "strict": false, "was": "x86_64/intel/sapphirerapids"}
+
+--- stderr
+
+--- end
+=== limit 300 --dry-run
+rc: 0
+--- stdout
+mode: prolog
+strict: false
+announce: true
+config: none
+chain: none
+timeout: 60
+syslog: none
+syslog_all: false
+syslog_pen: 32473
+job: none
+step: none
+localid: unset
+cache: none
+decision: failed
+was: x86_64/intel/sapphirerapids
+now: none
+was_accel: none
+now_accel: none
+compare_accel: true
+pin: none
+eessi: none
+modules: none
+marker: x86_64/intel/sapphirerapids->no-software-dir
+detail: none
+message: eessi-arch-guard: no EESSI software directory for this node under @WORK@/prefix (candidates x86_64/generic); modules were loaded for x86_64/intel/sapphirerapids; environment left as it was
+exit: 0
+
+--- stderr
+
+--- end
+=== limit 300 --dry-run --json
+rc: 0
+--- stdout
+{"announce": true, "cache": {"cached_kind": null, "hit": false, "path": null}, "cached": false, "cause": "no-software-dir", "chain": {"path": null, "source": "none", "status": "none"}, "compare_accel": true, "config": {"path": null, "status": "none", "warning": null}, "decision": "failed", "detail": null, "eessi": null, "exit": 0, "exit_semantic": "ok", "job": {"id": null, "localid": null, "step": null}, "kind": "decision", "marker": "x86_64/intel/sapphirerapids->no-software-dir", "message": "eessi-arch-guard: no EESSI software directory for this node under @WORK@/prefix (candidates x86_64/generic); modules were loaded for x86_64/intel/sapphirerapids; environment left as it was", "mode": "prolog", "modules": [], "now": null, "now_accel": null, "pin": null, "reload_needed": true, "schema_version": 1, "shell": false, "strict": false, "syslog": {"all": false, "pen": "32473", "target": null}, "timeout": 60.0, "was": "x86_64/intel/sapphirerapids", "was_accel": null}
+
+--- stderr
+
+--- end
+=== limit 300 --shell
+rc: 0
+--- stdout
+export EESSI_ARCH_GUARD_FAILED='x86_64/intel/sapphirerapids->no-software-dir'
+
+--- stderr
+eessi-arch-guard: no EESSI software directory for this node under @WORK@/prefix (candidates x86_64/generic); modules were loaded for x86_64/intel/sapphirerapids; environment left as it was
+
+--- end
+=== limit 300 --strict
+rc: 78
+--- stdout
+export EESSI_ARCH_GUARD_FAILED=x86_64/intel/sapphirerapids->no-software-dir
+print eessi-arch-guard: no EESSI software directory for this node under @WORK@/prefix (candidates x86_64/generic); modules were loaded for x86_64/intel/sapphirerapids; environment left as it was
+
+--- stderr
+
+--- end
+=== limit 300 --strict --json
+rc: 78
+--- stdout
+{"cached": false, "cause": "no-software-dir", "decision": "failed", "detail": null, "exit": 78, "exit_semantic": "strict-failure", "kind": "decision", "message": "eessi-arch-guard: no EESSI software directory for this node under @WORK@/prefix (candidates x86_64/generic); modules were loaded for x86_64/intel/sapphirerapids; environment left as it was", "now": null, "reload_needed": true, "schema_version": 1, "shell": false, "strict": true, "was": "x86_64/intel/sapphirerapids"}
+
+--- stderr
+
+--- end

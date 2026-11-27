@@ -1,0 +1,58 @@
+=== pen '99999999999999999999'
+rc: 0
+--- stdout
+{"announce": true, "cache": {"cached_kind": null, "hit": false, "path": null}, "cached": false, "cause": null, "chain": {"path": null, "source": "none", "status": "none"}, "compare_accel": true, "config": {"path": null, "status": "none", "warning": null}, "decision": "reloaded", "detail": null, "eessi": "EESSI/2025.06", "exit": 0, "exit_semantic": "ok", "job": {"id": null, "localid": null, "step": null}, "kind": "decision", "marker": "x86_64/amd/zen4->x86_64/amd/zen2", "message": "eessi-arch-guard: would reload modules for x86_64/amd/zen2 (loaded for x86_64/amd/zen4)", "mode": "prolog", "modules": ["R/4.4.2"], "now": "x86_64/amd/zen2", "now_accel": null, "pin": null, "reload_needed": true, "schema_version": 1, "shell": false, "strict": false, "syslog": {"all": false, "pen": "99999999999999999999", "target": null}, "timeout": 60.0, "was": "x86_64/amd/zen4", "was_accel": null}
+
+--- stderr
+
+--- end
+=== pen '18446744073709551616'
+rc: 0
+--- stdout
+{"announce": true, "cache": {"cached_kind": null, "hit": false, "path": null}, "cached": false, "cause": null, "chain": {"path": null, "source": "none", "status": "none"}, "compare_accel": true, "config": {"path": null, "status": "none", "warning": null}, "decision": "reloaded", "detail": null, "eessi": "EESSI/2025.06", "exit": 0, "exit_semantic": "ok", "job": {"id": null, "localid": null, "step": null}, "kind": "decision", "marker": "x86_64/amd/zen4->x86_64/amd/zen2", "message": "eessi-arch-guard: would reload modules for x86_64/amd/zen2 (loaded for x86_64/amd/zen4)", "mode": "prolog", "modules": ["R/4.4.2"], "now": "x86_64/amd/zen2", "now_accel": null, "pin": null, "reload_needed": true, "schema_version": 1, "shell": false, "strict": false, "syslog": {"all": false, "pen": "18446744073709551616", "target": null}, "timeout": 60.0, "was": "x86_64/amd/zen4", "was_accel": null}
+
+--- stderr
+
+--- end
+=== pen '18446744073709551615'
+rc: 0
+--- stdout
+{"announce": true, "cache": {"cached_kind": null, "hit": false, "path": null}, "cached": false, "cause": null, "chain": {"path": null, "source": "none", "status": "none"}, "compare_accel": true, "config": {"path": null, "status": "none", "warning": null}, "decision": "reloaded", "detail": null, "eessi": "EESSI/2025.06", "exit": 0, "exit_semantic": "ok", "job": {"id": null, "localid": null, "step": null}, "kind": "decision", "marker": "x86_64/amd/zen4->x86_64/amd/zen2", "message": "eessi-arch-guard: would reload modules for x86_64/amd/zen2 (loaded for x86_64/amd/zen4)", "mode": "prolog", "modules": ["R/4.4.2"], "now": "x86_64/amd/zen2", "now_accel": null, "pin": null, "reload_needed": true, "schema_version": 1, "shell": false, "strict": false, "syslog": {"all": false, "pen": "18446744073709551615", "target": null}, "timeout": 60.0, "was": "x86_64/amd/zen4", "was_accel": null}
+
+--- stderr
+
+--- end
+=== pen '00000000000000000001'
+rc: 0
+--- stdout
+{"announce": true, "cache": {"cached_kind": null, "hit": false, "path": null}, "cached": false, "cause": null, "chain": {"path": null, "source": "none", "status": "none"}, "compare_accel": true, "config": {"path": null, "status": "none", "warning": null}, "decision": "reloaded", "detail": null, "eessi": "EESSI/2025.06", "exit": 0, "exit_semantic": "ok", "job": {"id": null, "localid": null, "step": null}, "kind": "decision", "marker": "x86_64/amd/zen4->x86_64/amd/zen2", "message": "eessi-arch-guard: would reload modules for x86_64/amd/zen2 (loaded for x86_64/amd/zen4)", "mode": "prolog", "modules": ["R/4.4.2"], "now": "x86_64/amd/zen2", "now_accel": null, "pin": null, "reload_needed": true, "schema_version": 1, "shell": false, "strict": false, "syslog": {"all": false, "pen": "1", "target": null}, "timeout": 60.0, "was": "x86_64/amd/zen4", "was_accel": null}
+
+--- stderr
+
+--- end
+=== pen '  18446744073709551616  '
+rc: 0
+--- stdout
+{"announce": true, "cache": {"cached_kind": null, "hit": false, "path": null}, "cached": false, "cause": null, "chain": {"path": null, "source": "none", "status": "none"}, "compare_accel": true, "config": {"path": null, "status": "none", "warning": null}, "decision": "reloaded", "detail": null, "eessi": "EESSI/2025.06", "exit": 0, "exit_semantic": "ok", "job": {"id": null, "localid": null, "step": null}, "kind": "decision", "marker": "x86_64/amd/zen4->x86_64/amd/zen2", "message": "eessi-arch-guard: would reload modules for x86_64/amd/zen2 (loaded for x86_64/amd/zen4)", "mode": "prolog", "modules": ["R/4.4.2"], "now": "x86_64/amd/zen2", "now_accel": null, "pin": null, "reload_needed": true, "schema_version": 1, "shell": false, "strict": false, "syslog": {"all": false, "pen": "18446744073709551616", "target": null}, "timeout": 60.0, "was": "x86_64/amd/zen4", "was_accel": null}
+
+--- stderr
+
+--- end
+=== pen '100000000000000000000'
+rc: 0
+--- stdout
+{"announce": true, "cache": {"cached_kind": null, "hit": false, "path": null}, "cached": false, "cause": null, "chain": {"path": null, "source": "none", "status": "none"}, "compare_accel": true, "config": {"path": null, "status": "none", "warning": null}, "decision": "reloaded", "detail": null, "eessi": "EESSI/2025.06", "exit": 0, "exit_semantic": "ok", "job": {"id": null, "localid": null, "step": null}, "kind": "decision", "marker": "x86_64/amd/zen4->x86_64/amd/zen2", "message": "eessi-arch-guard: would reload modules for x86_64/amd/zen2 (loaded for x86_64/amd/zen4)", "mode": "prolog", "modules": ["R/4.4.2"], "now": "x86_64/amd/zen2", "now_accel": null, "pin": null, "reload_needed": true, "schema_version": 1, "shell": false, "strict": false, "syslog": {"all": false, "pen": "32473", "target": null}, "timeout": 60.0, "was": "x86_64/amd/zen4", "was_accel": null}
+
+--- stderr
+eessi-arch-guard: EESSI_ARCH_GUARD_SYSLOG_PEN is not a positive integer: 100000000000000000000
+
+--- end
+=== pen '0'
+rc: 0
+--- stdout
+{"announce": true, "cache": {"cached_kind": null, "hit": false, "path": null}, "cached": false, "cause": null, "chain": {"path": null, "source": "none", "status": "none"}, "compare_accel": true, "config": {"path": null, "status": "none", "warning": null}, "decision": "reloaded", "detail": null, "eessi": "EESSI/2025.06", "exit": 0, "exit_semantic": "ok", "job": {"id": null, "localid": null, "step": null}, "kind": "decision", "marker": "x86_64/amd/zen4->x86_64/amd/zen2", "message": "eessi-arch-guard: would reload modules for x86_64/amd/zen2 (loaded for x86_64/amd/zen4)", "mode": "prolog", "modules": ["R/4.4.2"], "now": "x86_64/amd/zen2", "now_accel": null, "pin": null, "reload_needed": true, "schema_version": 1, "shell": false, "strict": false, "syslog": {"all": false, "pen": "32473", "target": null}, "timeout": 60.0, "was": "x86_64/amd/zen4", "was_accel": null}
+
+--- stderr
+eessi-arch-guard: EESSI_ARCH_GUARD_SYSLOG_PEN is not a positive integer: 0
+
+--- end

@@ -2,35 +2,28 @@
 
 from __future__ import annotations
 
+import json
 import os
+import re
 import shutil
 import subprocess
-import sys
 import tempfile
 import unittest
 from pathlib import Path
 
+import private_tmp  # noqa: F401
+
 ROOT = Path(__file__).resolve().parents[1]
-GUARD = ROOT / "src" / "eessi_arch_guard.py"
-# TOOL_BIN runs the tests that start the guard as a program against another
-# build of it; unset, they run src/eessi_arch_guard.py with this interpreter.
-# Tests that read GUARD's source or import it test the Python guard either way.
-# A test whose only job is to compare the two builds calls skip_unless_tool_bin
-# so an unset TOOL_BIN is reported as a skip.
+# The program under test is the static binary: TOOL_BIN names it, and unset
+# it is the one `zig build -Drelease=true` leaves in zig-out/bin.
 TOOL_BIN = os.environ.get("TOOL_BIN", "")
-PROGRAM = Path(TOOL_BIN).resolve() if TOOL_BIN else GUARD
-GUARD_ARGV = [str(PROGRAM)] if TOOL_BIN else [sys.executable, "-I", str(GUARD)]
-
-
-def skip_unless_tool_bin(case: unittest.TestCase) -> None:
-    """Skip a binary comparison when ``TOOL_BIN`` is unset.
-
-    Parity tests call this instead of returning. Unittest then counts a
-    skip with a reason. Assertions on the Python guard belong before this
-    call, and they still run when the comparison is skipped.
-    """
-    if not TOOL_BIN:
-        case.skipTest("TOOL_BIN is unset; the binary comparison was not run")
+PROGRAM = Path(TOOL_BIN or ROOT / "zig-out" / "bin" / "eessi-arch-guard").resolve()
+GUARD_ARGV = [str(PROGRAM)]
+if not PROGRAM.is_file():
+    raise RuntimeError(
+        "the program under test %s does not exist; run `zig build -Drelease=true` "
+        "or set TOOL_BIN" % PROGRAM
+    )
 
 
 STUBS = Path(__file__).resolve().parent / "stubs"
@@ -58,6 +51,9 @@ class Site:
         self.arch_log = os.path.join(self.root, "arch.log")
         self.cpuinfo = os.path.join(self.root, "cpuinfo")
         self.bash_env_log = os.path.join(self.root, "bash-env.log")
+        # The TMPDIR of the guard runs base_env sets up, private to the site.
+        self.tmpdir = os.path.join(self.root, "temp")
+        os.mkdir(self.tmpdir, 0o700)
         os.makedirs(self.init)
         os.makedirs(self.bindir)
         shutil.copy(STUBS / "eessi_archdetect.sh", os.path.join(self.init, "eessi_archdetect.sh"))
@@ -120,6 +116,32 @@ class Site:
             handle.write("\n".join(lines) + "\n")
 
 
+def on_task_cpus(cpuinfo: str, visible: int):
+    """``cpuinfo`` renumbered so that its first ``visible`` processors are ones
+    this process may run on, with those IDs.
+
+    A fixture numbers its processors from 0, and a host may give a test only
+    processors with higher IDs, so a test that binds the task to fixture
+    processors renumbers them first. The first blocks take the lowest IDs of
+    the affinity mask in order, and the blocks past the mask take the IDs
+    after its highest one. On a host that may use processors 0 to 7 the
+    fixture keeps its numbers. Skips when the mask has fewer than
+    ``visible`` processors.
+    """
+    allowed = sorted(os.sched_getaffinity(0))
+    if len(allowed) < visible:
+        raise unittest.SkipTest(
+            "the test needs %d processors and may run on %d" % (visible, len(allowed))
+        )
+    pattern = re.compile(r"^(processor[ \t]*:[ \t]*)[0-9]+", re.M)
+    blocks = len(pattern.findall(cpuinfo))
+    ids = allowed[:blocks]
+    ids += range(allowed[-1] + 1, allowed[-1] + 1 + blocks - len(ids))
+    numbers = iter(ids)
+    text = pattern.sub(lambda m: m.group(1) + str(next(numbers)), cpuinfo)
+    return text, ids[:visible]
+
+
 def base_env(
     site: Site, cpu: str, modules, accel: str = "", gpu: str = "none", gpu_cc: str = "9.0"
 ):
@@ -147,6 +169,7 @@ def base_env(
     env = {
         "PATH": ":".join(bins),
         "HOME": "/tmp",
+        "TMPDIR": site.tmpdir,
         "USER": "tester",
         "LANG": "C",
         "LC_ALL": "C",
@@ -160,6 +183,9 @@ def base_env(
         "MODULEPATH": ":".join(modulepath),
         "LMOD_CMD": site.lmod,
         "EESSI_TEST_GPU": gpu,
+        # The stub's own nvidia-smi, so a host nvidia-smi on a PATH the test
+        # replaces never answers for the site.
+        "EESSI_TEST_NVIDIA_SMI": os.path.join(site.bindir, "nvidia-smi"),
         "EESSI_TEST_GPU_CC": gpu_cc,
         # Survives a purge the way /usr/bin does, so nvidia-smi is still found
         # when the reloaded EESSI module runs archdetect.
@@ -190,11 +216,71 @@ def run_guard(env, args=()):
     proc = subprocess.run(
         [*GUARD_ARGV, *args],
         capture_output=True,
-        text=True,
+        encoding="utf-8",
         env=env,
         check=False,
     )
     return proc
+
+
+STUB_TARGET = "x86_64/amd/zen4"
+STUB_PLANNER = """#!/usr/bin/python3
+import sys
+sys.stderr.buffer.write(%r)
+sys.stdout.buffer.write(%r)
+if %r:
+    easystack = sys.argv[sys.argv.index('--easystack') + 1]
+    with open(easystack, encoding='utf-8') as handle:
+        names = [line.strip()[2:] for line in handle if line.startswith('  - ')]
+    for name in names:
+        print(name + ' is flagged on x86_64: it has never been installed there')
+sys.exit(%d)
+"""
+
+
+def run_check_submit_stub(
+    program,
+    stderr: bytes = b"",
+    stdout: bytes = b"",
+    status: int = 3,
+    flagged: bool = False,
+    extra_env=None,
+    timeout: float = 30.0,
+):
+    """Run ``program --check-submit --json`` with a stub in place of eb-stack.
+
+    The stub is an executable script in a tree of its own, next to a prefix
+    with one module. It writes ``stderr`` and ``stdout`` as bytes and exits
+    with ``status``. With ``flagged`` set it also writes a flagged line for
+    each module of the easystack file it is given, after ``stdout``. The guard
+    runs with a clean environment plus ``extra_env``. The result is the exit
+    status, the parsed standard output (``None`` when it is empty) and the
+    standard error as bytes.
+    """
+    with tempfile.TemporaryDirectory(prefix="eag-stub-") as tmp:
+        root = Path(tmp)
+        prefix = root / "prefix"
+        modules = prefix / "software" / "linux" / STUB_TARGET / "modules" / "all" / "R"
+        modules.mkdir(parents=True)
+        (modules / "4.4.2.lua").write_text("--\n", encoding="utf-8")
+        stub = root / "eb-stack"
+        stub.write_text(STUB_PLANNER % (stderr, stdout, flagged, status), encoding="utf-8")
+        stub.chmod(0o755)
+        env = {
+            "PATH": "/usr/bin:/bin",
+            "HOME": str(root / "home"),
+            "LANG": "C",
+            "LC_ALL": "C",
+            "EESSI_PREFIX": str(prefix),
+            "EESSI_OS_TYPE": "linux",
+            "LOADEDMODULES": "R/4.4.2",
+        }
+        env.update(extra_env or {})
+        argv = [*program, "--check-submit", "--json", "--target", STUB_TARGET]
+        argv += ["--eb-stack", str(stub)]
+        proc = run_with_timeout(argv, env=env, timeout=timeout, text=False)
+        payload = json.loads(proc.stdout) if proc.stdout else None
+        return proc.returncode, payload, proc.stderr
 
 
 def log_lines(path: str):
@@ -204,19 +290,22 @@ def log_lines(path: str):
         return [line.rstrip("\n") for line in handle if line.strip()]
 
 
-def run_with_timeout(argv, env=None, timeout: float = 2.0, text: bool = True, cwd=None):
+def run_with_timeout(argv, env=None, timeout: float = 2.0, text: bool = True, cwd=None, input=None):
     """Run ``argv`` with a bounded wall-clock timeout, in ``cwd`` if given.
 
-    The streams are decoded as text unless ``text`` is false. Then they stay
-    bytes, and ``env`` may hold bytes, so a comparison sees input and output
-    that are not valid UTF-8.
+    ``input`` is fed to the program.
+
+    The streams are decoded as UTF-8, whatever the locale, unless ``text`` is
+    false. Then they stay bytes, and ``env`` may hold bytes, so a comparison
+    sees input and output that are not valid UTF-8.
     """
     return subprocess.run(
         list(argv),
+        input=input,
         env=env,
         cwd=cwd,
         capture_output=True,
-        text=text,
+        encoding="utf-8" if text else None,
         timeout=timeout,
         check=False,
     )

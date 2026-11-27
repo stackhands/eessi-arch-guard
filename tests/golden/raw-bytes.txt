@@ -1,0 +1,686 @@
+=== cpupath leaf with a stray byte live
+rc: 0
+--- stdout
+export EESSI_ARCH_GUARD_FAILED=x86_64/amd/zen4->archdetect-failed
+print eessi-arch-guard: archdetect failed (cpupath returned an unsafe candidate); environment left as it was
+
+--- stderr
+
+--- end
+=== cpupath leaf with a stray byte --dry-run
+rc: 0
+--- stdout
+mode: prolog
+strict: false
+announce: true
+config: none
+chain: none
+timeout: 60
+syslog: none
+syslog_all: false
+syslog_pen: 32473
+job: none
+step: none
+localid: unset
+cache: none
+decision: failed
+was: x86_64/amd/zen4
+now: none
+was_accel: none
+now_accel: none
+compare_accel: true
+pin: none
+eessi: none
+modules: none
+marker: x86_64/amd/zen4->archdetect-failed
+detail: none
+message: eessi-arch-guard: archdetect failed (cpupath returned an unsafe candidate); environment left as it was
+exit: 0
+
+--- stderr
+
+--- end
+=== cpupath leaf with a stray byte --dry-run --json
+rc: 0
+--- stdout
+{"announce": true, "cache": {"cached_kind": null, "hit": false, "path": null}, "cached": false, "cause": "archdetect-failed", "chain": {"path": null, "source": "none", "status": "none"}, "compare_accel": true, "config": {"path": null, "status": "none", "warning": null}, "decision": "failed", "detail": null, "eessi": null, "exit": 0, "exit_semantic": "ok", "job": {"id": null, "localid": null, "step": null}, "kind": "decision", "marker": "x86_64/amd/zen4->archdetect-failed", "message": "eessi-arch-guard: archdetect failed (cpupath returned an unsafe candidate); environment left as it was", "mode": "prolog", "modules": [], "now": null, "now_accel": null, "pin": null, "reload_needed": true, "schema_version": 1, "shell": false, "strict": false, "syslog": {"all": false, "pen": "32473", "target": null}, "timeout": 60.0, "was": "x86_64/amd/zen4", "was_accel": null}
+
+--- stderr
+
+--- end
+=== cpupath with a stray byte after a good leaf live
+rc: 0
+--- stdout
+export EESSI_ARCH_GUARD_FAILED=x86_64/amd/zen4->archdetect-failed
+print eessi-arch-guard: archdetect failed (cpupath returned an unsafe candidate); environment left as it was
+
+--- stderr
+
+--- end
+=== cpupath with a stray byte after a good leaf --dry-run
+rc: 0
+--- stdout
+mode: prolog
+strict: false
+announce: true
+config: none
+chain: none
+timeout: 60
+syslog: none
+syslog_all: false
+syslog_pen: 32473
+job: none
+step: none
+localid: unset
+cache: none
+decision: failed
+was: x86_64/amd/zen4
+now: none
+was_accel: none
+now_accel: none
+compare_accel: true
+pin: none
+eessi: none
+modules: none
+marker: x86_64/amd/zen4->archdetect-failed
+detail: none
+message: eessi-arch-guard: archdetect failed (cpupath returned an unsafe candidate); environment left as it was
+exit: 0
+
+--- stderr
+
+--- end
+=== cpupath with a stray byte after a good leaf --dry-run --json
+rc: 0
+--- stdout
+{"announce": true, "cache": {"cached_kind": null, "hit": false, "path": null}, "cached": false, "cause": "archdetect-failed", "chain": {"path": null, "source": "none", "status": "none"}, "compare_accel": true, "config": {"path": null, "status": "none", "warning": null}, "decision": "failed", "detail": null, "eessi": null, "exit": 0, "exit_semantic": "ok", "job": {"id": null, "localid": null, "step": null}, "kind": "decision", "marker": "x86_64/amd/zen4->archdetect-failed", "message": "eessi-arch-guard: archdetect failed (cpupath returned an unsafe candidate); environment left as it was", "mode": "prolog", "modules": [], "now": null, "now_accel": null, "pin": null, "reload_needed": true, "schema_version": 1, "shell": false, "strict": false, "syslog": {"all": false, "pen": "32473", "target": null}, "timeout": 60.0, "was": "x86_64/amd/zen4", "was_accel": null}
+
+--- stderr
+
+--- end
+=== cpupath with an encoded surrogate live
+rc: 0
+--- stdout
+export EESSI_ARCH_GUARD_FAILED=x86_64/amd/zen4->archdetect-failed
+print eessi-arch-guard: archdetect failed (cpupath returned an unsafe candidate); environment left as it was
+
+--- stderr
+
+--- end
+=== cpupath with an encoded surrogate --dry-run
+rc: 0
+--- stdout
+mode: prolog
+strict: false
+announce: true
+config: none
+chain: none
+timeout: 60
+syslog: none
+syslog_all: false
+syslog_pen: 32473
+job: none
+step: none
+localid: unset
+cache: none
+decision: failed
+was: x86_64/amd/zen4
+now: none
+was_accel: none
+now_accel: none
+compare_accel: true
+pin: none
+eessi: none
+modules: none
+marker: x86_64/amd/zen4->archdetect-failed
+detail: none
+message: eessi-arch-guard: archdetect failed (cpupath returned an unsafe candidate); environment left as it was
+exit: 0
+
+--- stderr
+
+--- end
+=== cpupath with an encoded surrogate --dry-run --json
+rc: 0
+--- stdout
+{"announce": true, "cache": {"cached_kind": null, "hit": false, "path": null}, "cached": false, "cause": "archdetect-failed", "chain": {"path": null, "source": "none", "status": "none"}, "compare_accel": true, "config": {"path": null, "status": "none", "warning": null}, "decision": "failed", "detail": null, "eessi": null, "exit": 0, "exit_semantic": "ok", "job": {"id": null, "localid": null, "step": null}, "kind": "decision", "marker": "x86_64/amd/zen4->archdetect-failed", "message": "eessi-arch-guard: archdetect failed (cpupath returned an unsafe candidate); environment left as it was", "mode": "prolog", "modules": [], "now": null, "now_accel": null, "pin": null, "reload_needed": true, "schema_version": 1, "shell": false, "strict": false, "syslog": {"all": false, "pen": "32473", "target": null}, "timeout": 60.0, "was": "x86_64/amd/zen4", "was_accel": null}
+
+--- stderr
+
+--- end
+=== cpupath with an overlong slash live
+rc: 0
+--- stdout
+export EESSI_ARCH_GUARD_FAILED=x86_64/amd/zen4->archdetect-failed
+print eessi-arch-guard: archdetect failed (cpupath returned an unsafe candidate); environment left as it was
+
+--- stderr
+
+--- end
+=== cpupath with an overlong slash --dry-run
+rc: 0
+--- stdout
+mode: prolog
+strict: false
+announce: true
+config: none
+chain: none
+timeout: 60
+syslog: none
+syslog_all: false
+syslog_pen: 32473
+job: none
+step: none
+localid: unset
+cache: none
+decision: failed
+was: x86_64/amd/zen4
+now: none
+was_accel: none
+now_accel: none
+compare_accel: true
+pin: none
+eessi: none
+modules: none
+marker: x86_64/amd/zen4->archdetect-failed
+detail: none
+message: eessi-arch-guard: archdetect failed (cpupath returned an unsafe candidate); environment left as it was
+exit: 0
+
+--- stderr
+
+--- end
+=== cpupath with an overlong slash --dry-run --json
+rc: 0
+--- stdout
+{"announce": true, "cache": {"cached_kind": null, "hit": false, "path": null}, "cached": false, "cause": "archdetect-failed", "chain": {"path": null, "source": "none", "status": "none"}, "compare_accel": true, "config": {"path": null, "status": "none", "warning": null}, "decision": "failed", "detail": null, "eessi": null, "exit": 0, "exit_semantic": "ok", "job": {"id": null, "localid": null, "step": null}, "kind": "decision", "marker": "x86_64/amd/zen4->archdetect-failed", "message": "eessi-arch-guard: archdetect failed (cpupath returned an unsafe candidate); environment left as it was", "mode": "prolog", "modules": [], "now": null, "now_accel": null, "pin": null, "reload_needed": true, "schema_version": 1, "shell": false, "strict": false, "syslog": {"all": false, "pen": "32473", "target": null}, "timeout": 60.0, "was": "x86_64/amd/zen4", "was_accel": null}
+
+--- stderr
+
+--- end
+=== cpupath with a truncated sequence live
+rc: 0
+--- stdout
+export EESSI_ARCH_GUARD_FAILED=x86_64/amd/zen4->archdetect-failed
+print eessi-arch-guard: archdetect failed (cpupath returned an unsafe candidate); environment left as it was
+
+--- stderr
+
+--- end
+=== cpupath with a truncated sequence --dry-run
+rc: 0
+--- stdout
+mode: prolog
+strict: false
+announce: true
+config: none
+chain: none
+timeout: 60
+syslog: none
+syslog_all: false
+syslog_pen: 32473
+job: none
+step: none
+localid: unset
+cache: none
+decision: failed
+was: x86_64/amd/zen4
+now: none
+was_accel: none
+now_accel: none
+compare_accel: true
+pin: none
+eessi: none
+modules: none
+marker: x86_64/amd/zen4->archdetect-failed
+detail: none
+message: eessi-arch-guard: archdetect failed (cpupath returned an unsafe candidate); environment left as it was
+exit: 0
+
+--- stderr
+
+--- end
+=== cpupath with a truncated sequence --dry-run --json
+rc: 0
+--- stdout
+{"announce": true, "cache": {"cached_kind": null, "hit": false, "path": null}, "cached": false, "cause": "archdetect-failed", "chain": {"path": null, "source": "none", "status": "none"}, "compare_accel": true, "config": {"path": null, "status": "none", "warning": null}, "decision": "failed", "detail": null, "eessi": null, "exit": 0, "exit_semantic": "ok", "job": {"id": null, "localid": null, "step": null}, "kind": "decision", "marker": "x86_64/amd/zen4->archdetect-failed", "message": "eessi-arch-guard: archdetect failed (cpupath returned an unsafe candidate); environment left as it was", "mode": "prolog", "modules": [], "now": null, "now_accel": null, "pin": null, "reload_needed": true, "schema_version": 1, "shell": false, "strict": false, "syslog": {"all": false, "pen": "32473", "target": null}, "timeout": 60.0, "was": "x86_64/amd/zen4", "was_accel": null}
+
+--- stderr
+
+--- end
+=== accelerator with a stray byte live
+rc: 0
+--- stdout
+export EESSI_ARCH_GUARD_FAILED=x86_64/amd/zen4->archdetect-failed
+print eessi-arch-guard: archdetect failed (accelpath output is not an accelerator subdirectory); environment left as it was
+
+--- stderr
+
+--- end
+=== accelerator with a stray byte --dry-run
+rc: 0
+--- stdout
+mode: prolog
+strict: false
+announce: true
+config: none
+chain: none
+timeout: 60
+syslog: none
+syslog_all: false
+syslog_pen: 32473
+job: none
+step: none
+localid: unset
+cache: none
+decision: failed
+was: x86_64/amd/zen4
+now: x86_64/amd/zen2
+was_accel: none
+now_accel: none
+compare_accel: true
+pin: none
+eessi: none
+modules: none
+marker: x86_64/amd/zen4->archdetect-failed
+detail: none
+message: eessi-arch-guard: archdetect failed (accelpath output is not an accelerator subdirectory); environment left as it was
+exit: 0
+
+--- stderr
+
+--- end
+=== accelerator with a stray byte --dry-run --json
+rc: 0
+--- stdout
+{"announce": true, "cache": {"cached_kind": null, "hit": false, "path": null}, "cached": false, "cause": "archdetect-failed", "chain": {"path": null, "source": "none", "status": "none"}, "compare_accel": true, "config": {"path": null, "status": "none", "warning": null}, "decision": "failed", "detail": null, "eessi": null, "exit": 0, "exit_semantic": "ok", "job": {"id": null, "localid": null, "step": null}, "kind": "decision", "marker": "x86_64/amd/zen4->archdetect-failed", "message": "eessi-arch-guard: archdetect failed (accelpath output is not an accelerator subdirectory); environment left as it was", "mode": "prolog", "modules": [], "now": "x86_64/amd/zen2", "now_accel": null, "pin": null, "reload_needed": true, "schema_version": 1, "shell": false, "strict": false, "syslog": {"all": false, "pen": "32473", "target": null}, "timeout": 60.0, "was": "x86_64/amd/zen4", "was_accel": null}
+
+--- stderr
+
+--- end
+=== override with a stray byte live
+rc: 0
+--- stdout
+export EBROOTR=@WORK@/prefix/software/linux/x86_64/amd/zen2/software/R/4.4.2
+export EESSI_ACCEL_SUBDIR=
+export EESSI_ARCH_GUARD_RELOADED=x86_64/amd/zen4->x86_64/amd/zen2
+export EESSI_SOFTWARE_SUBDIR=x86_64/amd/zen2
+unset EESSI_SOFTWARE_SUBDIR_OVERRIDE
+export MODULEPATH=@WORK@/prefix/software/linux/x86_64/amd/zen2/modules/all
+export PATH=@WORK@/prefix/software/linux/x86_64/amd/zen2/software/R/4.4.2/bin:@WORK@/prefix/software/linux/x86_64/amd/zen2/bin:@WORK@/bin:/usr/bin:/bin
+export _LMFILES_=
+export _ModuleTable001_=table-for-x86_64-amd-zen2
+print eessi-arch-guard: reloaded modules for x86_64/amd/zen2 (loaded for x86_64/amd/zen4)
+
+--- stderr
+
+--- end
+=== override with a stray byte --dry-run
+rc: 0
+--- stdout
+mode: prolog
+strict: false
+announce: true
+config: none
+chain: none
+timeout: 60
+syslog: none
+syslog_all: false
+syslog_pen: 32473
+job: none
+step: none
+localid: unset
+cache: none
+decision: reloaded
+was: x86_64/amd/zen4
+now: x86_64/amd/zen2
+was_accel: none
+now_accel: none
+compare_accel: true
+pin: none
+eessi: EESSI/2025.06
+modules: R/4.4.2
+marker: x86_64/amd/zen4->x86_64/amd/zen2
+detail: none
+message: eessi-arch-guard: would reload modules for x86_64/amd/zen2 (loaded for x86_64/amd/zen4)
+exit: 0
+
+--- stderr
+
+--- end
+=== override with a stray byte --dry-run --json
+rc: 0
+--- stdout
+{"announce": true, "cache": {"cached_kind": null, "hit": false, "path": null}, "cached": false, "cause": null, "chain": {"path": null, "source": "none", "status": "none"}, "compare_accel": true, "config": {"path": null, "status": "none", "warning": null}, "decision": "reloaded", "detail": null, "eessi": "EESSI/2025.06", "exit": 0, "exit_semantic": "ok", "job": {"id": null, "localid": null, "step": null}, "kind": "decision", "marker": "x86_64/amd/zen4->x86_64/amd/zen2", "message": "eessi-arch-guard: would reload modules for x86_64/amd/zen2 (loaded for x86_64/amd/zen4)", "mode": "prolog", "modules": ["R/4.4.2"], "now": "x86_64/amd/zen2", "now_accel": null, "pin": null, "reload_needed": true, "schema_version": 1, "shell": false, "strict": false, "syslog": {"all": false, "pen": "32473", "target": null}, "timeout": 60.0, "was": "x86_64/amd/zen4", "was_accel": null}
+
+--- stderr
+
+--- end
+=== loaded modules with a stray byte live
+rc: 0
+--- stdout
+export EESSI_ARCH_GUARD_FAILED=x86_64/amd/zen4->unsafe-module-name
+print eessi-arch-guard: a loaded module name is not safe to pass to Lmod; environment left as it was
+
+--- stderr
+
+--- end
+=== loaded modules with a stray byte --dry-run
+rc: 0
+--- stdout
+mode: prolog
+strict: false
+announce: true
+config: none
+chain: none
+timeout: 60
+syslog: none
+syslog_all: false
+syslog_pen: 32473
+job: none
+step: none
+localid: unset
+cache: none
+decision: failed
+was: x86_64/amd/zen4
+now: x86_64/amd/zen2
+was_accel: none
+now_accel: none
+compare_accel: true
+pin: none
+eessi: none
+modules: none
+marker: x86_64/amd/zen4->unsafe-module-name
+detail: none
+message: eessi-arch-guard: a loaded module name is not safe to pass to Lmod; environment left as it was
+exit: 0
+
+--- stderr
+
+--- end
+=== loaded modules with a stray byte --dry-run --json
+rc: 0
+--- stdout
+{"announce": true, "cache": {"cached_kind": null, "hit": false, "path": null}, "cached": false, "cause": "unsafe-module-name", "chain": {"path": null, "source": "none", "status": "none"}, "compare_accel": true, "config": {"path": null, "status": "none", "warning": null}, "decision": "failed", "detail": null, "eessi": null, "exit": 0, "exit_semantic": "ok", "job": {"id": null, "localid": null, "step": null}, "kind": "decision", "marker": "x86_64/amd/zen4->unsafe-module-name", "message": "eessi-arch-guard: a loaded module name is not safe to pass to Lmod; environment left as it was", "mode": "prolog", "modules": [], "now": "x86_64/amd/zen2", "now_accel": null, "pin": null, "reload_needed": true, "schema_version": 1, "shell": false, "strict": false, "syslog": {"all": false, "pen": "32473", "target": null}, "timeout": 60.0, "was": "x86_64/amd/zen4", "was_accel": null}
+
+--- stderr
+
+--- end
+=== temporary directory with a stray byte live
+rc: 0
+--- stdout
+export EBROOTR=@WORK@/prefix/software/linux/x86_64/amd/zen2/software/R/4.4.2
+export EESSI_ACCEL_SUBDIR=
+export EESSI_ARCH_GUARD_RELOADED=x86_64/amd/zen4->x86_64/amd/zen2
+export EESSI_SOFTWARE_SUBDIR=x86_64/amd/zen2
+export MODULEPATH=@WORK@/prefix/software/linux/x86_64/amd/zen2/modules/all
+export PATH=@WORK@/prefix/software/linux/x86_64/amd/zen2/software/R/4.4.2/bin:@WORK@/prefix/software/linux/x86_64/amd/zen2/bin:@WORK@/bin:/usr/bin:/bin
+export _LMFILES_=
+export _ModuleTable001_=table-for-x86_64-amd-zen2
+print eessi-arch-guard: reloaded modules for x86_64/amd/zen2 (loaded for x86_64/amd/zen4)
+
+--- stderr
+
+--- end
+=== temporary directory with a stray byte --dry-run
+rc: 0
+--- stdout
+mode: prolog
+strict: false
+announce: true
+config: none
+chain: none
+timeout: 60
+syslog: none
+syslog_all: false
+syslog_pen: 32473
+job: none
+step: none
+localid: unset
+cache: none
+decision: reloaded
+was: x86_64/amd/zen4
+now: x86_64/amd/zen2
+was_accel: none
+now_accel: none
+compare_accel: true
+pin: none
+eessi: EESSI/2025.06
+modules: R/4.4.2
+marker: x86_64/amd/zen4->x86_64/amd/zen2
+detail: none
+message: eessi-arch-guard: would reload modules for x86_64/amd/zen2 (loaded for x86_64/amd/zen4)
+exit: 0
+
+--- stderr
+
+--- end
+=== temporary directory with a stray byte --dry-run --json
+rc: 0
+--- stdout
+{"announce": true, "cache": {"cached_kind": null, "hit": false, "path": null}, "cached": false, "cause": null, "chain": {"path": null, "source": "none", "status": "none"}, "compare_accel": true, "config": {"path": null, "status": "none", "warning": null}, "decision": "reloaded", "detail": null, "eessi": "EESSI/2025.06", "exit": 0, "exit_semantic": "ok", "job": {"id": null, "localid": null, "step": null}, "kind": "decision", "marker": "x86_64/amd/zen4->x86_64/amd/zen2", "message": "eessi-arch-guard: would reload modules for x86_64/amd/zen2 (loaded for x86_64/amd/zen4)", "mode": "prolog", "modules": ["R/4.4.2"], "now": "x86_64/amd/zen2", "now_accel": null, "pin": null, "reload_needed": true, "schema_version": 1, "shell": false, "strict": false, "syslog": {"all": false, "pen": "32473", "target": null}, "timeout": 60.0, "was": "x86_64/amd/zen4", "was_accel": null}
+
+--- stderr
+
+--- end
+=== search path with a stray byte live
+rc: 0
+--- stdout
+export EBROOTR=@WORK@/prefix/software/linux/x86_64/amd/zen2/software/R/4.4.2
+export EESSI_ACCEL_SUBDIR=
+export EESSI_ARCH_GUARD_RELOADED=x86_64/amd/zen4->x86_64/amd/zen2
+export EESSI_SOFTWARE_SUBDIR=x86_64/amd/zen2
+export MODULEPATH=@WORK@/prefix/software/linux/x86_64/amd/zen2/modules/all
+export PATH=@WORK@/prefix/software/linux/x86_64/amd/zen2/software/R/4.4.2/bin:@WORK@/prefix/software/linux/x86_64/amd/zen2/bin:@WORK@/bin:/usr/bin:/bin
+export _LMFILES_=
+export _ModuleTable001_=table-for-x86_64-amd-zen2
+print eessi-arch-guard: reloaded modules for x86_64/amd/zen2 (loaded for x86_64/amd/zen4)
+
+--- stderr
+
+--- end
+=== search path with a stray byte --dry-run
+rc: 0
+--- stdout
+mode: prolog
+strict: false
+announce: true
+config: none
+chain: none
+timeout: 60
+syslog: none
+syslog_all: false
+syslog_pen: 32473
+job: none
+step: none
+localid: unset
+cache: none
+decision: reloaded
+was: x86_64/amd/zen4
+now: x86_64/amd/zen2
+was_accel: none
+now_accel: none
+compare_accel: true
+pin: none
+eessi: EESSI/2025.06
+modules: R/4.4.2
+marker: x86_64/amd/zen4->x86_64/amd/zen2
+detail: none
+message: eessi-arch-guard: would reload modules for x86_64/amd/zen2 (loaded for x86_64/amd/zen4)
+exit: 0
+
+--- stderr
+
+--- end
+=== search path with a stray byte --dry-run --json
+rc: 0
+--- stdout
+{"announce": true, "cache": {"cached_kind": null, "hit": false, "path": null}, "cached": false, "cause": null, "chain": {"path": null, "source": "none", "status": "none"}, "compare_accel": true, "config": {"path": null, "status": "none", "warning": null}, "decision": "reloaded", "detail": null, "eessi": "EESSI/2025.06", "exit": 0, "exit_semantic": "ok", "job": {"id": null, "localid": null, "step": null}, "kind": "decision", "marker": "x86_64/amd/zen4->x86_64/amd/zen2", "message": "eessi-arch-guard: would reload modules for x86_64/amd/zen2 (loaded for x86_64/amd/zen4)", "mode": "prolog", "modules": ["R/4.4.2"], "now": "x86_64/amd/zen2", "now_accel": null, "pin": null, "reload_needed": true, "schema_version": 1, "shell": false, "strict": false, "syslog": {"all": false, "pen": "32473", "target": null}, "timeout": 60.0, "was": "x86_64/amd/zen4", "was_accel": null}
+
+--- stderr
+
+--- end
+=== module command with a stray byte live
+rc: 0
+--- stdout
+export EESSI_ARCH_GUARD_FAILED=x86_64/amd/zen4->lmod-unavailable
+print eessi-arch-guard: LMOD_CMD is missing or not executable; this node is x86_64/amd/zen2, the modules were loaded for x86_64/amd/zen4; environment left as it was
+
+--- stderr
+
+--- end
+=== module command with a stray byte --dry-run
+rc: 0
+--- stdout
+mode: prolog
+strict: false
+announce: true
+config: none
+chain: none
+timeout: 60
+syslog: none
+syslog_all: false
+syslog_pen: 32473
+job: none
+step: none
+localid: unset
+cache: none
+decision: failed
+was: x86_64/amd/zen4
+now: x86_64/amd/zen2
+was_accel: none
+now_accel: none
+compare_accel: true
+pin: none
+eessi: EESSI/2025.06
+modules: R/4.4.2
+marker: x86_64/amd/zen4->lmod-unavailable
+detail: none
+message: eessi-arch-guard: LMOD_CMD is missing or not executable; this node is x86_64/amd/zen2, the modules were loaded for x86_64/amd/zen4; environment left as it was
+exit: 0
+
+--- stderr
+
+--- end
+=== module command with a stray byte --dry-run --json
+rc: 0
+--- stdout
+{"announce": true, "cache": {"cached_kind": null, "hit": false, "path": null}, "cached": false, "cause": "lmod-unavailable", "chain": {"path": null, "source": "none", "status": "none"}, "compare_accel": true, "config": {"path": null, "status": "none", "warning": null}, "decision": "failed", "detail": null, "eessi": "EESSI/2025.06", "exit": 0, "exit_semantic": "ok", "job": {"id": null, "localid": null, "step": null}, "kind": "decision", "marker": "x86_64/amd/zen4->lmod-unavailable", "message": "eessi-arch-guard: LMOD_CMD is missing or not executable; this node is x86_64/amd/zen2, the modules were loaded for x86_64/amd/zen4; environment left as it was", "mode": "prolog", "modules": ["R/4.4.2"], "now": "x86_64/amd/zen2", "now_accel": null, "pin": null, "reload_needed": true, "schema_version": 1, "shell": false, "strict": false, "syslog": {"all": false, "pen": "32473", "target": null}, "timeout": 60.0, "was": "x86_64/amd/zen4", "was_accel": null}
+
+--- stderr
+
+--- end
+=== unrelated variable with a stray byte live
+rc: 0
+--- stdout
+export EBROOTR=@WORK@/prefix/software/linux/x86_64/amd/zen2/software/R/4.4.2
+export EESSI_ACCEL_SUBDIR=
+export EESSI_ARCH_GUARD_RELOADED=x86_64/amd/zen4->x86_64/amd/zen2
+export EESSI_SOFTWARE_SUBDIR=x86_64/amd/zen2
+export MODULEPATH=@WORK@/prefix/software/linux/x86_64/amd/zen2/modules/all
+export PATH=@WORK@/prefix/software/linux/x86_64/amd/zen2/software/R/4.4.2/bin:@WORK@/prefix/software/linux/x86_64/amd/zen2/bin:@WORK@/bin:/usr/bin:/bin
+export _LMFILES_=
+export _ModuleTable001_=table-for-x86_64-amd-zen2
+print eessi-arch-guard: reloaded modules for x86_64/amd/zen2 (loaded for x86_64/amd/zen4)
+
+--- stderr
+
+--- end
+=== unrelated variable with a stray byte --dry-run
+rc: 0
+--- stdout
+mode: prolog
+strict: false
+announce: true
+config: none
+chain: none
+timeout: 60
+syslog: none
+syslog_all: false
+syslog_pen: 32473
+job: none
+step: none
+localid: unset
+cache: none
+decision: reloaded
+was: x86_64/amd/zen4
+now: x86_64/amd/zen2
+was_accel: none
+now_accel: none
+compare_accel: true
+pin: none
+eessi: EESSI/2025.06
+modules: R/4.4.2
+marker: x86_64/amd/zen4->x86_64/amd/zen2
+detail: none
+message: eessi-arch-guard: would reload modules for x86_64/amd/zen2 (loaded for x86_64/amd/zen4)
+exit: 0
+
+--- stderr
+
+--- end
+=== unrelated variable with a stray byte --dry-run --json
+rc: 0
+--- stdout
+{"announce": true, "cache": {"cached_kind": null, "hit": false, "path": null}, "cached": false, "cause": null, "chain": {"path": null, "source": "none", "status": "none"}, "compare_accel": true, "config": {"path": null, "status": "none", "warning": null}, "decision": "reloaded", "detail": null, "eessi": "EESSI/2025.06", "exit": 0, "exit_semantic": "ok", "job": {"id": null, "localid": null, "step": null}, "kind": "decision", "marker": "x86_64/amd/zen4->x86_64/amd/zen2", "message": "eessi-arch-guard: would reload modules for x86_64/amd/zen2 (loaded for x86_64/amd/zen4)", "mode": "prolog", "modules": ["R/4.4.2"], "now": "x86_64/amd/zen2", "now_accel": null, "pin": null, "reload_needed": true, "schema_version": 1, "shell": false, "strict": false, "syslog": {"all": false, "pen": "32473", "target": null}, "timeout": 60.0, "was": "x86_64/amd/zen4", "was_accel": null}
+
+--- stderr
+
+--- end
+=== unrelated variable with a latin-1 text live
+rc: 0
+--- stdout
+export EBROOTR=@WORK@/prefix/software/linux/x86_64/amd/zen2/software/R/4.4.2
+export EESSI_ACCEL_SUBDIR=
+export EESSI_ARCH_GUARD_RELOADED=x86_64/amd/zen4->x86_64/amd/zen2
+export EESSI_SOFTWARE_SUBDIR=x86_64/amd/zen2
+export MODULEPATH=@WORK@/prefix/software/linux/x86_64/amd/zen2/modules/all
+export PATH=@WORK@/prefix/software/linux/x86_64/amd/zen2/software/R/4.4.2/bin:@WORK@/prefix/software/linux/x86_64/amd/zen2/bin:@WORK@/bin:/usr/bin:/bin
+export _LMFILES_=
+export _ModuleTable001_=table-for-x86_64-amd-zen2
+print eessi-arch-guard: reloaded modules for x86_64/amd/zen2 (loaded for x86_64/amd/zen4)
+
+--- stderr
+
+--- end
+=== unrelated variable with a latin-1 text --dry-run
+rc: 0
+--- stdout
+mode: prolog
+strict: false
+announce: true
+config: none
+chain: none
+timeout: 60
+syslog: none
+syslog_all: false
+syslog_pen: 32473
+job: none
+step: none
+localid: unset
+cache: none
+decision: reloaded
+was: x86_64/amd/zen4
+now: x86_64/amd/zen2
+was_accel: none
+now_accel: none
+compare_accel: true
+pin: none
+eessi: EESSI/2025.06
+modules: R/4.4.2
+marker: x86_64/amd/zen4->x86_64/amd/zen2
+detail: none
+message: eessi-arch-guard: would reload modules for x86_64/amd/zen2 (loaded for x86_64/amd/zen4)
+exit: 0
+
+--- stderr
+
+--- end
+=== unrelated variable with a latin-1 text --dry-run --json
+rc: 0
+--- stdout
+{"announce": true, "cache": {"cached_kind": null, "hit": false, "path": null}, "cached": false, "cause": null, "chain": {"path": null, "source": "none", "status": "none"}, "compare_accel": true, "config": {"path": null, "status": "none", "warning": null}, "decision": "reloaded", "detail": null, "eessi": "EESSI/2025.06", "exit": 0, "exit_semantic": "ok", "job": {"id": null, "localid": null, "step": null}, "kind": "decision", "marker": "x86_64/amd/zen4->x86_64/amd/zen2", "message": "eessi-arch-guard: would reload modules for x86_64/amd/zen2 (loaded for x86_64/amd/zen4)", "mode": "prolog", "modules": ["R/4.4.2"], "now": "x86_64/amd/zen2", "now_accel": null, "pin": null, "reload_needed": true, "schema_version": 1, "shell": false, "strict": false, "syslog": {"all": false, "pen": "32473", "target": null}, "timeout": 60.0, "was": "x86_64/amd/zen4", "was_accel": null}
+
+--- stderr
+
+--- end

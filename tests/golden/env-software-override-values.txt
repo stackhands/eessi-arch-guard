@@ -1,0 +1,125 @@
+=== override 0 '' --dry-run
+rc: 0
+--- stdout
+mode: prolog
+strict: false
+announce: true
+config: none
+chain: none
+timeout: 60
+syslog: none
+syslog_all: false
+syslog_pen: 32473
+job: none
+step: none
+localid: unset
+cache: none
+decision: reloaded
+was: x86_64/amd/zen4
+now: x86_64/amd/zen2
+was_accel: none
+now_accel: none
+compare_accel: true
+pin: none
+eessi: EESSI/2025.06
+modules: R/4.4.2
+marker: x86_64/amd/zen4->x86_64/amd/zen2
+detail: none
+message: eessi-arch-guard: would reload modules for x86_64/amd/zen2 (loaded for x86_64/amd/zen4)
+exit: 0
+
+--- stderr
+
+--- end
+=== override 0 '' --dry-run --json
+rc: 0
+--- stdout
+{"announce": true, "cache": {"cached_kind": null, "hit": false, "path": null}, "cached": false, "cause": null, "chain": {"path": null, "source": "none", "status": "none"}, "compare_accel": true, "config": {"path": null, "status": "none", "warning": null}, "decision": "reloaded", "detail": null, "eessi": "EESSI/2025.06", "exit": 0, "exit_semantic": "ok", "job": {"id": null, "localid": null, "step": null}, "kind": "decision", "marker": "x86_64/amd/zen4->x86_64/amd/zen2", "message": "eessi-arch-guard: would reload modules for x86_64/amd/zen2 (loaded for x86_64/amd/zen4)", "mode": "prolog", "modules": ["R/4.4.2"], "now": "x86_64/amd/zen2", "now_accel": null, "pin": null, "reload_needed": true, "schema_version": 1, "shell": false, "strict": false, "syslog": {"all": false, "pen": "32473", "target": null}, "timeout": 60.0, "was": "x86_64/amd/zen4", "was_accel": null}
+
+--- stderr
+
+--- end
+=== override 1 ' ' --dry-run
+rc: 0
+--- stdout
+mode: prolog
+strict: false
+announce: true
+config: none
+chain: none
+timeout: 60
+syslog: none
+syslog_all: false
+syslog_pen: 32473
+job: none
+step: none
+localid: unset
+cache: none
+decision: failed
+was: x86_64/amd/zen4
+now: none
+was_accel: none
+now_accel: none
+compare_accel: true
+pin: none
+eessi: none
+modules: none
+marker: x86_64/amd/zen4->invalid-environment
+detail: none
+message: eessi-arch-guard: EESSI_SOFTWARE_SUBDIR_OVERRIDE is not a safe subdirectory:  ; environment left as it was
+exit: 0
+
+--- stderr
+
+--- end
+=== override 5 'x86_64/amd/zen2' --dry-run
+rc: 0
+--- stdout
+mode: prolog
+strict: false
+announce: true
+config: none
+chain: none
+timeout: 60
+syslog: none
+syslog_all: false
+syslog_pen: 32473
+job: none
+step: none
+localid: unset
+cache: none
+decision: skip
+was: x86_64/amd/zen4
+now: none
+was_accel: none
+now_accel: none
+compare_accel: true
+pin: none
+eessi: none
+modules: none
+marker: none
+detail: EESSI_SOFTWARE_SUBDIR_OVERRIDE is set
+message: none
+exit: 0
+
+--- stderr
+
+--- end
+=== override 7 'x86_64/amd/zen2/' live
+rc: 0
+--- stdout
+export EESSI_ARCH_GUARD_FAILED=x86_64/amd/zen4->invalid-environment
+print eessi-arch-guard: EESSI_SOFTWARE_SUBDIR_OVERRIDE is not a safe subdirectory: x86_64/amd/zen2/; environment left as it was
+
+--- stderr
+
+--- end
+=== override 21 'x86_64/amd/unknown' live
+rc: 0
+--- stdout
+export EESSI_ARCH_GUARD_FAILED=x86_64/amd/zen4->invalid-environment
+print eessi-arch-guard: EESSI_SOFTWARE_SUBDIR_OVERRIDE is not an installed target: x86_64/amd/unknown; environment left as it was
+
+--- stderr
+
+--- end

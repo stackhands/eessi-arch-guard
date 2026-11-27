@@ -1,0 +1,117 @@
+=== mode 0o755 text
+rc: 0
+--- stdout
+eessi-arch-guard: check-submit: 1 loaded module(s) available for x86_64/amd/zen4
+
+--- stderr
+
+--- end
+=== mode 0o755 --json
+rc: 0
+--- stdout
+{"constraint": null, "exit": 0, "exit_semantic": "ok", "kind": "check-submit", "loaded": 1, "message": "1 loaded module(s) available for x86_64/amd/zen4", "missing": [], "partition": null, "schema_version": 1, "target": "x86_64/amd/zen4"}
+
+--- stderr
+
+--- end
+=== mode 0o500 text
+rc: 0
+--- stdout
+eessi-arch-guard: check-submit: 1 loaded module(s) available for x86_64/amd/zen4
+
+--- stderr
+
+--- end
+=== mode 0o500 --json
+rc: 0
+--- stdout
+{"constraint": null, "exit": 0, "exit_semantic": "ok", "kind": "check-submit", "loaded": 1, "message": "1 loaded module(s) available for x86_64/amd/zen4", "missing": [], "partition": null, "schema_version": 1, "target": "x86_64/amd/zen4"}
+
+--- stderr
+
+--- end
+=== mode 0o300 text
+rc: 2
+--- stdout
+
+--- stderr
+eessi-arch-guard: check-submit: submit target has empty module inventory: x86_64/amd/zen4
+
+--- end
+=== mode 0o300 --json
+rc: 2
+--- stdout
+{"constraint": null, "exit": 2, "exit_semantic": "invalid", "kind": "check-submit", "loaded": 1, "message": "submit target has empty module inventory: x86_64/amd/zen4", "missing": [], "partition": null, "schema_version": 1, "target": "x86_64/amd/zen4"}
+
+--- stderr
+eessi-arch-guard: check-submit: submit target has empty module inventory: x86_64/amd/zen4
+
+--- end
+=== mode 0o100 text
+rc: 2
+--- stdout
+
+--- stderr
+eessi-arch-guard: check-submit: submit target has empty module inventory: x86_64/amd/zen4
+
+--- end
+=== mode 0o100 --json
+rc: 2
+--- stdout
+{"constraint": null, "exit": 2, "exit_semantic": "invalid", "kind": "check-submit", "loaded": 1, "message": "submit target has empty module inventory: x86_64/amd/zen4", "missing": [], "partition": null, "schema_version": 1, "target": "x86_64/amd/zen4"}
+
+--- stderr
+eessi-arch-guard: check-submit: submit target has empty module inventory: x86_64/amd/zen4
+
+--- end
+=== mode 0o200 text
+rc: 2
+--- stdout
+
+--- stderr
+eessi-arch-guard: check-submit: submit target has empty module inventory: x86_64/amd/zen4
+
+--- end
+=== mode 0o200 --json
+rc: 2
+--- stdout
+{"constraint": null, "exit": 2, "exit_semantic": "invalid", "kind": "check-submit", "loaded": 1, "message": "submit target has empty module inventory: x86_64/amd/zen4", "missing": [], "partition": null, "schema_version": 1, "target": "x86_64/amd/zen4"}
+
+--- stderr
+eessi-arch-guard: check-submit: submit target has empty module inventory: x86_64/amd/zen4
+
+--- end
+=== mode 0o0 text
+rc: 2
+--- stdout
+
+--- stderr
+eessi-arch-guard: check-submit: submit target has empty module inventory: x86_64/amd/zen4
+
+--- end
+=== mode 0o0 --json
+rc: 2
+--- stdout
+{"constraint": null, "exit": 2, "exit_semantic": "invalid", "kind": "check-submit", "loaded": 1, "message": "submit target has empty module inventory: x86_64/amd/zen4", "missing": [], "partition": null, "schema_version": 1, "target": "x86_64/amd/zen4"}
+
+--- stderr
+eessi-arch-guard: check-submit: submit target has empty module inventory: x86_64/amd/zen4
+
+--- end
+=== absent text
+rc: 2
+--- stdout
+
+--- stderr
+eessi-arch-guard: check-submit: target module tree is unavailable: @WORK@/submit-prefix/software/linux/x86_64/amd/zen4/modules/all
+
+--- end
+=== absent --json
+rc: 2
+--- stdout
+{"constraint": null, "exit": 2, "exit_semantic": "invalid", "kind": "check-submit", "loaded": 1, "message": "target module tree is unavailable: @WORK@/submit-prefix/software/linux/x86_64/amd/zen4/modules/all", "missing": [], "partition": null, "schema_version": 1, "target": "x86_64/amd/zen4"}
+
+--- stderr
+eessi-arch-guard: check-submit: target module tree is unavailable: @WORK@/submit-prefix/software/linux/x86_64/amd/zen4/modules/all
+
+--- end

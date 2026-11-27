@@ -5,7 +5,7 @@
 * The eessi-arch-guard command
 
 =eessi-arch-guard= checks whether the module environment of the European Environment for Scientific Software Installations (EESSI) in a Slurm task was loaded for the task's CPU and accelerator, and prints what loads it again for them.
-This page describes the Python guard, =src/eessi_arch_guard.py=; the Zig build behaves the same, except as [[file:compatibility.org][Compatibility]] lists.
+This page describes the static binary. The Python package runs the same binary with the same arguments, and [[file:compatibility.org][Compatibility]] lists what differs from the Python guard of releases before 0.4.
 
 ** Synopsis
 
@@ -13,6 +13,8 @@ This page describes the Python guard, =src/eessi_arch_guard.py=; the Zig build b
 eessi-arch-guard [--shell] [--strict] [--dry-run] [--json] [--chain PATH] [--timeout SEC] [--syslog TARGET] [--restore] [-h|--help] [--version]
 eessi-arch-guard --check-submit --partition NAME [--constraint NAME] [--eb-stack PATH] [--json]
 eessi-arch-guard --check-submit --target TARGET [--eb-stack PATH] [--json]
+eessi-arch-guard --check-mount [--repo PATH] [--site PATH] [--eessi PATH] [--modulepath PATH] [--mountinfo FILE] [--require-input]
+eessi-arch-guard --check-revision --stat FILE [--min N]
 #+end_example
 
 =eessi-arch-guard --help= prints:
@@ -24,6 +26,9 @@ usage: eessi-arch-guard [--shell] [--strict] [--dry-run] [--json]
        eessi-arch-guard --check-submit --partition NAME [--constraint NAME]
                         [--eb-stack PATH] [--json]
        eessi-arch-guard --check-submit --target TARGET [--eb-stack PATH] [--json]
+       eessi-arch-guard --check-mount [--repo PATH] [--site PATH] [--eessi PATH]
+                        [--modulepath PATH] [--mountinfo FILE] [--require-input]
+       eessi-arch-guard --check-revision --stat FILE [--min N]
 
 Slurm TaskProlog: when the loaded EESSI CPU or accelerator target is not this
 node's, print export/unset lines for the reloaded module environment.
@@ -43,8 +48,13 @@ keys; with --check-submit it replaces the text summary.
 so a site sets this in a wrapper or in a root-owned eessi-arch-guard.conf.
 --timeout SEC bounds the decision. The default is 60 seconds.
 --syslog TARGET sends structured RFC 5424 or journald decision events.
+--check-mount says whether the EESSI repository is on a cvmfs mount and the site
+module directory precedes the EESSI one on MODULEPATH; exit 0 when both hold.
+--check-revision reads `cvmfs_config stat` output from --stat FILE, prints the
+client revision, and exits 1 when it is older than --min N.
 --restore reads a JSON restore request on stdin and writes the JSON result.
 -h, --help print this text. --version prints the version.
+
 #+end_example
 
 ** Arguments
@@ -61,6 +71,8 @@ Slurm starts a =TaskProlog= with no arguments at all.
 | =--constraint NAME=              | Also select =submit_target.constraint.NAME=; that mapping must equal the partition mapping. |
 | =--target TARGET=                | Check against the relative EESSI CPU target =TARGET= (such as =x86_64/amd/zen4=) with no site configuration; used without =--partition= and =--constraint=. |
 | =--eb-stack PATH=                | Replace the =eb_stack= configuration value and the =eb-stack= command name for =--check-submit=. |
+| =--check-mount=                  | Say whether the EESSI repository (=--repo=, =EESSI_CVMFS_REPO= or =/cvmfs/software.eessi.io=) is on a cvmfs mount of =--mountinfo= (default =/proc/self/mountinfo=) and whether =--site= precedes =--eessi= on =--modulepath= (default =MODULEPATH=). =--site= and =--eessi= default to =EESSI_SITE_SOFTWARE_PATH= and =EESSI_SOFTWARE_PATH= with =/modules/all= appended. =--require-input= refuses a path that is =/modules/all= alone. Exit 0 when both hold, 1 when one fails, 2 on a usage or read error; see [[file:../howto/check-the-client-mount.org][Check the client mount and the site module path]]. |
+| =--check-revision=               | Read the output of =cvmfs_config stat= from =--stat FILE=, print =revision N=, and with =--min N= exit 1 when N is older; exit 2 when the file cannot be read or holds no revision. See [[file:../howto/check-the-client-revision.org][Check the client revision]]. |
 | =--shell=                        | Print bash instead of prolog lines: =export NAME=VALUE= with the value quoted for bash, and =unset NAME=, for =eval "$(eessi-arch-guard --shell)"=. Messages go to stderr. No chained prolog runs.                                                                                                                                                                                                                             |
 | =--strict=                       | Exit 78 when the decision fails or an unexpected exception interrupts it. The restore and the cache use a private workspace, which must exist (see [[file:environment.org][Environment variables]]), and the restore helper gets =--strict= too.                                                                                                                                                                                                         |
 | =--dry-run=                      | Read-only diagnostic mode: load the configuration file, validate =chain= without executing it, resolve timeout and syslog without emitting events, inspect any existing cache entry without locking or writing, probe CPU and accelerator targets, and validate reload preconditions without calling =--restore=. Print =key: value= lines (or JSON with =--json=) and make no environment changes. Exit 78 when =--strict= is set and the decision is =failed=; otherwise exit 0. |
@@ -142,18 +154,14 @@ Slurm discards a =TaskProlog='s stderr.
 
 *** --version
 
-The Python guard prints its version:
-
-#+begin_example
-0.3.1
-#+end_example
-
-The Zig build follows it with its target, build mode, Zig version and the commit given to =zig build= with =-Dcommit=, or =unknown= without it.
+The version, then the target, build mode, Zig version and the commit given to =zig build= with =-Dcommit=, or =unknown= without it.
 Built with =zig build -Drelease=true -Dtarget=x86_64-linux-musl -Dcommit=a418152=:
 
 #+begin_example
-0.2.0 (x86_64-linux-musl, safe, zig 0.17.1, a418152)
+0.4.0 (x86_64-linux-musl, safe, zig 0.17.1, a418152)
 #+end_example
+
+The Python package's =eessi_arch_guard.__version__= and the =--version= of the bundled binary name the same version.
 
 ** See also
 
@@ -162,4 +170,4 @@ Built with =zig build -Drelease=true -Dtarget=x86_64-linux-musl -Dcommit=a418152
 - [[file:../howto/install-the-prolog.org][Install the prolog]], [[file:../howto/configure.org][Configure the guard]] and [[file:../howto/use-in-a-batch-script.org][Run the guard in a batch script]]
 - [[file:../explanation/output-modes.org][Prolog lines and shell lines]]
 - [[file:configuration.org][The configuration file]], [[file:environment.org][Environment variables]] and [[file:failures.org][Messages and markers]]
-- [[py:eessi_arch_guard.parse_args]] and [[py:eessi_arch_guard.main]], and the [[file:api.org][API]] of both builds.
+- [[py:eessi_arch_guard.main]], the launcher of the Python package, and the [[file:api.org][API]].

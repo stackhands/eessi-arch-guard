@@ -14,6 +14,7 @@ const guard = @import("guard.zig");
 const jsonout = @import("jsonout.zig");
 const jsonline = @import("jsonline.zig");
 const syslog = @import("syslog.zig");
+const sitetools = @import("sitetools.zig");
 
 const sys = common.sys;
 const fsx = common.fsx;
@@ -25,18 +26,17 @@ const Allocator = std.mem.Allocator;
 const Py = json.Py;
 const empty: []const u8 = "";
 
-/// The version `--version` prints first, `.version` of build.zig.zon. The
-/// Python guard's `__version__` and pyproject.toml name the same one.
+/// The version `--version` prints first, `.version` of build.zig.zon.
 pub const version = build_options.version;
 const tool = "eessi-arch-guard";
-/// The Python guard's bare version, then this build (COMPAT.md).
+/// The bare version, then this build.
 const version_text = cli.versionLine(tool, version, build_options.commit)[tool.len + 1 ..];
 const strict_failure_exit: u8 = 78;
-const default_timeout: f64 = 60.0;
+pub const default_timeout: f64 = 60.0;
 /// TIMEOUT_MAX, as Python prints it: the Python guard's subprocess waits
 /// with poll(), whose timeout is a C int of milliseconds.
-const timeout_max: f64 = 2147483.647;
-const timeout_max_text = "2147483.647";
+pub const timeout_max: f64 = 2147483.647;
+pub const timeout_max_text = "2147483.647";
 
 const help_text =
     \\usage: eessi-arch-guard [--shell] [--strict] [--dry-run] [--json]
@@ -45,6 +45,9 @@ const help_text =
     \\       eessi-arch-guard --check-submit --partition NAME [--constraint NAME]
     \\                        [--eb-stack PATH] [--json]
     \\       eessi-arch-guard --check-submit --target TARGET [--eb-stack PATH] [--json]
+    \\       eessi-arch-guard --check-mount [--repo PATH] [--site PATH] [--eessi PATH]
+    \\                        [--modulepath PATH] [--mountinfo FILE] [--require-input]
+    \\       eessi-arch-guard --check-revision --stat FILE [--min N]
     \\
     \\Slurm TaskProlog: when the loaded EESSI CPU or accelerator target is not this
     \\node's, print export/unset lines for the reloaded module environment.
@@ -64,6 +67,10 @@ const help_text =
     \\so a site sets this in a wrapper or in a root-owned eessi-arch-guard.conf.
     \\--timeout SEC bounds the decision. The default is 60 seconds.
     \\--syslog TARGET sends structured RFC 5424 or journald decision events.
+    \\--check-mount says whether the EESSI repository is on a cvmfs mount and the site
+    \\module directory precedes the EESSI one on MODULEPATH; exit 0 when both hold.
+    \\--check-revision reads `cvmfs_config stat` output from --stat FILE, prints the
+    \\client revision, and exits 1 when it is older than --min N.
     \\--restore reads a JSON restore request on stdin and writes the JSON result.
     \\-h, --help print this text. --version prints the version.
     \\
@@ -209,6 +216,20 @@ fn chainFailure(arena: Allocator, env: envmap.Map, kind: []const u8, detail: []c
     linux.exit_group(code);
 }
 
+/// A failed `fsx.absPath`: out of memory, or the working directory that a
+/// relative path needs cannot be read, as `os.getcwd` raises it. A removed
+/// working directory is a FileNotFoundError, and the skip line carries its
+/// text.
+pub fn absPathFailure(err: (sys.Error || Allocator.Error)) noreturn {
+    switch (err) {
+        error.OutOfMemory => oom(),
+        else => |e| emergencyExit(
+            if (e == error.NotFound) "FileNotFoundError" else "OSError",
+            sys.describe(e),
+        ),
+    }
+}
+
 /// Out of memory, as a MemoryError reaching Python's main.
 pub fn oom() noreturn {
     emergencyExit("MemoryError", "out of memory");
@@ -255,7 +276,7 @@ fn installCrashHandlers() void {
 
 // ---- arguments ---------------------------------------------------------
 
-const Args = struct {
+pub const Args = struct {
     shell: bool = false,
     restore: bool = false,
     help: bool = false,
@@ -271,6 +292,16 @@ const Args = struct {
     constraint: ?[]const u8 = null,
     eb_stack: ?[]const u8 = null,
     target: ?[]const u8 = null,
+    check_mount: bool = false,
+    check_revision: bool = false,
+    repo: ?[]const u8 = null,
+    site: ?[]const u8 = null,
+    eessi: ?[]const u8 = null,
+    modulepath: ?[]const u8 = null,
+    mountinfo: ?[]const u8 = null,
+    require_input: bool = false,
+    stat: ?[]const u8 = null,
+    min: ?[]const u8 = null,
 };
 
 const cli_spec: argparse.CommandSpec = .{
@@ -293,11 +324,21 @@ const cli_spec: argparse.CommandSpec = .{
         .{ .name = "constraint", .kind = .optional_value },
         .{ .name = "eb-stack", .kind = .optional_value },
         .{ .name = "target", .kind = .optional_value },
+        .{ .name = "check-mount" },
+        .{ .name = "check-revision" },
+        .{ .name = "repo", .kind = .optional_value },
+        .{ .name = "site", .kind = .optional_value },
+        .{ .name = "eessi", .kind = .optional_value },
+        .{ .name = "modulepath", .kind = .optional_value },
+        .{ .name = "mountinfo", .kind = .optional_value },
+        .{ .name = "require-input" },
+        .{ .name = "stat", .kind = .optional_value },
+        .{ .name = "min", .kind = .optional_value },
     },
 };
 
 /// parse_args: documented flags only; anything else is skipped.
-fn parseArgs(gpa: Allocator, argv: []const []const u8) Allocator.Error!Args {
+pub fn parseArgs(gpa: Allocator, argv: []const []const u8) Allocator.Error!Args {
     var outcome = try argparse.parse(gpa, &cli_spec, argv);
     defer outcome.deinit(gpa);
     const p = switch (outcome) {
@@ -320,6 +361,16 @@ fn parseArgs(gpa: Allocator, argv: []const []const u8) Allocator.Error!Args {
         .constraint = p.value("constraint"),
         .eb_stack = p.value("eb-stack"),
         .target = p.value("target"),
+        .check_mount = p.seen("check-mount"),
+        .check_revision = p.seen("check-revision"),
+        .repo = p.value("repo"),
+        .site = p.value("site"),
+        .eessi = p.value("eessi"),
+        .modulepath = p.value("modulepath"),
+        .mountinfo = p.value("mountinfo"),
+        .require_input = p.seen("require-input"),
+        .stat = p.value("stat"),
+        .min = p.value("min"),
     };
 }
 
@@ -336,9 +387,10 @@ fn hasSeparatorControl(s: []const u8) bool {
 }
 
 /// float(text) as Python parses it: surrounding whitespace, a sign, digits
-/// with single underscores between them, a fraction, an exponent, or
-/// inf/infinity/nan in any case.
-fn pyFloat(arena: Allocator, raw: []const u8) ?f64 {
+/// of any script with single underscores between them, a fraction, an
+/// exponent, or inf/infinity/nan in any case.
+fn pyFloat(arena: Allocator, input: []const u8) ?f64 {
+    const raw = text.decimalToAscii(arena, input) catch return null;
     const s = text.pyStrip(raw);
     if (s.len == 0) return null;
     const lead = @intFromPtr(s.ptr) - @intFromPtr(raw.ptr);
@@ -408,7 +460,7 @@ fn pyFloat(arena: Allocator, raw: []const u8) ?f64 {
 }
 
 /// parse_timeout: a positive number of seconds at most TIMEOUT_MAX.
-fn parseTimeout(arena: Allocator, s: []const u8) ?f64 {
+pub fn parseTimeout(arena: Allocator, s: []const u8) ?f64 {
     const v = pyFloat(arena, s) orelse return null;
     if (std.math.isNan(v) or v <= 0 or v > timeout_max) return null;
     return v;
@@ -416,9 +468,9 @@ fn parseTimeout(arena: Allocator, s: []const u8) ?f64 {
 
 // ---- the site configuration --------------------------------------------
 
-const Settings = std.StringArrayHashMapUnmanaged([]const u8);
+pub const Settings = std.StringArrayHashMapUnmanaged([]const u8);
 
-const Config = struct {
+pub const Config = struct {
     path: ?[]const u8 = null,
     settings: ?Settings = null,
     warning: ?[]const u8 = null,
@@ -431,7 +483,7 @@ fn pyStripBytes(s: []const u8) []const u8 {
 /// parse_config_bytes: KEY = VALUE lines; '#' comments; a key that is not
 /// UTF-8 is skipped; a value that is not UTF-8 is kept as its bytes and
 /// named in the returned list.
-fn parseConfigBytes(arena: Allocator, blob: []const u8, bad: *std.ArrayList([]const u8)) Allocator.Error!Settings {
+pub fn parseConfigBytes(arena: Allocator, blob: []const u8, bad: *std.ArrayList([]const u8)) Allocator.Error!Settings {
     var settings: Settings = .empty;
     var i: usize = 0;
     while (i < blob.len) {
@@ -464,7 +516,7 @@ fn lstatRaw(path: []const u8, x: *linux.Statx) linux.E {
 }
 
 /// _config_untrusted: the reason a config path is not trusted, or null.
-fn configUntrusted(arena: Allocator, path: []const u8) ?[]const u8 {
+pub fn configUntrusted(arena: Allocator, path: []const u8) ?[]const u8 {
     var x: linux.Statx = undefined;
     const e = lstatRaw(path, &x);
     if (e != .SUCCESS) return arena.print("{s} ({s})", .{ path, osErrorText(arena, e, path) }) catch path;
@@ -489,29 +541,42 @@ fn configReadWarning(arena: Allocator, path: []const u8, err: anyerror) ?[]const
     return arena.print("eessi-arch-guard: config ignored: {s}: {t}", .{ path, err }) catch null;
 }
 
+/// Whether an open config file is still one to trust: owned by root and not
+/// writable by group or others. It is asked of the open descriptor, after the
+/// path passed `configUntrusted`, so a swap in between is caught.
+pub fn configDescriptorTrusted(uid: u32, mode: u32) bool {
+    return uid == 0 and mode & 0o022 == 0;
+}
+
+/// The config at `path`, read through a descriptor opened without following a
+/// link and checked again there. `siteConfig` calls it once `configUntrusted`
+/// accepted the path.
+pub fn readConfigFile(arena: Allocator, path: []const u8) Config {
+    const f = fsx.openRegular(fsx.cwd, path, false) catch |err|
+        return .{ .path = path, .warning = configReadWarning(arena, path, err) };
+    defer sys.close(f.fd);
+    if (!configDescriptorTrusted(f.stat.uid, f.stat.mode))
+        return .{ .path = path, .warning = arena.print("eessi-arch-guard: config ignored: {s} changed while it was read", .{path}) catch null };
+    const blob = fsx.readAll(arena, f.fd, 1 << 20) catch |err|
+        return .{ .path = path, .warning = configReadWarning(arena, path, err) };
+    var bad: std.ArrayList([]const u8) = .empty;
+    const settings = parseConfigBytes(arena, blob, &bad) catch return .{ .path = path };
+    if (bad.items.len > 0) {
+        const shown = std.mem.join(arena, " ", bad.items) catch "";
+        return .{ .path = path, .settings = settings, .warning = arena.print("eessi-arch-guard: config value kept with its original bytes: {s}", .{shown}) catch null };
+    }
+    return .{ .path = path, .settings = settings };
+}
+
 /// site_config: /etc/eessi-arch-guard.conf, else the file beside the
 /// program as it was invoked; the first that exists decides.
 fn siteConfig(arena: Allocator, invoked: []const u8) Config {
-    const beside = configBeside(arena, invoked) catch oom();
+    const beside = configBeside(arena, invoked) catch |err| absPathFailure(err);
     for ([_][]const u8{ "/etc/" ++ config_name, beside }) |path| {
         if (!exists(path)) continue;
         if (configUntrusted(arena, path)) |reason|
             return .{ .path = path, .warning = arena.print("eessi-arch-guard: config ignored: {s}", .{reason}) catch null };
-        // Checked again on the open file, without following a link.
-        const f = fsx.openRegular(fsx.cwd, path, false) catch |err|
-            return .{ .path = path, .warning = configReadWarning(arena, path, err) };
-        defer sys.close(f.fd);
-        if (f.stat.uid != 0 or f.stat.mode & 0o022 != 0)
-            return .{ .path = path, .warning = arena.print("eessi-arch-guard: config ignored: {s} changed while it was read", .{path}) catch null };
-        const blob = fsx.readAll(arena, f.fd, 1 << 20) catch |err|
-            return .{ .path = path, .warning = configReadWarning(arena, path, err) };
-        var bad: std.ArrayList([]const u8) = .empty;
-        const settings = parseConfigBytes(arena, blob, &bad) catch return .{ .path = path };
-        if (bad.items.len > 0) {
-            const shown = std.mem.join(arena, " ", bad.items) catch "";
-            return .{ .path = path, .settings = settings, .warning = arena.print("eessi-arch-guard: config value kept with its original bytes: {s}", .{shown}) catch null };
-        }
-        return .{ .path = path, .settings = settings };
+        return readConfigFile(arena, path);
     }
     return .{};
 }
@@ -521,7 +586,7 @@ fn chainPathOk(path: []const u8) bool {
     return guard.lmodInvocable(path);
 }
 
-fn resolveTimeout(arena: Allocator, cli_text: ?[]const u8, settings: ?Settings) struct { value: f64, warning: ?[]const u8 } {
+pub fn resolveTimeout(arena: Allocator, cli_text: ?[]const u8, settings: ?Settings) struct { value: f64, warning: ?[]const u8 } {
     var chosen = default_timeout;
     var warnings: std.ArrayList([]const u8) = .empty;
     if (settings) |s| if (s.get("timeout")) |t| {
@@ -565,7 +630,7 @@ const config_name = "eessi-arch-guard.conf";
 
 /// site_config's second candidate, os.path.join(os.path.dirname(
 /// os.path.abspath(invoked)), "eessi-arch-guard.conf").
-fn configBeside(gpa: Allocator, invoked: []const u8) Allocator.Error![]u8 {
+fn configBeside(gpa: Allocator, invoked: []const u8) (sys.Error || Allocator.Error)![]u8 {
     const abs = try fsx.absPath(gpa, invoked);
     defer gpa.free(abs);
     const cut = std.mem.findScalarLast(u8, abs, '/') orelse return gpa.dupe(u8, config_name);
@@ -877,7 +942,7 @@ fn selectorHint(arena: Allocator, settings: Settings, prefix: []const u8, value:
     return arena.print("; nearest known {s} is {s}{s}", .{ kind, prefix, chosen }) catch "";
 }
 
-fn submitTarget(arena: Allocator, settings: ?Settings, partition: []const u8, constraint: []const u8, why: *[]const u8) ?[]const u8 {
+pub fn submitTarget(arena: Allocator, settings: ?Settings, partition: []const u8, constraint: []const u8, why: *[]const u8) ?[]const u8 {
     if (!submitSelector(partition)) {
         why.* = "--partition needs one safe partition name";
         return null;
@@ -920,30 +985,6 @@ fn submitTarget(arena: Allocator, settings: ?Settings, partition: []const u8, co
     return target;
 }
 
-fn submitWritableDir(p: []const u8) bool {
-    const st = fsx.statAt(fsx.cwd, p, true) catch return false;
-    if (!st.isDir()) return false;
-    var zb: [sys.path_max:0]u8 = undefined;
-    const z = sys.z(&zb, p) catch return false;
-    return linux.errno(linux.faccessat(linux.AT.FDCWD, z.ptr, linux.W_OK | linux.X_OK, 0)) == .SUCCESS;
-}
-
-fn submitAbsolutize(arena: Allocator, p: []const u8) []const u8 {
-    if (p.len > 0 and p[0] == '/') return p;
-    var rb: [sys.path_max]u8 = undefined;
-    const cwd = fsx.realpath(fsx.cwd, ".", &rb) catch return p;
-    return std.fs.path.join(arena, &.{ cwd, p }) catch p;
-}
-
-fn submitTempDir(arena: Allocator, env: envmap.Map) []const u8 {
-    for ([_][]const u8{ "TMPDIR", "TEMP", "TMP" }) |k| {
-        const v = env.get(k) orelse continue;
-        if (v.len > 0 and submitWritableDir(v)) return submitAbsolutize(arena, v);
-    }
-    for ([_][]const u8{ "/tmp", "/var/tmp", "/usr/tmp" }) |d| if (submitWritableDir(d)) return d;
-    return submitAbsolutize(arena, ".");
-}
-
 /// "could not run eb-stack: <detail>", the detail cut to one line of at most
 /// 200 characters as Python's `one_line(str(exc), 200)` does.
 fn submitRunFailure(arena: Allocator, detail: []const u8) []const u8 {
@@ -961,11 +1002,21 @@ fn makeSubmitDir(arena: Allocator, base: []const u8, why: *[]const u8) ?[]const 
     };
 }
 
-/// A new private directory for the planner inputs. When it cannot be made,
-/// `why` is the OSError text, without the file name Python appends because
-/// that name holds the random part Python chose.
+/// A new private directory for the planner inputs, under the directory
+/// tempfile.gettempdir picks. When none takes a file, `why` is the text of
+/// the FileNotFoundError Python raises; when the directory cannot be made it
+/// is the OSError text, without the file name Python appends because that
+/// name holds the random part Python chose.
 fn submitWorkDir(arena: Allocator, env: envmap.Map, why: *[]const u8) ?[]const u8 {
-    return makeSubmitDir(arena, submitTempDir(arena, env), why);
+    var temp: fsx.TempDir = .{};
+    const base = temp.get(arena, env) catch |err| switch (err) {
+        error.OutOfMemory => oom(),
+        error.NoTempDir => {
+            why.* = temp.message;
+            return null;
+        },
+    };
+    return makeSubmitDir(arena, base, why);
 }
 
 test "submitWorkDir uses fsx.mkdtemp with the submit prefix" {
@@ -1133,14 +1184,21 @@ fn moduleTreeAvailable(root: []const u8) bool {
 }
 
 /// Write `data` to a new file at `path`. Null on success, otherwise the
-/// OSError text Python gives: the open names the file, and the write does
-/// not, because Python raises it when the buffered handle is flushed.
+/// OSError text Python gives: the open names the file, and the write and
+/// the close do not, because Python raises them when the buffered handle
+/// is flushed and closed. A failed close replaces a failed write, as it
+/// does when the `with` block closes the handle.
 fn writeSubmitFile(arena: Allocator, path: []const u8, data: []const u8) ?[]const u8 {
     const fd = sys.openat(fsx.cwd, path, .{ .ACCMODE = .WRONLY, .CREAT = true, .TRUNC = true, .NOFOLLOW = true }, 0o600) catch |err| {
         return pytext.osError(arena, err, path) catch oom();
     };
-    defer sys.close(fd);
-    sys.writeAll(fd, data) catch |err| return sys.describe(err);
+    const wrote = sys.writeAll(fd, data);
+    const write_errno = sys.last_errno;
+    if (guard.closeFd(fd)) |e| return sys.describeErrno(e);
+    wrote catch |err| {
+        sys.last_errno = write_errno;
+        return sys.describe(err);
+    };
     return null;
 }
 
@@ -1320,7 +1378,15 @@ fn checkSubmit(arena: Allocator, args: Args, env: envmap.Map, settings: ?Setting
         return finishCheckSubmit(arena, args, partition, constraint, 2, target, @intCast(loaded.len), &.{}, reason, &.{line});
     };
     const child_args = [_][]const u8{ eb_stack, "stack", "arch", "--arch", target, "--easystack", easystack, "--installed", installed_path, "--unsupported", unsupported };
-    const result = proc.run(arena, fsx.absPath(arena, eb_stack) catch oom(), &child_args, child_env, .{
+    const eb_stack_abs = fsx.absPath(arena, eb_stack) catch |err| switch (err) {
+        error.OutOfMemory => oom(),
+        else => |e| {
+            const reason = arena.print("could not run eb-stack: {s}", .{sys.describe(e)}) catch oom();
+            const line = arena.print("eessi-arch-guard: check-submit: {s}", .{reason}) catch oom();
+            return finishCheckSubmit(arena, args, partition, constraint, 2, target, @intCast(loaded.len), &.{}, reason, &.{line});
+        },
+    };
+    const result = proc.run(arena, eb_stack_abs, &child_args, child_env, .{
         .stdout_limit = 8 << 20,
         .stderr_limit = 8 << 20,
         .timeout_ms = null,
@@ -1343,7 +1409,9 @@ fn checkSubmit(arena: Allocator, args: Args, env: envmap.Map, settings: ?Setting
     }
     var missing: std.ArrayList([]const u8) = .empty;
     var lines_out: std.ArrayList([]const u8) = .empty;
-    var stdout_lines = std.mem.splitScalar(u8, result.stdout, '\n');
+    const out_text = text.universalNewlines(arena, result.stdout) catch oom();
+    const err_text = text.universalNewlines(arena, result.stderr) catch oom();
+    var stdout_lines = text.splitLines(out_text);
     while (stdout_lines.next()) |line| {
         const marker = " is flagged on ";
         const cut = std.mem.indexOf(u8, line, marker) orelse continue;
@@ -1358,8 +1426,8 @@ fn checkSubmit(arena: Allocator, args: Args, env: envmap.Map, settings: ?Setting
     if (code == 1 and missing.items.len > 0) {
         return finishCheckSubmit(arena, args, partition, constraint, 1, target, @intCast(loaded.len), missing.items, null, lines_out.items);
     }
-    const err_trim = std.mem.trim(u8, result.stderr, " \t\r\n");
-    const out_trim = std.mem.trim(u8, result.stdout, " \t\r\n");
+    const err_trim = text.pyStrip(err_text);
+    const out_trim = text.pyStrip(out_text);
     const raw = if (err_trim.len > 0)
         err_trim
     else if (out_trim.len > 0)
@@ -1392,6 +1460,15 @@ fn realMain(arena: Allocator, argv0: []const u8, argv: []const []const u8, envp:
         .self_exe = selfExe(arena),
     };
     if (args.restore) return guard.restoreMain(&ctx);
+    if (args.check_mount) return sitetools.runMount(arena, .{
+        .repo = args.repo,
+        .site = args.site,
+        .eessi = args.eessi,
+        .modulepath = args.modulepath,
+        .mountinfo = args.mountinfo,
+        .require_input = args.require_input,
+    }, env);
+    if (args.check_revision) return sitetools.runRevision(arena, args.stat, args.min);
 
     var chain_out: []const u8 = "";
     const cfg = siteConfig(arena, invokedPath(arena, argv0));
@@ -1601,6 +1678,12 @@ test {
     _ = envmap;
     _ = guard;
     _ = syslog;
+    _ = sitetools;
+    _ = @import("pydecode.zig");
+    _ = @import("submit_target_test.zig");
+    _ = @import("syslog_pen_test.zig");
+    _ = @import("cpuscope_test.zig");
+    _ = @import("policy_test.zig");
 }
 
 test "parseArgs" {
@@ -1799,6 +1882,11 @@ test "pyFloat follows Python's float()" {
     try std.testing.expectEqual(@as(?f64, 5.0), pyFloat(a, "5."));
     try std.testing.expectEqual(@as(?f64, 2e3), pyFloat(a, "+2E3"));
     try std.testing.expect(std.math.isInf(pyFloat(a, "-Infinity").?));
+    try std.testing.expectEqual(@as(?f64, 3.0), pyFloat(a, "\xd9\xa3"));
+    try std.testing.expectEqual(@as(?f64, 10.5), pyFloat(a, "\xef\xbc\x91\xef\xbc\x90.\xe0\xa5\xab"));
+    try std.testing.expectEqual(@as(?f64, 100.0), pyFloat(a, " 1_\xd9\xa0\xd9\xa0\xc2\xa0"));
+    try std.testing.expect(pyFloat(a, "\xc2\xb2") == null);
+    try std.testing.expect(pyFloat(a, "\xd9\xa3\xff") == null);
     try std.testing.expect(pyFloat(a, "1__0") == null);
     try std.testing.expect(pyFloat(a, "_1") == null);
     try std.testing.expect(pyFloat(a, "1e") == null);
@@ -1845,6 +1933,30 @@ test "normPath follows posixpath.normpath" {
     try std.testing.checkAllAllocationFailures(std.testing.allocator, expectNormPath, .{ "/a/./b/../c", "/a/c" });
 }
 
+/// Leave the working directory removed, for a test; `restore` puts it back.
+pub const RemovedCwd = struct {
+    here_z: [sys.path_max:0]u8,
+
+    pub fn enter() !RemovedCwd {
+        var self: RemovedCwd = undefined;
+        var buf: [sys.path_max]u8 = undefined;
+        const here = try fsx.realpath(fsx.cwd, ".", &buf);
+        _ = try sys.z(&self.here_z, here);
+        var gone_buf: [sys.path_max]u8 = undefined;
+        const gone = try std.fmt.bufPrint(&gone_buf, "{s}/.zig-cache/eag-removed-cwd-{d}", .{ here, linux.getpid() });
+        var gone_z_buf: [sys.path_max:0]u8 = undefined;
+        const gone_z = try sys.z(&gone_z_buf, gone);
+        try std.testing.expectEqual(@as(usize, 0), linux.mkdirat(fsx.cwd, gone_z.ptr, 0o700));
+        try std.testing.expectEqual(@as(usize, 0), linux.chdir(gone_z.ptr));
+        try sys.unlinkat(fsx.cwd, gone, linux.AT.REMOVEDIR);
+        return self;
+    }
+
+    pub fn restore(self: *RemovedCwd) void {
+        _ = linux.chdir(&self.here_z);
+    }
+};
+
 fn expectConfigBeside(gpa: Allocator, invoked: []const u8, want: []const u8) !void {
     const got = try configBeside(gpa, invoked);
     defer gpa.free(got);
@@ -1863,6 +1975,15 @@ test "configBeside is the config in the directory of the normalized path" {
     defer t.free(want);
     try expectConfigBeside(t, "./link/eessi-arch-guard", want);
     try std.testing.checkAllAllocationFailures(t, expectConfigBeside, .{ "link/../link/eessi-arch-guard", want });
+}
+
+test "configBeside reports a removed working directory for a relative path" {
+    var gone = try RemovedCwd.enter();
+    defer gone.restore();
+    try std.testing.expectError(error.NotFound, configBeside(std.testing.allocator, "bin/eessi-arch-guard"));
+    const abs = try configBeside(std.testing.allocator, "/opt/bin/eessi-arch-guard");
+    defer std.testing.allocator.free(abs);
+    try std.testing.expectEqualStrings("/opt/bin/eessi-arch-guard.conf", abs);
 }
 
 test "extendModuleRoots follows EESSI-extend's user and project prefixes" {

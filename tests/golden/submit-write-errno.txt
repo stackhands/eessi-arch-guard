@@ -1,0 +1,8 @@
+=== efbig
+rc: 2
+--- stdout
+
+--- stderr
+eessi-arch-guard: check-submit: could not run eb-stack: [Errno 27] File too large
+
+--- end

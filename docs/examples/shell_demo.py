@@ -18,7 +18,7 @@ def main() -> int:
     try:
         proc = support.run(env, ("--shell",))
         print("case: shell")
-        print("command: python3 -I src/eessi_arch_guard.py --shell")
+        print("command: eessi-arch-guard --shell")
         support.show(proc, site.root)
         if proc.returncode != 0 or "print " in proc.stdout:
             print("shell mode printed a prolog line", file=sys.stderr)
@@ -33,7 +33,7 @@ def main() -> int:
         baked = subprocess.run(
             ["bash", "--noprofile", "--norc", "-c", script, "bash", proc.stdout],
             capture_output=True,
-            text=True,
+            encoding="utf-8",
             env={"PATH": "/usr/bin:/bin", "LC_ALL": "C"},
             check=False,
         )

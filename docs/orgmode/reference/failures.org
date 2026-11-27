@@ -100,4 +100,4 @@ The warnings about the configuration file and the time limit are listed with [[f
 
 - [[file:../howto/read-a-failure.org][Correct a failed reload]], with the transcript of each case
 - [[file:environment.org][Environment variables]]
-- [[py:eessi_arch_guard.decide]] and [[py:eessi_arch_guard.Outcome]]
+- [[zig:eessi-arch-guard.guard.decide]] and [[zig:eessi-arch-guard.guard.Outcome]]

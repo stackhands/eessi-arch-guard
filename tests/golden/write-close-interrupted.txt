@@ -1,0 +1,64 @@
+=== restore fragment.sh
+rc: 1
+--- stdout
+
+--- stderr
+eessi-arch-guard: restore failed: [Errno 4] Interrupted system call
+
+--- end
+=== restore apply.sh
+rc: 1
+--- stdout
+
+--- stderr
+eessi-arch-guard: restore failed: [Errno 4] Interrupted system call
+
+--- end
+=== submit loaded.yml
+rc: 2
+--- stdout
+
+--- stderr
+eessi-arch-guard: check-submit: could not run eb-stack: [Errno 4] Interrupted system call
+
+--- end
+=== submit installed.txt
+rc: 2
+--- stdout
+
+--- stderr
+eessi-arch-guard: check-submit: could not run eb-stack: [Errno 4] Interrupted system call
+
+--- end
+=== submit unsupported.toml
+rc: 2
+--- stdout
+
+--- stderr
+eessi-arch-guard: check-submit: could not run eb-stack: [Errno 4] Interrupted system call
+
+--- end
+=== cpuinfo copy text
+rc: 0
+--- stdout
+print eessi-arch-guard: skipped, InterruptedError: [Errno 4] Interrupted system call
+
+--- stderr
+
+--- end
+=== cpuinfo copy --json
+rc: 0
+--- stdout
+{"cached": false, "cause": "InterruptedError", "decision": "failed", "detail": null, "exit": 0, "exit_semantic": "ok", "kind": "decision", "message": "[Errno 4] Interrupted system call", "now": null, "reload_needed": true, "schema_version": 1, "shell": false, "strict": false, "was": "x86_64/intel/sapphirerapids"}
+
+--- stderr
+
+--- end
+=== cpuinfo copy --shell
+rc: 0
+--- stdout
+
+--- stderr
+eessi-arch-guard: skipped, InterruptedError: [Errno 4] Interrupted system call
+
+--- end

@@ -20,7 +20,7 @@ Each run would start =eessi_archdetect.sh= for the CPU and for the accelerator a
 ** How eessi-arch-guard handles it
 
 The decision is the same in both modes, and only the lines that carry it differ.
-[[py:eessi_arch_guard.decide]] makes the decision, and [[py:eessi_arch_guard.cached_decide]] shares it.
+[[zig:eessi-arch-guard.guard.decide]] makes the decision, and [[zig:eessi-arch-guard.guard.cachedDecide]] shares it.
 
 *** Prolog lines
 
@@ -68,7 +68,7 @@ A timeout, a =SIGTERM= and an unexpected exception are not stored, so the next t
 One deadline, 60 seconds by default, covers the wait for the lock, both runs of =eessi_archdetect.sh= and the reload; 60 seconds is Slurm's =DEFAULT_UNKILLABLE_TIMEOUT=.
 Each command the guard starts runs in a session of its own.
 At the deadline, or on =SIGTERM=, the guard kills that process group with =SIGKILL=, sets =EESSI_ARCH_GUARD_FAILED= to a value ending in =->timeout= or =->terminated=, and exits 0.
-After the kill, the Python guard waits up to 5 seconds for the pipe to close and up to 5 seconds twice more for the process, 15 seconds in all at most.
+After the kill, the guard waits up to 5 seconds for the pipe to close and up to 5 seconds twice more for the process, 15 seconds in all at most.
 A decision that has finished when the signal comes is still the result, and is still stored.
 
 ** What was considered and turned down

@@ -1,0 +1,72 @@
+.TH EESSI-ARCH-GUARD 1 "" "eessi-arch-guard" "User Commands"
+.SH NAME
+eessi-arch-guard \- reload an EESSI module stack that was loaded for another CPU or GPU
+.SH SYNOPSIS
+.B eessi-arch-guard
+[\fB\-\-shell\fR] [\fB\-\-strict\fR] [\fB\-\-dry\-run\fR] [\fB\-\-json\fR]
+[\fB\-\-chain\fR \fIPATH\fR] [\fB\-\-timeout\fR \fISEC\fR] [\fB\-\-syslog\fR \fITARGET\fR]
+[\fB\-\-restore\fR]
+.br
+.B eessi-arch-guard \-\-check\-submit
+(\fB\-\-partition\fR \fINAME\fR [\fB\-\-constraint\fR \fINAME\fR] | \fB\-\-target\fR \fITARGET\fR)
+[\fB\-\-eb\-stack\fR \fIPATH\fR] [\fB\-\-json\fR]
+.br
+.B eessi-arch-guard \-\-check\-mount
+[\fB\-\-repo\fR \fIPATH\fR] [\fB\-\-site\fR \fIPATH\fR] [\fB\-\-eessi\fR \fIPATH\fR]
+[\fB\-\-modulepath\fR \fIPATH\fR] [\fB\-\-mountinfo\fR \fIFILE\fR] [\fB\-\-require\-input\fR]
+.br
+.B eessi-arch-guard \-\-check\-revision \-\-stat
+\fIFILE\fR [\fB\-\-min\fR \fIN\fR]
+.SH DESCRIPTION
+Slurm TaskProlog. When the loaded EESSI CPU or accelerator target is not the
+target of the node, it prints export and unset lines for the reloaded module
+environment, which slurmstepd applies before it runs the task.
+.SH OPTIONS
+.TP
+\fB\-\-shell\fR
+Print bash assignments for eval, not prolog lines.
+.TP
+\fB\-\-strict\fR
+Exit 78 on a failed decision or an unexpected exception.
+.TP
+\fB\-\-dry\-run\fR
+Evaluate the configuration, chain, probes and decision without writing state.
+.TP
+\fB\-\-json\fR
+Print one line of JSON with schema_version 1.
+.TP
+\fB\-\-chain\fR \fIPATH\fR
+Run an existing task prolog first.
+.TP
+\fB\-\-timeout\fR \fISEC\fR
+Bound the decision. The default is 60 seconds.
+.TP
+\fB\-\-syslog\fR \fITARGET\fR
+Send structured RFC 5424 or journald decision events.
+.TP
+\fB\-\-restore\fR
+Read a JSON restore request on standard input and write the JSON result.
+.TP
+\fB\-\-check\-submit\fR
+Check LOADEDMODULES against a mapped target without changing it, with
+\fB\-\-partition\fR, \fB\-\-constraint\fR, \fB\-\-target\fR and \fB\-\-eb\-stack\fR.
+.TP
+\fB\-\-check\-mount\fR
+Say whether the EESSI repository is on a cvmfs mount and the site module
+directory precedes the EESSI one on MODULEPATH. Exit 0 when both hold, 1 when
+one fails, 2 on a usage or read error. Options: \fB\-\-repo\fR, \fB\-\-site\fR,
+\fB\-\-eessi\fR, \fB\-\-modulepath\fR, \fB\-\-mountinfo\fR, \fB\-\-require\-input\fR.
+.TP
+\fB\-\-check\-revision\fR
+Read the output of cvmfs_config stat from \fB\-\-stat\fR \fIFILE\fR, print the
+client revision, and exit 1 when it is older than \fB\-\-min\fR \fIN\fR.
+.TP
+\fB\-h\fR, \fB\-\-help\fR
+Print the usage text.
+.TP
+\fB\-\-version\fR
+Print the version.
+.SH FILES
+.TP
+eessi-arch-guard.conf
+Site configuration beside the binary.

@@ -1,0 +1,96 @@
+=== limit 1000 text
+rc: 0
+--- stdout
+export EBROOTR=@WORK@/prefix/software/linux/x86_64/generic/software/R/4.4.2
+export EESSI_ACCEL_SUBDIR=
+export EESSI_ARCH_GUARD_RELOADED=x86_64/amd/zen4->x86_64/generic
+export EESSI_SOFTWARE_SUBDIR=x86_64/generic
+export MODULEPATH=@WORK@/prefix/software/linux/x86_64/generic/modules/all
+export PATH=@WORK@/prefix/software/linux/x86_64/generic/software/R/4.4.2/bin:@WORK@/prefix/software/linux/x86_64/generic/bin:@WORK@/bin:/usr/bin:/bin
+export _LMFILES_=
+export _ModuleTable001_=table-for-x86_64-generic
+print eessi-arch-guard: reloaded modules for x86_64/generic (loaded for x86_64/amd/zen4)
+
+--- stderr
+
+--- end
+=== limit 1000 --strict
+rc: 0
+--- stdout
+export EBROOTR=@WORK@/prefix/software/linux/x86_64/generic/software/R/4.4.2
+export EESSI_ACCEL_SUBDIR=
+export EESSI_ARCH_GUARD_RELOADED=x86_64/amd/zen4->x86_64/generic
+export EESSI_SOFTWARE_SUBDIR=x86_64/generic
+export MODULEPATH=@WORK@/prefix/software/linux/x86_64/generic/modules/all
+export PATH=@WORK@/prefix/software/linux/x86_64/generic/software/R/4.4.2/bin:@WORK@/prefix/software/linux/x86_64/generic/bin:@WORK@/bin:/usr/bin:/bin
+export _LMFILES_=
+export _ModuleTable001_=table-for-x86_64-generic
+print eessi-arch-guard: reloaded modules for x86_64/generic (loaded for x86_64/amd/zen4)
+
+--- stderr
+
+--- end
+=== limit 1000 --json
+rc: 0
+--- stdout
+{"cached": false, "cause": null, "decision": "reloaded", "detail": null, "exit": 0, "exit_semantic": "ok", "kind": "decision", "message": "eessi-arch-guard: reloaded modules for x86_64/generic (loaded for x86_64/amd/zen4)", "now": "x86_64/generic", "reload_needed": true, "schema_version": 1, "shell": false, "strict": false, "was": "x86_64/amd/zen4"}
+
+--- stderr
+
+--- end
+=== limit 1000 --strict --json
+rc: 0
+--- stdout
+{"cached": false, "cause": null, "decision": "reloaded", "detail": null, "exit": 0, "exit_semantic": "ok", "kind": "decision", "message": "eessi-arch-guard: reloaded modules for x86_64/generic (loaded for x86_64/amd/zen4)", "now": "x86_64/generic", "reload_needed": true, "schema_version": 1, "shell": false, "strict": true, "was": "x86_64/amd/zen4"}
+
+--- stderr
+
+--- end
+=== limit 1500 text
+rc: 0
+--- stdout
+export EBROOTR=@WORK@/prefix/software/linux/x86_64/generic/software/R/4.4.2
+export EESSI_ACCEL_SUBDIR=
+export EESSI_ARCH_GUARD_RELOADED=x86_64/amd/zen4->x86_64/generic
+export EESSI_SOFTWARE_SUBDIR=x86_64/generic
+export MODULEPATH=@WORK@/prefix/software/linux/x86_64/generic/modules/all
+export PATH=@WORK@/prefix/software/linux/x86_64/generic/software/R/4.4.2/bin:@WORK@/prefix/software/linux/x86_64/generic/bin:@WORK@/bin:/usr/bin:/bin
+export _LMFILES_=
+export _ModuleTable001_=table-for-x86_64-generic
+print eessi-arch-guard: reloaded modules for x86_64/generic (loaded for x86_64/amd/zen4)
+
+--- stderr
+
+--- end
+=== limit 1500 --strict
+rc: 0
+--- stdout
+export EBROOTR=@WORK@/prefix/software/linux/x86_64/generic/software/R/4.4.2
+export EESSI_ACCEL_SUBDIR=
+export EESSI_ARCH_GUARD_RELOADED=x86_64/amd/zen4->x86_64/generic
+export EESSI_SOFTWARE_SUBDIR=x86_64/generic
+export MODULEPATH=@WORK@/prefix/software/linux/x86_64/generic/modules/all
+export PATH=@WORK@/prefix/software/linux/x86_64/generic/software/R/4.4.2/bin:@WORK@/prefix/software/linux/x86_64/generic/bin:@WORK@/bin:/usr/bin:/bin
+export _LMFILES_=
+export _ModuleTable001_=table-for-x86_64-generic
+print eessi-arch-guard: reloaded modules for x86_64/generic (loaded for x86_64/amd/zen4)
+
+--- stderr
+
+--- end
+=== limit 1500 --json
+rc: 0
+--- stdout
+{"cached": false, "cause": null, "decision": "reloaded", "detail": null, "exit": 0, "exit_semantic": "ok", "kind": "decision", "message": "eessi-arch-guard: reloaded modules for x86_64/generic (loaded for x86_64/amd/zen4)", "now": "x86_64/generic", "reload_needed": true, "schema_version": 1, "shell": false, "strict": false, "was": "x86_64/amd/zen4"}
+
+--- stderr
+
+--- end
+=== limit 1500 --strict --json
+rc: 0
+--- stdout
+{"cached": false, "cause": null, "decision": "reloaded", "detail": null, "exit": 0, "exit_semantic": "ok", "kind": "decision", "message": "eessi-arch-guard: reloaded modules for x86_64/generic (loaded for x86_64/amd/zen4)", "now": "x86_64/generic", "reload_needed": true, "schema_version": 1, "shell": false, "strict": true, "was": "x86_64/amd/zen4"}
+
+--- stderr
+
+--- end

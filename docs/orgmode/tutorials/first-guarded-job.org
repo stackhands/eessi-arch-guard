@@ -11,14 +11,14 @@ A small stand-in for the European Environment for Scientific Software Installati
 
 ** What you will need
 
-- A Linux machine with =git=, =bash= and Python 3.9 or newer:
+- A Linux machine with =git=, =bash=, Python 3.9 or newer for the example scripts, and [[https://ziglang.org/download/][Zig]] 0.17.1 to build the guard:
 
   #+begin_src bash
-  python3 --version
+  zig version
   #+end_src
 
   #+begin_example
-  Python 3.12.3
+  0.17.1
   #+end_example
 
 ** Get the guard
@@ -31,16 +31,18 @@ cd eessi-arch-guard
 git switch main
 #+end_src
 
-The guard is the single Python file =src/eessi_arch_guard.py=.
-Ask it for its version:
+Build the guard, a static binary, and ask it for its version:
 
 #+begin_src bash
-python3 src/eessi_arch_guard.py --version
+zig build -Drelease=true
+./zig-out/bin/eessi-arch-guard --version
 #+end_src
 
 #+begin_example
-0.3.1
+0.4.0 (x86_64-linux-musl, safe, zig 0.17.1, unknown)
 #+end_example
+
+The example scripts run =zig-out/bin/eessi-arch-guard=, or the file named by =TOOL_BIN=.
 
 ** Run it on a stack loaded for another CPU
 
@@ -57,7 +59,7 @@ python3 docs/examples/walkthrough.py mismatch
 case: mismatch
 loaded: x86_64/amd/zen4
 node cpuinfo: zen2
-command: python3 -I src/eessi_arch_guard.py
+command: eessi-arch-guard
 exit: 0
 --- stdout ---
 export EBROOTR=$PREFIX/prefix/software/linux/x86_64/amd/zen2/software/R/4.4.2
@@ -95,7 +97,7 @@ python3 docs/examples/walkthrough.py again
 
 #+begin_example
 case: again
-command: python3 -I src/eessi_arch_guard.py
+command: eessi-arch-guard
 exit: 0
 --- stdout ---
 (empty)
@@ -115,7 +117,7 @@ python3 docs/examples/failure_cases.py missing-module
 
 #+begin_example
 case: missing-module
-command: python3 -I src/eessi_arch_guard.py
+command: eessi-arch-guard
 exit: 0
 --- stdout ---
 export EESSI_ARCH_GUARD_FAILED=x86_64/amd/zen4->x86_64/amd/zen2
@@ -165,4 +167,4 @@ git switch main
 - [[file:../explanation/how-it-decides.org][How the guard decides]] what a node's target is.
 - [[file:../reference/cli.org][The eessi-arch-guard command]], for every option.
 
-Checked with Python 3.12.3 and eessi-arch-guard at release =v0.2.0= on =main= on 2026-11-17.
+Checked with Zig 0.17.1, Python 3.12 and eessi-arch-guard at release =v0.4.0= on =main=.

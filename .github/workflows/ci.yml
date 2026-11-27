@@ -12,12 +12,14 @@ concurrency:
 jobs:
   test:
     # ubuntu-latest is 26.04, for which setup-python carries no 3.9 build.
-    runs-on: ubuntu-22.04
+    # 22.04 has bash 5.1, which adds a second line to the syntax error the
+    # goldens of a cut script record; 24.04 has the bash 5.2 text.
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
-        # 3.9 is what a Rocky 9 prolog host runs; pyproject says >=3.9.
+        # 3.9 is what a Rocky 9 host runs the launcher and the tests with.
         python-version: ["3.9", "3.12"]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -28,55 +30,32 @@ jobs:
           python-version: ${{ matrix.python-version }}
       - name: Install Lua test interpreter
         run: sudo apt-get update && sudo apt-get install --yes lua5.4
+      # setup-zig checks the tarball's minisign signature against the Zig
+      # project's key.
+      - uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2.2.1
+        with:
+          version: 0.17.1
       - name: lint
         run: |
           python -m pip install ruff jsonschema
-          ruff check src tests
+          ruff check src tests share
       - name: no site names in the tree
         run: |
           ! git grep -nIiE 'snellius|surf\.nl|/gpfs/|/projects/0|rg\.terra|scratch-shared|scratch-node' -- . ':!.github/workflows/ci.yml'
+      - run: zig fmt --check build.zig build.zig.zon zig
+      - run: zig build test --summary all
+      - run: zig build -Drelease=true
+      - name: build.zig.zon's version and -Dcommit reach --version
+        run: bash tests/build_version.sh
+      - uses: ./.github/actions/allow-userns
+      - name: build the _launch extension in place
+        run: python -m pip install setuptools && python setup.py build_ext --inplace
       - name: test
-        run: |
-          python -m pip install jsonschema
-          python -m unittest discover -s tests -v
-      - name: completion and manpage generation pass one
-        uses: stackhands/.github/.github/actions/parser-cli-assets@main
-        with:
-          pythonpath: src
-          parser_ref: eessi_arch_guard.build_arg_parser
-          parser_module: eessi_arch_guard
-          parser_function: build_arg_parser
-          prog: eessi-arch-guard
-          out_completions_dir: ${{ runner.temp }}/eag-cli-one/completions
-          out_man_dir: ${{ runner.temp }}/eag-cli-one/man
-          out_bash_file: eessi-arch-guard.bash
-          out_zsh_file: _eessi-arch-guard
-          out_man_file: eessi-arch-guard.1
-      - name: completion and manpage generation pass two
-        uses: stackhands/.github/.github/actions/parser-cli-assets@main
-        with:
-          pythonpath: src
-          parser_ref: eessi_arch_guard.build_arg_parser
-          parser_module: eessi_arch_guard
-          parser_function: build_arg_parser
-          prog: eessi-arch-guard
-          out_completions_dir: ${{ runner.temp }}/eag-cli-two/completions
-          out_man_dir: ${{ runner.temp }}/eag-cli-two/man
-          out_bash_file: eessi-arch-guard.bash
-          out_zsh_file: _eessi-arch-guard
-          out_man_file: eessi-arch-guard.1
-      - name: completion and manpage generation is reproducible
-        run: |
-          diff -ru "${RUNNER_TEMP}/eag-cli-one" "${RUNNER_TEMP}/eag-cli-two"
-          find "${RUNNER_TEMP}/eag-cli-one" -type f | sort
+        run: TOOL_BIN="$PWD/zig-out/bin/eessi-arch-guard" python -m unittest discover -s tests -v
 
-  zig:
-    # The Zig build against the same Python suite, through TOOL_BIN.
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-22.04, ubuntu-24.04-arm]
-    runs-on: ${{ matrix.os }}
+  zig-arm:
+    # The same build and suite on aarch64.
+    runs-on: ubuntu-24.04-arm
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -92,34 +71,126 @@ jobs:
       - uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2.2.1
         with:
           version: 0.17.1
-      - run: zig fmt --check build.zig build.zig.zon zig
+      - run: python -m pip install jsonschema
       - run: zig build test --summary all
       - run: zig build -Drelease=true
-      - name: generate completion and manpage assets
-        uses: stackhands/.github/.github/actions/parser-cli-assets@main
-        with:
-          pythonpath: src
-          parser_ref: eessi_arch_guard.build_arg_parser
-          parser_module: eessi_arch_guard
-          parser_function: build_arg_parser
-          prog: eessi-arch-guard
-          out_completions_dir: zig-out/share/completions
-          out_man_dir: zig-out/share/man
-          out_bash_file: eessi-arch-guard.bash
-          out_zsh_file: _eessi-arch-guard
-          out_man_file: eessi-arch-guard.1
-      - name: list generated cli assets
-        run: |
-          find zig-out/share -type f | sort
-          test -s zig-out/share/man/eessi-arch-guard.1
-      - name: build.zig.zon's version and -Dcommit reach --version
-        run: bash tests/build_version.sh
-      - name: Python suite against the binary
+      - run: bash tests/build_version.sh
+      - uses: ./.github/actions/allow-userns
+      - name: build the _launch extension in place
+        run: python -m pip install setuptools && python setup.py build_ext --inplace
+      - name: test
         run: TOOL_BIN="$PWD/zig-out/bin/eessi-arch-guard" python -m unittest discover -s tests -v
+
+  wheels:
+    # cibuildwheel builds the wheels in the manylinux2014 images: one abi3
+    # wheel from CPython 3.9 for every GIL CPython, and one wheel for each of
+    # the free-threaded 3.13t and 3.14t. Each carries the static binary, built
+    # for the same architecture.
+    name: wheels (${{ matrix.arch }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            os: ubuntu-22.04
+          - arch: aarch64
+            os: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+      # setup-zig checks the tarball's minisign signature against the Zig
+      # project's key.
+      - uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2.2.1
+        with:
+          version: 0.17.1
+      - name: stage the static binary into the package
+        run: |
+          zig build -Drelease=true -Dtarget=${{ matrix.arch }}-linux-musl --prefix out
+          install -D -m 755 out/bin/eessi-arch-guard src/eessi_arch_guard/bin/eessi-arch-guard
+      - uses: pypa/cibuildwheel@8d2b08b68458a16aeb24b64e68a09ab1c8e82084 # v3.4.1
+        with:
+          output-dir: dist
+      - name: check the tags and contents of every wheel
+        run: |
+          python -m pip install --quiet auditwheel
+          ls dist
+          test "$(ls dist/*.whl | wc -l)" -eq 3
+          for wheel in dist/*.whl; do
+            python tools/check_wheel.py "$wheel"
+            auditwheel show "$wheel"
+          done
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: wheels-${{ matrix.arch }}
+          path: dist/
+
+  wheel-install:
+    # The x86_64 wheels from the wheels job, installed on each CPython they
+    # serve: the console script and module run the bundled binary, importing
+    # _launch keeps the GIL off on a free-threaded build, and calls from many
+    # threads agree.
+    needs: wheels
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - python-version: "3.9"
+            wheel-tag: cp39-abi3
+          - python-version: "3.12"
+            wheel-tag: cp39-abi3
+          - python-version: "3.14"
+            wheel-tag: cp39-abi3
+          - python-version: "3.13t"
+            wheel-tag: cp313-cp313t
+          - python-version: "3.14t"
+            wheel-tag: cp314-cp314t
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        id: python
+        with:
+          python-version: ${{ matrix.python-version }}
+      - uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2.2.1
+        with:
+          version: 0.17.1
+      - run: zig build -Drelease=true
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: wheels-x86_64
+          path: dist
+      - name: install the wheel, run the entry points and the thread probe
+        env:
+          PYTHON: ${{ steps.python.outputs.python-path }}
+          WHEEL_TAG: ${{ matrix.wheel-tag }}
+          PYTHON_VERSION: ${{ matrix.python-version }}
+        run: |
+          case "$PYTHON_VERSION" in
+            *t) "$PYTHON" -c "import sysconfig, sys; assert sysconfig.get_config_var('Py_GIL_DISABLED'), sys.version" ;;
+          esac
+          wheel=$(printf '%s\n' dist/*-"$WHEEL_TAG"-*.whl)
+          WHEEL="$PWD/$wheel" bash docs/examples/check_install.sh
+      - name: the launcher tests on this Python
+        working-directory: tests
+        env:
+          PYTHON: ${{ steps.python.outputs.python-path }}
+        run: |
+          "$PYTHON" -m pip install setuptools
+          (cd .. && "$PYTHON" setup.py build_ext --inplace)
+          TOOL_BIN="$GITHUB_WORKSPACE/zig-out/bin/eessi-arch-guard" "$PYTHON" -m unittest -v test_launch test_free_threading test_package
 
   real-eb-stack:
     # The tests that read EB_STACK_BIN skip without it, and no other job sets
-    # it. This one gives them the released eb-stack, for both builds.
+    # it. This one gives them the released eb-stack.
     name: check-submit against eb-stack 0.8.0
     runs-on: ubuntu-22.04
     timeout-minutes: 30
@@ -144,9 +215,7 @@ jobs:
         with:
           version: 0.17.1
       - run: zig build -Drelease=true
-      - name: The Python guard
-        run: python -m unittest discover -s tests -p 'test_real_eb_stack.py' -v
-      - name: The Zig guard
+      - name: The guard
         run: TOOL_BIN="$PWD/zig-out/bin/eessi-arch-guard" python -m unittest discover -s tests -p 'test_real_eb_stack.py' -v
 
   docs:
@@ -160,6 +229,11 @@ jobs:
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.12"
+      - uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2.2.1
+        with:
+          version: 0.17.1
+      - run: zig build -Drelease=true
+      - uses: ./.github/actions/allow-userns
       - name: run documentation examples
         run: |
           python docs/examples/walkthrough.py mismatch
@@ -179,5 +253,4 @@ jobs:
           python docs/examples/accelerator.py mismatch
           python docs/examples/accelerator.py missing-module
           python docs/examples/syslog_journal.py
-          bash docs/examples/check_install.sh
           bash docs/examples/check_config.sh

@@ -1,54 +1,87 @@
 #!/bin/bash
-# Install the prolog file and the console script, print the stable lines, and remove both.
-# Refuses to replace an existing /usr/local/sbin/eessi-arch-guard.
+# Install a wheel that carries the binary and the _launch extension into a
+# virtual environment, and run the console script and the module through it.
+# WHEEL names a wheel built by cibuildwheel, which is checked against the
+# manylinux tags. Without it the script builds one for $PYTHON from the
+# checkout (abi3 on a GIL CPython, cp313t or cp314t on a free-threaded one),
+# whose platform tag is linux_ARCH, and checks it with --local. Needs no root
+# and changes nothing outside the temporary directory, which is removed on exit.
 set -euo pipefail
 
 root=$(CDPATH='' cd -- "$(dirname -- "$0")/../.." && pwd)
-cd "$root"
-
-dest=/usr/local/sbin/eessi-arch-guard
-if [ -e "$dest" ]; then
-    echo "refusing to replace $dest" >&2
-    exit 1
-fi
-
-echo "+ sudo install -m 755 src/eessi_arch_guard.py $dest"
-sudo -n install -m 755 src/eessi_arch_guard.py "$dest"
-cleanup_dest() {
-    sudo -n rm -f "$dest"
+binary=${TOOL_BIN:-$root/zig-out/bin/eessi-arch-guard}
+bundled=$root/src/eessi_arch_guard/bin/eessi-arch-guard
+work=$(mktemp -d /tmp/eessi-arch-guard-wheel.XXXXXX)
+cleanup() {
+    rm -f "$bundled"
+    rmdir "$root/src/eessi_arch_guard/bin" 2>/dev/null || true
+    rm -rf "$work"
 }
-trap cleanup_dest EXIT
+trap cleanup EXIT
 
-echo "+ head -n 1 $dest"
-head -n 1 "$dest"
-echo "+ $dest --version"
-"$dest" --version
-
-venv=$(mktemp -d /tmp/eessi-arch-guard-venv.XXXXXX)
-cleanup_all() {
-    sudo -n rm -f "$dest"
-    rm -rf "$venv"
-}
-trap cleanup_all EXIT
-
-echo "+ python3 -m venv <venv>"
-python3 -m venv "$venv"
-echo "+ <venv>/bin/python -m pip install ."
-"$venv/bin/python" -m pip install --disable-pip-version-check --quiet "$root"
-echo "+ <venv>/bin/python -c 'import importlib.metadata; print(importlib.metadata.version(\"eessi-arch-guard\"))'"
-"$venv/bin/python" -c 'import importlib.metadata; print(importlib.metadata.version("eessi-arch-guard"))'
-console="$venv/bin/eessi-arch-guard"
-echo "console: <venv>/bin/eessi-arch-guard"
-if grep -q 'from eessi_arch_guard import main' "$console"; then
-    echo "console import: from eessi_arch_guard import main"
+python=${PYTHON:-python3}
+if [ -n "${WHEEL:-}" ]; then
+    wheel=$WHEEL
+    echo "+ python3 tools/check_wheel.py <wheel>"
+    "$python" "$root/tools/check_wheel.py" "$wheel"
 else
-    echo "console script is missing the main import" >&2
-    exit 1
+    echo "+ install -D -m 755 eessi-arch-guard src/eessi_arch_guard/bin/eessi-arch-guard"
+    install -D -m 755 "$binary" "$bundled"
+    echo "+ $python -m pip wheel --no-deps -w <dir> ."
+    "$python" -m pip wheel --disable-pip-version-check --quiet --no-deps -w "$work/dist" "$root"
+    wheel=$(printf '%s\n' "$work"/dist/*.whl)
+    echo "+ python3 tools/check_wheel.py --local <wheel>"
+    "$python" "$root/tools/check_wheel.py" --local "$wheel"
+    rm -f "$bundled"
 fi
-if grep -q -- '-I' "$console"; then
-    echo "console -I flag: present" >&2
-    exit 1
-fi
-echo "console -I flag: absent"
+echo "wheel: ${wheel##*/}"
+
+echo "+ $python -m venv <venv>"
+"$python" -m venv "$work/venv"
+echo "+ <venv>/bin/python -m pip install <wheel>"
+"$work/venv/bin/python" -m pip install --disable-pip-version-check --quiet "$wheel"
+version=$("$work/venv/bin/python" -c 'import importlib.metadata; print(importlib.metadata.version("eessi-arch-guard"))')
+echo "installed version: $version"
+
+console="$work/venv/bin/eessi-arch-guard"
+direct=$("$binary" --version)
 echo "+ <venv>/bin/eessi-arch-guard --version"
-"$venv/bin/eessi-arch-guard" --version
+via_console=$("$console" --version)
+echo "+ <venv>/bin/python -m eessi_arch_guard --version"
+via_module=$("$work/venv/bin/python" -m eessi_arch_guard --version)
+if [ "$via_console" != "$direct" ] || [ "$via_module" != "$direct" ]; then
+    echo "the console script or the module printed another version than the binary" >&2
+    exit 1
+fi
+echo "console script and module print the version of the binary: ${direct%% *}"
+echo "+ <venv>/bin/python -c 'import eessi_arch_guard._launch'"
+"$work/venv/bin/python" -c 'import eessi_arch_guard._launch as m; print(m.__file__)' 
+if [ "${direct%% *}" != "$version" ]; then
+    echo "the package version $version is not the binary's ${direct%% *}" >&2
+    exit 1
+fi
+
+echo "+ <venv>/bin/eessi-arch-guard, run as a task prolog in an environment without EESSI"
+out=$(env -i PATH=/usr/bin:/bin "$console")
+echo "exit $?"
+[ -z "$out" ] && echo "output: (empty)"
+
+share=$work/venv/share/eessi-arch-guard
+for file in sitepath.py cvmfsrev.py lmod/SitePackage.lua; do
+    [ -f "$share/$file" ] || { echo "missing $share/$file" >&2; exit 1; }
+done
+echo "share files: sitepath.py cvmfsrev.py lmod/SitePackage.lua"
+
+echo "+ <venv>/bin/python tests/free_threading_probe.py"
+report=$(cd "$work" && env -u PYTHON_GIL PATH=/usr/bin:/bin "$work/venv/bin/python" "$root/tests/free_threading_probe.py")
+"$work/venv/bin/python" - "$report" "$work/venv/lib" <<'PY'
+import json, sys
+report = json.loads(sys.argv[1])
+assert report["errors"] == [], report["errors"]
+assert len(report["answers"]) == 1 and report["answers"][0][0].startswith(sys.argv[2]), report["answers"]
+assert report["answers"][0][1] == 0, report["answers"]
+if report["free_threaded_build"]:
+    assert report["gil"] is False, "importing the package turned the GIL on"
+print("free-threaded build" if report["free_threaded_build"] else "GIL build",
+      "| GIL after import:", report["gil"], "| 128 calls from 16 threads, one answer: the bundled binary")
+PY

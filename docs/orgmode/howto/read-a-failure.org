@@ -50,7 +50,7 @@ python3 docs/examples/failure_cases.py missing-module
 
 #+begin_example
 case: missing-module
-command: python3 -I src/eessi_arch_guard.py
+command: eessi-arch-guard
 exit: 0
 --- stdout ---
 export EESSI_ARCH_GUARD_FAILED=x86_64/amd/zen4->x86_64/amd/zen2
@@ -67,7 +67,7 @@ python3 docs/examples/failure_cases.py no-software-dir
 
 #+begin_example
 case: no-software-dir
-command: python3 -I src/eessi_arch_guard.py
+command: eessi-arch-guard
 exit: 0
 --- stdout ---
 export EESSI_ARCH_GUARD_FAILED=x86_64/amd/zen4->no-software-dir
@@ -84,7 +84,7 @@ python3 docs/examples/failure_cases.py ignore-missing
 
 #+begin_example
 case: ignore-missing
-command: python3 -I src/eessi_arch_guard.py
+command: eessi-arch-guard
 exit: 0
 --- stdout ---
 (empty)
@@ -100,7 +100,7 @@ python3 docs/examples/failure_cases.py archdetect
 
 #+begin_example
 case: archdetect
-command: python3 -I src/eessi_arch_guard.py
+command: eessi-arch-guard
 exit: 0
 --- stdout ---
 export EESSI_ARCH_GUARD_FAILED=x86_64/amd/zen4->archdetect-failed
@@ -117,7 +117,7 @@ python3 docs/examples/failure_cases.py lmod
 
 #+begin_example
 case: lmod
-command: python3 -I src/eessi_arch_guard.py
+command: eessi-arch-guard
 exit: 0
 --- stdout ---
 export EESSI_ARCH_GUARD_FAILED=x86_64/amd/zen4->lmod-unavailable
@@ -134,7 +134,7 @@ python3 docs/examples/failure_cases.py workspace
 
 #+begin_example
 case: workspace
-command: python3 -I src/eessi_arch_guard.py
+command: eessi-arch-guard
 exit: 0
 --- stdout ---
 export EESSI_ARCH_GUARD_FAILED=x86_64/amd/zen4->restore-failed
@@ -172,7 +172,7 @@ python3 docs/examples/failure_cases.py verbose
 
 #+begin_example
 case: verbose
-command: python3 -I src/eessi_arch_guard.py
+command: eessi-arch-guard
 exit: 0
 --- stdout ---
 (empty)
@@ -188,7 +188,7 @@ python3 docs/examples/failure_cases.py opt-out
 
 #+begin_example
 case: opt-out
-command: python3 -I src/eessi_arch_guard.py
+command: eessi-arch-guard
 exit: 0
 --- stdout ---
 (empty)
@@ -204,7 +204,7 @@ python3 docs/examples/failure_cases.py bad-timeout
 
 #+begin_example
 case: bad-timeout
-command: python3 -I src/eessi_arch_guard.py --timeout 0
+command: eessi-arch-guard --timeout 0
 exit: 0
 --- stdout ---
 (empty)

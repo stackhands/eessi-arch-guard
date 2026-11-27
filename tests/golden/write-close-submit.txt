@@ -1,0 +1,24 @@
+=== loaded.yml
+rc: 2
+--- stdout
+
+--- stderr
+eessi-arch-guard: check-submit: could not run eb-stack: [Errno 5] Input/output error
+
+--- end
+=== installed.txt
+rc: 2
+--- stdout
+
+--- stderr
+eessi-arch-guard: check-submit: could not run eb-stack: [Errno 5] Input/output error
+
+--- end
+=== unsupported.toml
+rc: 2
+--- stdout
+
+--- stderr
+eessi-arch-guard: check-submit: could not run eb-stack: [Errno 5] Input/output error
+
+--- end

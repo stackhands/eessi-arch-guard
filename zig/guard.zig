@@ -8,6 +8,7 @@ const linux = std.os.linux;
 const common = @import("zig_common");
 const main_mod = @import("main.zig");
 const text = @import("text.zig");
+const pydecode = @import("pydecode.zig");
 const envmap = @import("envmap.zig");
 const json = common.json;
 
@@ -35,10 +36,26 @@ pub const key_fields = [_][]const u8{
     "EESSI_INIT_PREFIX",     "EESSI_PROC_CPUINFO", "PATH",
 };
 
-const waitpkg_marches = [_][]const u8{
-    "alderlake",      "arrowlake",     "arrowlake_s",     "clearwaterforest", "diamondrapids",
-    "grandridge",     "graniterapids", "graniterapids_d", "novalake",         "pantherlake",
-    "sapphirerapids", "sierraforest",  "tremont",
+pub const waitpkg_marches = [_][]const u8{
+    "alderlake",
+    "arrowlake",
+    "arrowlake_s",
+    "clearwaterforest",
+    "diamondrapids",
+    "emeraldrapids",
+    "gracemont",
+    "grandridge",
+    "graniterapids",
+    "graniterapids_d",
+    "lunarlake",
+    "meteorlake",
+    "novalake",
+    "pantherlake",
+    "raptorlake",
+    "sapphirerapids",
+    "sierraforest",
+    "tremont",
+    "wildcatlake",
 };
 
 /// What a decision came to.
@@ -184,6 +201,8 @@ pub const Ctx = struct {
     /// The deadline while `limitedDecide` runs; null otherwise, as in the
     /// restore helper, which its parent's deadline covers.
     limit: ?*Limit = null,
+    /// The temporary directory `tempfile.gettempdir` settles on, chosen once.
+    temp_dir: fsx.TempDir = .{},
 };
 
 // ---- running programs ----------------------------------------------------
@@ -233,11 +252,15 @@ fn runCaptured(c: *Ctx, argv: []const []const u8, env: Map, input: ?[]const u8, 
         return error.CannotRun;
     };
     // The process library wants an absolute path where Python hands a
-    // relative one to exec. fsx.absPath leaves the path relative when the
-    // current directory cannot be read, and then exec finds no file.
+    // relative one to exec. When the current directory cannot be read,
+    // fsx.absPath fails and the path stays relative, and then exec finds no
+    // file.
     var absent = false;
     if (std.mem.findScalar(u8, argv[0], '/') != null) {
-        const exe = fsx.absPath(c.arena, argv[0]) catch main_mod.oom();
+        const exe = fsx.absPath(c.arena, argv[0]) catch |err| switch (err) {
+            error.OutOfMemory => main_mod.oom(),
+            else => argv[0],
+        };
         if (!std.fs.path.isAbsolute(exe)) {
             why.* = notFound(c, argv[0]);
             return error.CannotRun;
@@ -249,7 +272,10 @@ fn runCaptured(c: *Ctx, argv: []const []const u8, env: Map, input: ?[]const u8, 
     var entries = std.mem.splitScalar(u8, env.get("PATH") orelse default_path, ':');
     while (entries.next()) |dir| {
         const joined = std.fs.path.join(c.arena, &.{ dir, argv[0] }) catch main_mod.oom();
-        const exe = fsx.absPath(c.arena, joined) catch main_mod.oom();
+        const exe = fsx.absPath(c.arena, joined) catch |err| switch (err) {
+            error.OutOfMemory => main_mod.oom(),
+            else => joined,
+        };
         if (!std.fs.path.isAbsolute(exe)) continue;
         return runExe(c, exe, argv, envp, input, new_session, why, &absent) catch |err| switch (err) {
             error.CannotRun => {
@@ -349,45 +375,6 @@ fn isDir(path: []const u8) bool {
     return st.isDir();
 }
 
-/// The first line of text as str.splitlines() splits it.
-fn firstLine(s: []const u8) ?[]const u8 {
-    if (s.len == 0) return null;
-    var i: usize = 0;
-    while (i < s.len) {
-        const ch = text.nextChar(s[i..]);
-        if (ch.cp) |cp| switch (cp) {
-            '\n', '\r', 0x0b, 0x0c, 0x1c, 0x1d, 0x1e, 0x85, 0x2028, 0x2029 => return s[0..i],
-            else => {},
-        };
-        i += ch.len;
-    }
-    return s;
-}
-
-/// Lines as str.splitlines() returns them.
-fn splitLines(arena: Allocator, s: []const u8) Allocator.Error![]const []const u8 {
-    var out: std.ArrayList([]const u8) = .empty;
-    var start: usize = 0;
-    var i: usize = 0;
-    while (i < s.len) {
-        const ch = text.nextChar(s[i..]);
-        const brk = if (ch.cp) |cp| switch (cp) {
-            '\n', '\r', 0x0b, 0x0c, 0x1c, 0x1d, 0x1e, 0x85, 0x2028, 0x2029 => true,
-            else => false,
-        } else false;
-        if (brk) {
-            try out.append(arena, s[start..i]);
-            i += ch.len;
-            if (ch.cp.? == '\r' and i < s.len and s[i] == '\n') i += 1;
-            start = i;
-            continue;
-        }
-        i += ch.len;
-    }
-    if (start < s.len) try out.append(arena, s[start..]);
-    return out.items;
-}
-
 fn charCount(s: []const u8) usize {
     var n: usize = 0;
     var i: usize = 0;
@@ -399,7 +386,8 @@ fn charCount(s: []const u8) usize {
 fn parseCpuLine(arena: Allocator, stdout: []const u8) Allocator.Error!?[]const []const u8 {
     if (std.mem.findScalar(u8, stdout, 0) != null or charCount(stdout) > max_arch_stdout) return null;
     var nonempty: std.ArrayList([]const u8) = .empty;
-    for (try splitLines(arena, stdout)) |l| if (l.len > 0) try nonempty.append(arena, l);
+    var lines = text.splitLines(stdout);
+    while (lines.next()) |l| if (l.len > 0) try nonempty.append(arena, l);
     if (nonempty.items.len != 1) return null;
     const line = nonempty.items[0];
     for (line) |b| if (b < 32) return null;
@@ -410,10 +398,12 @@ fn parseCpuLine(arena: Allocator, stdout: []const u8) Allocator.Error!?[]const [
 }
 
 /// read_cpu_flags: the flags every `flags:` line of a cpuinfo file shares.
-fn readCpuFlags(arena: Allocator, path: []const u8) []const []const u8 {
+pub fn readCpuFlags(arena: Allocator, path: []const u8) []const []const u8 {
     if (path.len == 0) return &.{};
     const fd = sys.openat(fsx.cwd, path, .{ .NONBLOCK = true }, 0) catch return &.{};
     defer sys.close(fd);
+    const st = fsx.fstat(fd) catch return &.{};
+    if (!st.isReg()) return &.{};
     var data: std.ArrayList(u8) = .empty;
     var buf: [64 * 1024]u8 = undefined;
     while (data.items.len < cpuinfo_read_max) {
@@ -424,8 +414,7 @@ fn readCpuFlags(arena: Allocator, path: []const u8) []const []const u8 {
     var common_set: ?std.StringArrayHashMapUnmanaged(void) = null;
     var it = std.mem.splitScalar(u8, data.items, '\n');
     while (it.next()) |line| {
-        if (line.len < 5 or !std.ascii.eqlIgnoreCase(line[0..5], "flags")) continue;
-        var i: usize = 5;
+        var i: usize = foldedWord(line, "flags") orelse continue;
         while (i < line.len and (line[i] == ' ' or line[i] == '\t')) i += 1;
         if (i >= line.len or line[i] != ':') continue;
         i += 1;
@@ -442,7 +431,7 @@ fn readCpuFlags(arena: Allocator, path: []const u8) []const []const u8 {
     return if (common_set) |cs| cs.keys() else &.{};
 }
 
-fn candidateSupportsCpu(candidate: []const u8, flags: []const []const u8) bool {
+pub fn candidateSupportsCpu(candidate: []const u8, flags: []const []const u8) bool {
     const leaf = candidate[if (std.mem.findScalarLast(u8, candidate, '/')) |i| i + 1 else 0..];
     var buf: [128]u8 = undefined;
     if (leaf.len > buf.len) return true;
@@ -463,34 +452,34 @@ fn line1(c: *Ctx, s: []const u8, limit: usize) []const u8 {
 // sched_getaffinity and cpuset lists name processors in this range. A bind
 // mask with a bit past it is not a CPU set: applying the low bits alone
 // would hide a processor the mask named.
-const cpu_id_max: usize = 4096;
+pub const cpu_id_max: usize = 4096;
 
-const CpuSet = struct {
+pub const CpuSet = struct {
     words: [cpu_id_max / 64]u64 = std.mem.zeroes([cpu_id_max / 64]u64),
 
-    fn add(s: *CpuSet, cpu: usize) void {
+    pub fn add(s: *CpuSet, cpu: usize) void {
         if (cpu >= cpu_id_max) return;
         s.words[cpu / 64] |= @as(u64, 1) << @intCast(cpu % 64);
     }
 
-    fn has(s: CpuSet, cpu: usize) bool {
+    pub fn has(s: CpuSet, cpu: usize) bool {
         if (cpu >= cpu_id_max) return false;
         return s.words[cpu / 64] & (@as(u64, 1) << @intCast(cpu % 64)) != 0;
     }
 
-    fn bitAnd(a: CpuSet, b: CpuSet) CpuSet {
+    pub fn bitAnd(a: CpuSet, b: CpuSet) CpuSet {
         var out: CpuSet = .{};
         for (a.words, 0..) |word, i| out.words[i] = word & b.words[i];
         return out;
     }
 
-    fn count(s: CpuSet) usize {
+    pub fn count(s: CpuSet) usize {
         var n: usize = 0;
         for (s.words) |w| n += @popCount(w);
         return n;
     }
 
-    fn eql(a: CpuSet, b: CpuSet) bool {
+    pub fn eql(a: CpuSet, b: CpuSet) bool {
         return std.mem.eql(u64, &a.words, &b.words);
     }
 
@@ -516,28 +505,71 @@ fn parseUsize(s: []const u8) ?usize {
     return n;
 }
 
-/// Bits of one hex mask, without the `0x` prefix. False when `hex` is empty,
-/// holds a non-hex digit, or names a bit at or past `cpu_id_max`.
-fn addHexMask(set: *CpuSet, hex: []const u8) bool {
-    if (hex.len == 0) return false;
-    var bit: usize = 0;
-    var i: usize = hex.len;
-    while (i > 0) {
-        i -= 1;
-        const val: u8 = switch (hex[i]) {
-            '0'...'9' => hex[i] - '0',
-            'a'...'f' => hex[i] - 'a' + 10,
-            'A'...'F' => hex[i] - 'A' + 10,
-            else => return false,
-        };
-        var b: u3 = 0;
-        while (true) : (b += 1) {
-            if (val & (@as(u8, 1) << b) != 0) {
-                if (bit >= cpu_id_max) return false;
-                set.add(bit);
+/// The characters int() skips around its text: ASCII whitespace and the
+/// whitespace outside ASCII. It does not skip U+001C to U+001F, which
+/// str.strip() removes.
+fn intSpace(cp: u21) bool {
+    return switch (cp) {
+        ' ', '\t', '\n', 0x0b, 0x0c, '\r' => true,
+        0x1c...0x1f => false,
+        else => cp >= 0x80 and text.pyWhitespace(cp),
+    };
+}
+
+fn hexDigitValue(cp: u21) ?u4 {
+    return switch (cp) {
+        'a'...'f' => @intCast(cp - 'a' + 10),
+        'A'...'F' => @intCast(cp - 'A' + 10),
+        else => text.decimalDigit(cp),
+    };
+}
+
+/// Bits of one hex mask, the text after the `0x` prefix, read as int(text,
+/// 16) reads it: a decimal digit of any script is that digit, one underscore
+/// may follow the prefix and sit between digits, and whitespace may follow
+/// the digits. False when the text is not such a number, or names a bit at
+/// or past `cpu_id_max`.
+fn addHexMask(set: *CpuSet, tail: []const u8) bool {
+    var end: usize = 0;
+    var i: usize = 0;
+    while (i < tail.len) {
+        const ch = text.nextChar(tail[i..]);
+        const cp = ch.cp orelse return false;
+        i += ch.len;
+        if (!intSpace(cp)) end = i;
+    }
+    var body = tail[0..end];
+    if (body.len > 0 and body[0] == '_') body = body[1..];
+    var count: usize = 0;
+    var after_digit = false;
+    i = 0;
+    while (i < body.len) {
+        const ch = text.nextChar(body[i..]);
+        const cp = ch.cp orelse return false;
+        i += ch.len;
+        if (cp == '_') {
+            if (!after_digit) return false;
+            after_digit = false;
+            continue;
+        }
+        if (hexDigitValue(cp) == null) return false;
+        count += 1;
+        after_digit = true;
+    }
+    if (!after_digit) return false;
+    var seen: usize = 0;
+    i = 0;
+    while (i < body.len) {
+        const ch = text.nextChar(body[i..]);
+        i += ch.len;
+        const val = hexDigitValue(ch.cp orelse return false) orelse continue;
+        const first_bit = (count - 1 - seen) * 4;
+        seen += 1;
+        for (0..4) |b| {
+            if (val & (@as(u4, 1) << @intCast(b)) != 0) {
+                if (first_bit + b >= cpu_id_max) return false;
+                set.add(first_bit + b);
             }
-            bit += 1;
-            if (b == 3) break;
         }
     }
     return true;
@@ -546,36 +578,17 @@ fn addHexMask(set: *CpuSet, hex: []const u8) bool {
 /// parse_cpu_spec: a hex mask, a 0-3,8 list, or a cpu[0-3] hostlist.
 /// A comma-separated list of hex masks is their union, which is the string
 /// Slurm stores for --cpu-bind=mask_cpu.
-fn parseCpuSpec(spec: []const u8) ?CpuSet {
-    const raw = std.mem.trim(u8, spec, " \t\r\n");
+pub fn parseCpuSpec(spec: []const u8) ?CpuSet {
+    const raw = text.pyStrip(spec);
     if (raw.len == 0) return null;
     if (std.mem.startsWith(u8, raw, "0x") or std.mem.startsWith(u8, raw, "0X")) {
         var set: CpuSet = .{};
-        var i: usize = 0;
-        var saw = false;
-        var trailing_comma = false;
-        while (i < raw.len) {
-            if (raw[i] == ' ') {
-                i += 1;
-                continue;
-            }
-            trailing_comma = false;
-            if (i + 2 > raw.len or raw[i] != '0' or (raw[i + 1] != 'x' and raw[i + 1] != 'X')) return null;
-            i += 2;
-            const start = i;
-            while (i < raw.len and raw[i] != ',' and raw[i] != ' ') i += 1;
-            if (!addHexMask(&set, raw[start..i])) return null;
-            saw = true;
-            if (i < raw.len and raw[i] == ' ') {
-                while (i < raw.len and raw[i] == ' ') i += 1;
-            }
-            if (i < raw.len) {
-                if (raw[i] != ',') return null;
-                trailing_comma = true;
-                i += 1;
-            }
+        var parts = std.mem.splitScalar(u8, raw, ',');
+        while (parts.next()) |part| {
+            const piece = std.mem.trim(u8, part, " ");
+            if (!std.mem.startsWith(u8, piece, "0x") and !std.mem.startsWith(u8, piece, "0X")) return null;
+            if (!addHexMask(&set, piece[2..])) return null;
         }
-        if (!saw or trailing_comma) return null;
         return set;
     }
     var body = raw;
@@ -629,6 +642,8 @@ fn parseCpuSpec(spec: []const u8) ?CpuSet {
 fn readFile(arena: Allocator, path: []const u8, max: usize) ?[]u8 {
     const fd = sys.openat(fsx.cwd, path, .{ .NONBLOCK = true }, 0) catch return null;
     defer sys.close(fd);
+    const st = fsx.fstat(fd) catch return null;
+    if (!st.isReg()) return null;
     return fsx.readAll(arena, fd, max) catch null;
 }
 
@@ -745,8 +760,9 @@ fn controllersAllow(arena: Allocator, directory: []const u8) bool {
     const dir = if (std.mem.eql(u8, directory, "/")) "" else directory;
     const path = std.fmt.allocPrint(arena, "{s}/cgroup.controllers", .{dir}) catch return false;
     const raw = readFile(arena, path, 65536) orelse return true;
-    var it = std.mem.tokenizeAny(u8, raw, " \t\r\n");
-    while (it.next()) |tok| if (std.mem.eql(u8, tok, "cpuset")) return true;
+    const decoded = text.decodeReplace(arena, raw) catch return false;
+    const words = text.pySplit(arena, decoded) catch return false;
+    for (words) |word| if (std.mem.eql(u8, word, "cpuset")) return true;
     return false;
 }
 
@@ -859,7 +875,7 @@ fn walkCpuset(arena: Allocator, start: []const u8, root: []const u8) ?CpuSet {
         const eff_dir = if (std.mem.eql(u8, directory, "/")) "" else directory;
         const eff = std.fmt.allocPrint(arena, "{s}/cpuset.cpus.effective", .{eff_dir}) catch return null;
         if (readFile(arena, eff, 65536)) |raw| {
-            const trimmed = std.mem.trim(u8, raw, " \t\r\n");
+            const trimmed = text.pyStrip(raw);
             if (trimmed.len > 0 and controllersAllow(arena, directory)) {
                 if (parseCpuSpec(trimmed)) |set| return set;
             }
@@ -904,7 +920,7 @@ fn cgroupCpusMounted(
     return null;
 }
 
-fn cgroupCpusFrom(arena: Allocator, proc_cgroup_path: []const u8, cgroup_root: []const u8) ?CpuSet {
+pub fn cgroupCpusFrom(arena: Allocator, proc_cgroup_path: []const u8, cgroup_root: []const u8) ?CpuSet {
     const trimmed_root = std.mem.trimEnd(u8, cgroup_root, "/");
     const root = if (trimmed_root.len == 0) "/" else trimmed_root;
     const cgroup_text = readFile(arena, proc_cgroup_path, 1 << 20) orelse return null;
@@ -946,17 +962,17 @@ fn schedCpus() ?CpuSet {
     return set;
 }
 
-fn bindCpus(env: Map) ?CpuSet {
-    const listed = std.mem.trim(u8, env.get("SLURM_CPU_BIND_LIST") orelse "", " \t\r\n");
+pub fn bindCpus(env: Map) ?CpuSet {
+    const listed = text.pyStrip(env.get("SLURM_CPU_BIND_LIST") orelse "");
     if (listed.len > 0) return parseCpuSpec(listed);
-    const verbose = std.mem.trim(u8, env.get("SLURM_CPU_BIND") orelse "", " \t\r\n");
+    const verbose = text.pyStrip(env.get("SLURM_CPU_BIND") orelse "");
     const colon = std.mem.lastIndexOfScalar(u8, verbose, ':') orelse return null;
-    return parseCpuSpec(std.mem.trim(u8, verbose[colon + 1 ..], " \t\r\n"));
+    return parseCpuSpec(text.pyStrip(verbose[colon + 1 ..]));
 }
 
-const TaskCpuBounds = struct { allowed: ?CpuSet, base_cpus: ?CpuSet };
+pub const TaskCpuBounds = struct { allowed: ?CpuSet, base_cpus: ?CpuSet };
 
-fn taskCpuBounds(env: Map, affinity: ?CpuSet, cgroup: ?CpuSet) TaskCpuBounds {
+pub fn taskCpuBounds(env: Map, affinity: ?CpuSet, cgroup: ?CpuSet) TaskCpuBounds {
     const base_cpus: ?CpuSet = cgroup orelse affinity;
     const bind = bindCpus(env);
     var allowed = affinity orelse cgroup orelse bind orelse return .{ .allowed = null, .base_cpus = null };
@@ -971,53 +987,79 @@ fn taskCpuIds(arena: Allocator, env: Map) ?CpuSet {
     return taskCpuBounds(env, schedCpus(), cgroupCpus(arena)).allowed;
 }
 
+/// `"_".join(key.split()).lower()`.
 fn normKey(arena: Allocator, key: []const u8) []const u8 {
-    const buf = arena.alloc(u8, key.len) catch return key;
-    var n: usize = 0;
-    var pending = false;
-    for (key) |ch| {
-        if (ch == ' ' or ch == '\t') {
-            pending = n > 0;
-            continue;
-        }
-        if (pending) {
-            buf[n] = '_';
-            n += 1;
-            pending = false;
-        }
-        buf[n] = std.ascii.toLower(ch);
-        n += 1;
-    }
-    return buf[0..n];
+    const words = text.pySplit(arena, key) catch return key;
+    const joined = std.mem.join(arena, "_", words) catch return key;
+    return text.pyLower(arena, joined) catch key;
 }
 
 const ProcessorId = struct { id: ?usize };
 
+/// The bytes at the start of `line` that spell the lower case ASCII `word`,
+/// as a case-insensitive Python regular expression matches it: a letter
+/// matches its other case, and U+017F, the long s, matches an s. Null when
+/// the line does not start with the word.
+fn foldedWord(line: []const u8, word: []const u8) ?usize {
+    var at: usize = 0;
+    for (word) |want| {
+        if (at >= line.len) return null;
+        if (want == 's' and line.len - at >= 2 and line[at] == 0xc5 and line[at + 1] == 0xbf) {
+            at += 2;
+            continue;
+        }
+        if (std.ascii.toLower(line[at]) != want) return null;
+        at += 1;
+    }
+    return at;
+}
+
+/// The value of a run of decimal digits of any script, null when it does not
+/// fit in a usize.
+fn decimalRun(digits: []const u8) ??usize {
+    var value: usize = 0;
+    var overflow = false;
+    var i: usize = 0;
+    if (digits.len == 0) return null;
+    while (i < digits.len) {
+        const ch = text.nextChar(digits[i..]);
+        const digit = text.decimalDigit(ch.cp orelse return null) orelse return null;
+        i += ch.len;
+        if (overflow) continue;
+        const scaled = std.math.mul(usize, value, 10) catch {
+            overflow = true;
+            continue;
+        };
+        value = std.math.add(usize, scaled, digit) catch {
+            overflow = true;
+            continue;
+        };
+    }
+    return if (overflow) @as(?usize, null) else value;
+}
+
 fn processorId(line: []const u8) ?ProcessorId {
-    const t = std.mem.trim(u8, line, " \t\r");
-    const prefix = "processor";
-    if (t.len < prefix.len or !std.ascii.eqlIgnoreCase(t[0..prefix.len], prefix)) return null;
-    var i: usize = prefix.len;
+    const t = text.pyStrip(line);
+    var i: usize = foldedWord(t, "processor") orelse return null;
     while (i < t.len and (t[i] == ' ' or t[i] == '\t')) i += 1;
     if (i >= t.len or t[i] != ':') return null;
     i += 1;
     while (i < t.len and (t[i] == ' ' or t[i] == '\t')) i += 1;
-    if (i >= t.len) return null;
-    for (t[i..]) |c| if (c < '0' or c > '9') return null;
-    return .{ .id = parseUsize(t[i..]) };
+    const id = decimalRun(t[i..]) orelse return null;
+    return .{ .id = id };
 }
 
 const CpuField = struct { norm: []const u8, raw: []const u8, value: []const u8 };
 
 fn cpuField(arena: Allocator, line: []const u8) ?CpuField {
-    const trimmed = std.mem.trim(u8, line, " \t\r");
+    const trimmed = text.pyStrip(line);
     const colon = std.mem.indexOfScalar(u8, trimmed, ':') orelse return null;
-    const raw = std.mem.trim(u8, trimmed[0..colon], " \t");
+    const raw = text.pyStrip(trimmed[0..colon]);
     if (raw.len == 0) return null;
     return .{
         .norm = normKey(arena, raw),
         .raw = raw,
-        .value = std.mem.trim(u8, trimmed[colon + 1 ..], " \t"),
+        .value = text.pyStrip(trimmed[colon + 1 ..]),
     };
 }
 
@@ -1045,9 +1087,29 @@ fn sameFields(a: []const CpuField, b: []const CpuField) bool {
 
 fn tokenSet(arena: Allocator, value: []const u8) std.BufSet {
     var set = std.BufSet.init(arena);
-    var it = std.mem.tokenizeAny(u8, value, " \t");
-    while (it.next()) |tok| set.insert(tok) catch {};
+    const tokens = text.pySplit(arena, value) catch return set;
+    for (tokens) |tok| set.insert(tok) catch {};
     return set;
+}
+
+fn flagTokens(arena: Allocator, fields: []const CpuField, norm: []const u8) std.BufSet {
+    // fieldValue keeps the first line. A rewritten record has to intersect
+    // every flags, features, or isa line in the block, then across blocks.
+    var shared: ?std.BufSet = null;
+    var saw = false;
+    for (fields) |f| {
+        if (!std.mem.eql(u8, f.norm, norm)) continue;
+        saw = true;
+        var tokens = tokenSet(arena, f.value);
+        if (shared) |*got| {
+            var next = std.BufSet.init(arena);
+            var kit = got.iterator();
+            while (kit.next()) |tok| if (tokens.contains(tok.*)) next.insert(tok.*) catch {};
+            shared = next;
+        } else shared = tokens;
+    }
+    if (!saw) return std.BufSet.init(arena);
+    return shared orelse std.BufSet.init(arena);
 }
 
 const CpuBlock = struct { id: ?usize, fields: []const CpuField };
@@ -1078,17 +1140,19 @@ fn resolveLxcfsLogicalIds(arena: Allocator, blocks: []const CpuBlock, base_cpus:
 }
 
 /// scope_cpuinfo: null when the text is already the allowed processors.
-fn scopeCpuinfoWithBase(arena: Allocator, cpuinfo: []const u8, allowed: CpuSet, base_cpus: ?CpuSet) ?[]const u8 {
+pub fn scopeCpuinfoWithBase(arena: Allocator, cpuinfo: []const u8, allowed: CpuSet, base_cpus: ?CpuSet) ?[]const u8 {
     var blocks: std.ArrayList(CpuBlock) = .empty;
     var cur_id: ?ProcessorId = null;
     var cur: std.ArrayList(CpuField) = .empty;
-    const lines = splitLines(arena, cpuinfo) catch return null;
-    for (lines) |line| {
+    var lines = text.splitLines(cpuinfo);
+    while (lines.next()) |line| {
+        // The header line is read as a field too, as Python reads it: a
+        // header spelled with a long s keeps that letter in its field name,
+        // so the field is not dropped as the processor one.
         if (processorId(line)) |pid| {
             if (cur_id) |prev| blocks.append(arena, .{ .id = prev.id, .fields = cur.toOwnedSlice(arena) catch return null }) catch return null;
             cur = .empty;
             cur_id = pid;
-            continue;
         }
         if (cur_id == null) continue;
         if (cpuField(arena, line)) |f| {
@@ -1120,8 +1184,7 @@ fn scopeCpuinfoWithBase(arena: Allocator, cpuinfo: []const u8, allowed: CpuSet, 
         if (isFlagKey(f.norm)) {
             var shared: ?std.BufSet = null;
             for (kept.items) |b| {
-                const value = fieldValue(b.fields, f.norm) orelse "";
-                var tokens = tokenSet(arena, value);
+                var tokens = flagTokens(arena, b.fields, f.norm);
                 if (shared) |*got| {
                     var next = std.BufSet.init(arena);
                     var kit = got.iterator();
@@ -1162,7 +1225,7 @@ fn scopeCpuinfoWithBase(arena: Allocator, cpuinfo: []const u8, allowed: CpuSet, 
     return out.toOwnedSlice(arena) catch null;
 }
 
-fn scopeCpuinfo(arena: Allocator, cpuinfo: []const u8, allowed: CpuSet) ?[]const u8 {
+pub fn scopeCpuinfo(arena: Allocator, cpuinfo: []const u8, allowed: CpuSet) ?[]const u8 {
     return scopeCpuinfoWithBase(arena, cpuinfo, allowed, null);
 }
 
@@ -1172,32 +1235,71 @@ fn unlinkPath(path: []const u8) void {
     _ = linux.unlinkat(linux.AT.FDCWD, z.ptr, 0);
 }
 
-fn tempCpuFile(c: *Ctx, env: Map, data: []const u8) ?[]const u8 {
-    const base = pyTempDir(c, env);
-    const alphabet = "abcdefghijklmnopqrstuvwxyz0123456789_";
-    var tries: usize = 0;
-    while (tries < 100) : (tries += 1) {
-        var rnd: [8]u8 = undefined;
-        _ = sys.call(linux.getrandom, .{ &rnd, rnd.len, 0 }) catch return null;
-        var suffix: [8]u8 = undefined;
-        for (rnd, 0..) |b, i| suffix[i] = alphabet[b % alphabet.len];
-        const name = c.arena.print("eessi-arch-guard-cpu-{s}", .{suffix}) catch return null;
-        const p = std.fs.path.join(c.arena, &.{ base, name }) catch return null;
-        if (writePrivateNew(p, data, 0o600)) return p;
+/// Why `tempCpuFile` gave up: the Python exception class and its text.
+const TempFailure = struct { class: []const u8 = "OSError", text: []const u8 = "" };
+
+/// tempfile.mkstemp(prefix="eessi-arch-guard-cpu-") followed by one
+/// os.write; a short write is not an error there, nor here.
+fn tempCpuFile(c: *Ctx, env: Map, data: []const u8, failure: *TempFailure) error{TempFile}![]const u8 {
+    const base = c.temp_dir.get(c.arena, env) catch |err| switch (err) {
+        error.OutOfMemory => main_mod.oom(),
+        error.NoTempDir => {
+            failure.* = .{ .class = "FileNotFoundError", .text = c.temp_dir.message };
+            return error.TempFile;
+        },
+    };
+    var refused: ?[]u8 = null;
+    const made = fsx.mkstemp(c.arena, base, "eessi-arch-guard-cpu-", &refused) catch |err| switch (err) {
+        error.OutOfMemory => main_mod.oom(),
+        else => |e| {
+            const errno = sys.last_errno;
+            if (refused) |path| {
+                failure.* = .{ .class = osErrorClass(errno), .text = common.pytext.osError(c.arena, e, path) catch main_mod.oom() };
+            } else if (e == error.Exists) {
+                failure.* = .{ .class = "FileExistsError", .text = "[Errno 17] No usable temporary file name found" };
+            } else {
+                failure.* = .{ .class = osErrorClass(errno), .text = sys.describe(e) };
+            }
+            return error.TempFile;
+        },
+    };
+    const wrote = sys.call(linux.write, .{ made.fd, data.ptr, data.len });
+    const write_errno = sys.last_errno;
+    // os.close runs in a finally block, so its error replaces that of
+    // os.write.
+    if (closeFd(made.fd)) |e| {
+        failure.* = .{ .class = osErrorClass(e), .text = sys.describeErrno(e) };
+        unlinkPath(made.path);
+        return error.TempFile;
     }
-    return null;
+    _ = wrote catch |err| {
+        failure.* = .{ .class = osErrorClass(write_errno), .text = sys.describe(err) };
+        unlinkPath(made.path);
+        return error.TempFile;
+    };
+    return made.path;
+}
+
+/// os.close: the errno of a failed close(2), or null. EINTR is an error,
+/// as os.close raises InterruptedError for it: PEP 475 leaves close out of
+/// its retries, because the descriptor is gone on Linux and a second close
+/// could hit a descriptor opened since. So the close is not retried here
+/// either.
+pub fn closeFd(fd: linux.fd_t) ?linux.E {
+    const e = linux.errno(linux.close(fd));
+    return if (e == .SUCCESS) null else e;
 }
 
 const PreparedCpu = struct { path: []const u8, cleanup: ?[]const u8 = null, child: Map };
 
-fn prepareCpuinfoWithTemp(c: *Ctx, env: Map, temp_env: Map) PreparedCpu {
+fn prepareCpuinfoWithTemp(c: *Ctx, env: Map, temp_env: Map, failure: *TempFailure) error{TempFile}!PreparedCpu {
     const explicit = env.get("EESSI_PROC_CPUINFO") orelse "";
     const path: []const u8 = if (explicit.len > 0) explicit else "/proc/cpuinfo";
     const bounds = taskCpuBounds(env, schedCpus(), cgroupCpus(c.arena));
     const allowed = bounds.allowed orelse return .{ .path = path, .child = env };
     const blob = readFile(c.arena, path, cpuinfo_read_max) orelse return .{ .path = path, .child = env };
     const scoped = scopeCpuinfoWithBase(c.arena, blob, allowed, bounds.base_cpus) orelse return .{ .path = path, .child = env };
-    const tmp = tempCpuFile(c, temp_env, scoped) orelse return .{ .path = path, .child = env };
+    const tmp = try tempCpuFile(c, temp_env, scoped, failure);
     var child = envmap.clone(c.arena, env) catch {
         unlinkPath(tmp);
         return .{ .path = path, .child = env };
@@ -1209,8 +1311,8 @@ fn prepareCpuinfoWithTemp(c: *Ctx, env: Map, temp_env: Map) PreparedCpu {
     return .{ .path = tmp, .cleanup = tmp, .child = child };
 }
 
-fn prepareCpuinfo(c: *Ctx, env: Map) PreparedCpu {
-    return prepareCpuinfoWithTemp(c, env, env);
+fn prepareCpuinfo(c: *Ctx, env: Map, failure: *TempFailure) error{TempFile}!PreparedCpu {
+    return prepareCpuinfoWithTemp(c, env, env, failure);
 }
 
 /// probe_cpu: this node's CPU target. Runs `eessi_archdetect.sh -a cpupath`
@@ -1226,7 +1328,11 @@ pub fn probeCpu(c: *Ctx, env: Map) Stop!CpuProbe {
         return .{ .status = .@"error", .err = "EESSI_PREFIX, EESSI_OS_TYPE, or EESSI_INIT_PREFIX is missing or unsafe" };
     const script = std.fs.path.join(c.arena, &.{ init, "eessi_archdetect.sh" }) catch return .{ .status = .@"error", .err = "out of memory" };
     if (!isFile(script)) return .{ .status = .@"error", .err = "eessi_archdetect.sh is not available" };
-    const prepared = prepareCpuinfo(c, env);
+    var temp_failure: TempFailure = .{};
+    const prepared = prepareCpuinfo(c, env, &temp_failure) catch {
+        os_failure = .{ .class = temp_failure.class, .text = temp_failure.text };
+        return error.Os;
+    };
     defer if (prepared.cleanup) |p| unlinkPath(p);
     var why: []const u8 = "";
     const r = runBash(c, &.{ script, "-a", "cpupath" }, prepared.child, &why) catch |err| switch (err) {
@@ -1234,7 +1340,8 @@ pub fn probeCpu(c: *Ctx, env: Map) Stop!CpuProbe {
         else => return .{ .status = .@"error", .err = c.arena.print("could not run archdetect: {s}", .{why}) catch "could not run archdetect" },
     };
     if (r.code != 0) {
-        const detail = firstLine(decodeReplace(c, r.stderr)) orelse (c.arena.print("exit {d}", .{exitShown(r.code)}) catch "exit");
+        var stderr_lines = text.splitLines(decodeReplace(c, r.stderr));
+        const detail = stderr_lines.next() orelse (c.arena.print("exit {d}", .{exitShown(r.code)}) catch "exit");
         return .{ .status = .@"error", .err = line1(c, detail, 200) };
     }
     const parsed = (parseCpuLine(c.arena, decodeReplace(c, r.stdout)) catch null) orelse
@@ -1337,38 +1444,27 @@ pub fn restoreWorkBase(c: *Ctx, env: Map, why: *[]const u8) WorkError![]const u8
         return error.Unavailable;
     }
     if (text.safeAbsolute(temporary) and isDir(temporary)) return temporary;
-    return pyTempDir(c, env);
-}
-
-/// tempfile.gettempdir(): TMPDIR, TEMP, TMP, then /tmp, /var/tmp, /usr/tmp,
-/// then the current directory; the first that is a writable directory.
-fn pyTempDir(c: *Ctx, env: Map) []const u8 {
-    for ([_][]const u8{ "TMPDIR", "TEMP", "TMP" }) |k| {
-        const v = env.get(k) orelse continue;
-        if (v.len > 0 and writableDir(v)) return absolutize(c, v);
-    }
-    for ([_][]const u8{ "/tmp", "/var/tmp", "/usr/tmp" }) |d| if (writableDir(d)) return d;
-    return absolutize(c, ".");
-}
-
-fn absolutize(c: *Ctx, p: []const u8) []const u8 {
-    if (p.len > 0 and p[0] == '/') return p;
-    var rb: [sys.path_max]u8 = undefined;
-    const cwd = fsx.realpath(fsx.cwd, ".", &rb) catch return p;
-    return std.fs.path.join(c.arena, &.{ cwd, p }) catch p;
-}
-
-fn writableDir(p: []const u8) bool {
-    if (!isDir(p)) return false;
-    var zb: [sys.path_max:0]u8 = undefined;
-    const z = sys.z(&zb, p) catch return false;
-    return linux.errno(linux.faccessat(linux.AT.FDCWD, z.ptr, linux.W_OK | linux.X_OK, 0)) == .SUCCESS;
+    return c.temp_dir.get(c.arena, env) catch |err| switch (err) {
+        error.OutOfMemory => main_mod.oom(),
+        error.NoTempDir => {
+            why.* = c.temp_dir.message;
+            return error.Unavailable;
+        },
+    };
 }
 
 /// tempfile.mkdtemp(prefix="eessi-arch-guard-", dir=base): a new 0700
-/// directory with a random suffix.
-fn mkdtemp(c: *Ctx, base: []const u8) ?[]const u8 {
-    return fsx.mkdtemp(c.arena, base, "eessi-arch-guard-") catch null;
+/// directory with a random suffix. When it cannot be made, `why` is the
+/// OSError text Python gives, with the path that was tried.
+fn mkdtemp(c: *Ctx, base: []const u8, why: *[]const u8) ?[]const u8 {
+    var report: common.atomic.Why = .{};
+    return fsx.mkdtempReport(c.arena, base, "eessi-arch-guard-", &report) catch |err| {
+        why.* = switch (err) {
+            error.OutOfMemory => main_mod.oom(),
+            else => |e| if (report.msg.len > 0) report.msg else sys.describe(e),
+        };
+        return null;
+    };
 }
 
 fn rmtree(c: *Ctx, p: []const u8) void {
@@ -1416,7 +1512,8 @@ fn callRestore(c: *Ctx, env: Map, eessi: []const u8, modules: []const []const u8
     var why: []const u8 = "";
     const base = restoreWorkBase(c, env, &why) catch
         return notRun(a.print("restore workspace unavailable: {s}", .{why}) catch "restore workspace unavailable");
-    const work = mkdtemp(c, base) orelse return notRun("restore workspace unavailable: could not create a directory");
+    const work = mkdtemp(c, base, &why) orelse
+        return notRun(a.print("restore workspace unavailable: {s}", .{why}) catch "restore workspace unavailable");
     defer rmtree(c, work);
     var clean: Map = .empty;
     clean.put(a, "PATH", "/usr/bin:/bin") catch main_mod.oom();
@@ -1485,11 +1582,57 @@ const apply_sh = "source \"$1\" >/dev/null || exit 4\nexec env -0\n";
 
 const Applied = struct { env: ?Map, err: []const u8 };
 
+/// Which call of `writePrivate` failed.
+const PrivateStep = enum { open, write, close, chmod };
+
+/// `_write_private` and the chmod after it: a new private file at `path`,
+/// made with `mode`. On a failure `step` says which call it was. The data
+/// goes out in one write(2), as Python's os.write does it: a short write is
+/// not an error and leaves a short file. A failed close is an error, as
+/// os.close raises it, and it replaces that of the write, as the `finally`
+/// block does. Python chmods the file by name after the close, so a failed
+/// close comes before a failed chmod too. A failed close, EINTR included,
+/// leaves its errno in `sys.last_errno` for `privateFailure`.
+fn writePrivate(path: []const u8, data: []const u8, mode: u32, step: *PrivateStep) sys.Error!void {
+    step.* = .open;
+    const fd = try sys.openat(fsx.cwd, path, .{ .ACCMODE = .WRONLY, .CREAT = true, .EXCL = true, .NOFOLLOW = true }, 0o600);
+    const wrote = sys.call(linux.write, .{ fd, data.ptr, data.len });
+    const write_errno = sys.last_errno;
+    var chmodded: sys.Error!void = {};
+    if (wrote) |_| {
+        if (mode != 0o600) chmodded = sys.fchmod(fd, mode);
+    } else |_| {}
+    const chmod_errno = sys.last_errno;
+    if (closeFd(fd)) |e| {
+        step.* = .close;
+        sys.last_errno = e;
+        return error.Unexpected;
+    }
+    step.* = .write;
+    sys.last_errno = write_errno;
+    _ = try wrote;
+    step.* = .chmod;
+    sys.last_errno = chmod_errno;
+    try chmodded;
+}
+
+/// The OSError text Python gives for the failed `step` of a private write.
+/// The open and the chmod name the file, and the write and the close do
+/// not, because Python's os.write and os.close raise without one. Call it
+/// straight after the failure, while `sys.last_errno` is still that of the
+/// call. A failed close is described from that errno alone, because
+/// `sys.describe` has no text for EINTR.
+fn privateFailure(c: *Ctx, err: sys.Error, path: []const u8, step: PrivateStep) []const u8 {
+    return switch (step) {
+        .close => sys.describeErrno(sys.last_errno),
+        .write => sys.describe(err),
+        .open, .chmod => pytext.osError(c.arena, err, path) catch main_mod.oom(),
+    };
+}
+
 fn writePrivateNew(path: []const u8, data: []const u8, mode: u32) bool {
-    const fd = sys.openat(fsx.cwd, path, .{ .ACCMODE = .WRONLY, .CREAT = true, .EXCL = true, .NOFOLLOW = true }, 0o600) catch return false;
-    defer sys.close(fd);
-    sys.writeAll(fd, data) catch return false;
-    if (mode != 0o600) sys.fchmod(fd, mode) catch return false;
+    var step: PrivateStep = .open;
+    writePrivate(path, data, mode, &step) catch return false;
     return true;
 }
 
@@ -1511,17 +1654,22 @@ fn sourceExports(c: *Ctx, module_env: Map, script: []const u8, raised: *[]const 
         raised.* = why;
         return error.Raise;
     };
-    const tmp = mkdtemp(c, base) orelse {
-        raised.* = "could not create a temporary directory";
+    const tmp = mkdtemp(c, base, &why) orelse {
+        raised.* = why;
         return error.Raise;
     };
     defer rmtree(c, tmp);
     const fragment = std.fs.path.join(c.arena, &.{ tmp, "fragment.sh" }) catch return error.Raise;
     const apply = std.fs.path.join(c.arena, &.{ tmp, "apply.sh" }) catch return error.Raise;
-    if (!writePrivateNew(fragment, script, 0o600) or !writePrivateNew(apply, apply_sh, 0o700)) {
-        raised.* = "could not write the restore scripts";
+    var step: PrivateStep = .open;
+    writePrivate(fragment, script, 0o600, &step) catch |err| {
+        raised.* = privateFailure(c, err, fragment, step);
         return error.Raise;
-    }
+    };
+    writePrivate(apply, apply_sh, 0o700, &step) catch |err| {
+        raised.* = privateFailure(c, err, apply, step);
+        return error.Raise;
+    };
     const stripped = envmap.stripStartup(c.arena, module_env) catch return error.Raise;
     const r = runCaptured(c, &.{ "bash", "--noprofile", "--norc", "--", apply, fragment }, stripped, null, false, &why) catch {
         raised.* = why;
@@ -1637,7 +1785,11 @@ fn doRestore(c: *Ctx, payload: json.Value, raised: *[]const u8) HelperError!Repl
     const p = try applyLmod(c, module_env, lmod, &.{ "--force", "purge" }, raised);
     var current = p.env orelse return .{ .ok = false, .err = line1(c, if (p.err.len > 0) p.err else "purge failed", 300) };
     const orig_cpuinfo = current.get("EESSI_PROC_CPUINFO");
-    const prepared = prepareCpuinfoWithTemp(c, pinnedEnv(c, current, pin), c.env);
+    var temp_failure: TempFailure = .{};
+    const prepared = prepareCpuinfoWithTemp(c, pinnedEnv(c, current, pin), c.env, &temp_failure) catch {
+        raised.* = temp_failure.text;
+        return error.Raise;
+    };
     const e = applyLmod(c, prepared.child, lmod, &.{ "load", eessi }, raised) catch |err| {
         if (prepared.cleanup) |cp| unlinkPath(cp);
         return err;
@@ -1676,19 +1828,14 @@ pub fn restoreMain(c: *Ctx) u8 {
         writeErr("eessi-arch-guard: restore failed: could not read the request\n");
         return 1;
     };
-    // json.loads(bytes.decode("utf-8")): the request must be UTF-8 text.
-    if (!std.unicode.utf8ValidateSlice(input)) {
-        writeErr("eessi-arch-guard: restore failed: the request is not UTF-8\n");
-        return 1;
-    }
-    const payload = json.parse(a, input) catch {
-        writeErr("eessi-arch-guard: restore failed: the request is not JSON\n");
-        return 1;
+    const loaded = pydecode.load(a, input) catch main_mod.oom();
+    const payload = switch (loaded) {
+        .failure => |msg| {
+            writeErr(msg);
+            return 1;
+        },
+        .object => |value| value,
     };
-    if (payload != .object) {
-        writeErr("eessi-arch-guard: restore failed: the request is not a JSON object\n");
-        return 1;
-    }
     var raised: []const u8 = "";
     const reply = doRestore(c, payload, &raised) catch {
         const msg = a.print("eessi-arch-guard: restore failed: {s}\n", .{line1(c, raised, 300)}) catch "eessi-arch-guard: restore failed\n";
@@ -1945,7 +2092,7 @@ fn gpuScopeKey(arena: Allocator, env: Map) []const u8 {
     return out.toOwnedSlice(arena) catch "";
 }
 
-fn cacheDigest(c: *Ctx, env: Map) []const u8 {
+pub fn cacheDigest(c: *Ctx, env: Map) []const u8 {
     var h = std.crypto.hash.sha2.Sha256.init(.{});
     for (key_fields, 0..) |k, i| {
         if (i > 0) h.update("\x00");
@@ -1969,7 +2116,7 @@ fn safeComponent(c: *Ctx, s: []const u8) []const u8 {
     return c.arena.dupe(u8, hex[0..16]) catch "0000000000000000";
 }
 
-fn cacheDirectory(c: *Ctx, env: Map) ?[]const u8 {
+pub fn cacheDirectory(c: *Ctx, env: Map) ?[]const u8 {
     if (c.strict) {
         var why: []const u8 = "";
         return restoreWorkBase(c, env, &why) catch null;
@@ -2112,7 +2259,7 @@ fn lockExclusive(c: *Ctx, fd: sys.fd_t) Stop!void {
             break :blk @intCast(rem);
         };
         const cancel: ?*const std.atomic.Value(bool) = if (committing) null else &l.terminated;
-        state.lockExclusiveCancel(fd, timeout_ms, cancel) catch |err| switch (err) {
+        state.lockExclusiveCancel(fd, if (timeout_ms) |ms| ms else null, cancel) catch |err| switch (err) {
             error.Canceled => return error.Terminated,
             error.TimedOut => {
                 try l.check();
@@ -2182,67 +2329,101 @@ test "lockExclusive honors deadline, cancel, EINTR and committing" {
     try std.testing.expectError(error.Terminated, lockExclusive(&c, waiter));
     try std.testing.expectEqual(linux.E.SUCCESS, linux.errno(linux.flock(held, std.posix.LOCK.EX | std.posix.LOCK.NB)));
 
-    // Under contention, SIGUSR1 interruptions do not abort early before the deadline.
+    // SIGUSR1 while the deadline is still long must not finish the wait.
+    // The waiter publishes its tid. After one delivered signal the result
+    // pipe is still empty. `terminated` then ends that same wait.
     lock_test_usr1_hits.store(0, .seq_cst);
     const handler: linux.Sigaction = .{ .handler = .{ .handler = &onLockTestUsr1 }, .mask = linux.sigemptyset(), .flags = 0 };
     var prev: linux.Sigaction = undefined;
     _ = linux.sigaction(.USR1, &handler, &prev);
     defer _ = linux.sigaction(.USR1, &prev, null);
 
-    const pid = linux.getpid();
-    const tid = linux.gettid();
-    const Signaler = struct {
-        fn send(target_pid: i32, target_tid: i32) void {
-            var ts: linux.timespec = .{ .sec = 0, .nsec = 15 * std.time.ns_per_ms };
-            _ = linux.nanosleep(&ts, null);
-            _ = linux.tgkill(target_pid, target_tid, .USR1);
-            _ = linux.nanosleep(&ts, null);
-            _ = linux.tgkill(target_pid, target_tid, .USR1);
+    var ready_pipe: [2]linux.fd_t = undefined;
+    try std.testing.expectEqual(linux.E.SUCCESS, linux.errno(linux.pipe2(&ready_pipe, .{ .CLOEXEC = true })));
+    var done_pipe: [2]linux.fd_t = undefined;
+    try std.testing.expectEqual(linux.E.SUCCESS, linux.errno(linux.pipe2(&done_pipe, .{ .CLOEXEC = true, .NONBLOCK = true })));
+
+    const Wait = struct {
+        ok: bool = false,
+        tid: i32 = 0,
+        err: ?anyerror = null,
+
+        fn go(self: *@This(), ctx: *Ctx, fd: sys.fd_t, ready_w: linux.fd_t, done_w: linux.fd_t) void {
+            self.tid = linux.gettid();
+            var one = [_]u8{1};
+            _ = linux.write(ready_w, &one, 1);
+            _ = linux.close(ready_w);
+            if (lockExclusive(ctx, fd)) |_| {
+                self.ok = true;
+            } else |err| {
+                self.err = err;
+            }
+            _ = linux.write(done_w, &one, 1);
+            _ = linux.close(done_w);
         }
     };
-    const sig_thread = try std.Thread.spawn(.{}, Signaler.send, .{ pid, tid });
-    var deadline_lim: Limit = .{ .deadline_ms = nowMs() + 90 };
-    c.limit = &deadline_lim;
-    const wait_start = nowMs();
-    try std.testing.expectError(error.Deadline, lockExclusive(&c, waiter));
-    sig_thread.join();
-    try std.testing.expect(nowMs() - wait_start >= 60);
+
+    var job: Wait = .{};
+    var eintr_lim: Limit = .{ .deadline_ms = nowMs() + 60_000 };
+    c.limit = &eintr_lim;
+    const wait_thread = try std.Thread.spawn(.{}, Wait.go, .{ &job, &c, waiter, ready_pipe[1], done_pipe[1] });
+    var got: [1]u8 = undefined;
+    _ = linux.read(ready_pipe[0], &got, 1);
+    const pid = linux.getpid();
+    var spins: u32 = 0;
+    var signaled = false;
+    while (lock_test_usr1_hits.load(.seq_cst) < 1) {
+        if (spins == 1_000_000) break;
+        _ = linux.tgkill(pid, job.tid, .USR1);
+        spins += 1;
+    } else signaled = true;
+    const early = linux.read(done_pipe[0], &got, 1);
+    const still_waiting = linux.errno(early) == .AGAIN;
+    eintr_lim.terminated.store(true, .seq_cst);
+    _ = linux.tgkill(pid, job.tid, .USR1);
+    wait_thread.join();
+    _ = linux.close(ready_pipe[0]);
+    _ = linux.close(done_pipe[0]);
+    try std.testing.expect(signaled);
+    try std.testing.expect(still_waiting);
+    try std.testing.expect(!job.ok);
+    try std.testing.expect(job.err.? == error.Terminated);
     try std.testing.expect(lock_test_usr1_hits.load(.seq_cst) >= 1);
 
-    // Setting terminated while waiting stops with error.Terminated before the deadline.
-    var cancel_lim: Limit = .{ .deadline_ms = nowMs() + 60_000 };
-    c.limit = &cancel_lim;
-    const Canceler = struct {
-        fn run(lim: *Limit, target_pid: i32, target_tid: i32) void {
-            var ts: linux.timespec = .{ .sec = 0, .nsec = 25 * std.time.ns_per_ms };
-            _ = linux.nanosleep(&ts, null);
-            lim.terminated.store(true, .seq_cst);
-            _ = linux.tgkill(target_pid, target_tid, .USR1);
+    // Committing ignores an expired deadline and a set `terminated` flag.
+    // The unlocker blocks until this test closes the release pipe.
+    var release_pipe: [2]linux.fd_t = undefined;
+    try std.testing.expectEqual(linux.E.SUCCESS, linux.errno(linux.pipe2(&release_pipe, .{ .CLOEXEC = true })));
+    const Unlocker = struct {
+        fn run(h: sys.fd_t, read_fd: linux.fd_t) void {
+            var buf: [1]u8 = undefined;
+            _ = linux.read(read_fd, &buf, 1);
+            _ = linux.close(read_fd);
+            _ = linux.flock(h, std.posix.LOCK.UN);
         }
     };
-    const cancel_thread = try std.Thread.spawn(.{}, Canceler.run, .{ &cancel_lim, pid, tid });
-    const cancel_start = nowMs();
-    try std.testing.expectError(error.Terminated, lockExclusive(&c, waiter));
-    cancel_thread.join();
-    try std.testing.expect(nowMs() - cancel_start < 1000);
-
-    // While committing, neither an expired deadline nor terminated stops lock acquisition.
+    const unlock_thread = try std.Thread.spawn(.{}, Unlocker.run, .{ held, release_pipe[0] });
+    var commit_ready: [2]linux.fd_t = undefined;
+    try std.testing.expectEqual(linux.E.SUCCESS, linux.errno(linux.pipe2(&commit_ready, .{ .CLOEXEC = true })));
+    var commit_done: [2]linux.fd_t = undefined;
+    try std.testing.expectEqual(linux.E.SUCCESS, linux.errno(linux.pipe2(&commit_done, .{ .CLOEXEC = true })));
     var commit_lim: Limit = .{
         .deadline_ms = nowMs() - 1,
         .terminated = .init(true),
         .committing = .init(true),
     };
     c.limit = &commit_lim;
-    const Unlocker = struct {
-        fn run(h: sys.fd_t) void {
-            var ts: linux.timespec = .{ .sec = 0, .nsec = 25 * std.time.ns_per_ms };
-            _ = linux.nanosleep(&ts, null);
-            _ = linux.flock(h, std.posix.LOCK.UN);
-        }
-    };
-    const unlock_thread = try std.Thread.spawn(.{}, Unlocker.run, .{held});
-    try lockExclusive(&c, waiter);
+    var commit_job: Wait = .{};
+    const commit_thread = try std.Thread.spawn(.{}, Wait.go, .{
+        &commit_job, &c, waiter, commit_ready[1], commit_done[1],
+    });
+    _ = linux.read(commit_ready[0], &got, 1);
+    _ = linux.close(release_pipe[1]);
+    commit_thread.join();
     unlock_thread.join();
+    _ = linux.close(commit_ready[0]);
+    _ = linux.close(commit_done[0]);
+    try std.testing.expect(commit_job.ok);
     _ = linux.flock(waiter, std.posix.LOCK.UN);
 }
 
@@ -2296,9 +2477,14 @@ pub fn cachedDecide(c: *Ctx, env: Map, shell: bool) Stop!Outcome {
     // A lock file someone else made is neither locked on nor changed:
     // decide without the cache.
     const lockfd = (state.openPrivate(dirfd, lock_name, true) catch return decide(c, env, shell)) orelse return decide(c, env, shell);
-    defer sys.close(lockfd);
+    return releaseCacheLock(lockfd, lockedDecide(c, env, shell, dirfd, p.name, lockfd));
+}
+
+/// cachedDecide under the cache lock on `lockfd`: the outcome in the cache,
+/// or a new decision, written there.
+fn lockedDecide(c: *Ctx, env: Map, shell: bool, dirfd: sys.fd_t, name: []const u8, lockfd: sys.fd_t) Stop!Outcome {
     try lockExclusive(c, lockfd);
-    if (readCache(c, dirfd, p.name, shell)) |o| {
+    if (readCache(c, dirfd, name, shell)) |o| {
         last_cached = true;
         return o;
     }
@@ -2306,8 +2492,26 @@ pub fn cachedDecide(c: *Ctx, env: Map, shell: bool) Stop!Outcome {
     const outcome = try decide(c, env, shell);
     if (c.limit) |l| l.committing.store(true, .seq_cst);
     defer if (c.limit) |l| l.committing.store(false, .seq_cst);
-    writeCache(c, dirfd, p.name, outcome);
+    writeCache(c, dirfd, name, outcome);
     return outcome;
+}
+
+/// Close the cache lock once `outcome` is known. After an outcome, a failed
+/// close is the OSError that Python's `finally: os.close(lockfd)` lets out,
+/// which main reports as a skip. After a timeout, SIGTERM or another
+/// OSError the failed close is dropped, so that the first stop is the one
+/// reported. An interrupted close fails too: os.close does not retry it,
+/// as PEP 475 exempts close, and raises InterruptedError.
+fn releaseCacheLock(lockfd: sys.fd_t, outcome: Stop!Outcome) Stop!Outcome {
+    const o = outcome catch |err| {
+        _ = closeFd(lockfd);
+        return err;
+    };
+    if (closeFd(lockfd)) |e| {
+        os_failure = .{ .class = osErrorClass(e), .text = sys.describeErrno(e) };
+        return error.Os;
+    }
+    return o;
 }
 
 /// Read-only decision summary produced by `--dry-run`.
@@ -2520,7 +2724,7 @@ test "dryRunDecide handles skip and missing EESSI without writing" {
     try std.testing.expectEqualStrings("EESSI_ARCH_GUARD=0", d2.detail.?);
 }
 
-test "mkdtemp delegates to fsx.mkdtemp with the guard prefix" {
+test "mkdtemp delegates to fsx.mkdtempReport with the guard prefix" {
     var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena_state.deinit();
     const a = arena_state.allocator();
@@ -2532,7 +2736,8 @@ test "mkdtemp delegates to fsx.mkdtemp with the guard prefix" {
     defer fsx.deleteTree(a, fsx.cwd, base) catch {};
 
     var c: Ctx = .{ .arena = a, .env = .empty, .strict = false, .self_exe = "" };
-    const created = mkdtemp(&c, base).?;
+    var why: []const u8 = "";
+    const created = mkdtemp(&c, base, &why).?;
     const expected_prefix = try std.fmt.allocPrint(a, "{s}/eessi-arch-guard-", .{base});
     try std.testing.expect(std.mem.startsWith(u8, created, expected_prefix));
     try std.testing.expectEqual(expected_prefix.len + 8, created.len);
@@ -2541,7 +2746,127 @@ test "mkdtemp delegates to fsx.mkdtemp with the guard prefix" {
     try std.testing.expectEqual(@as(u32, 0), st.perm() & 0o077);
 
     const missing = try std.fmt.allocPrint(a, "{s}/missing", .{base});
-    try std.testing.expect(mkdtemp(&c, missing) == null);
+    try std.testing.expect(mkdtemp(&c, missing, &why) == null);
+    const prefix = try std.fmt.allocPrint(a, "[Errno 2] No such file or directory: '{s}/eessi-arch-guard-", .{missing});
+    try std.testing.expect(std.mem.startsWith(u8, why, prefix));
+    try std.testing.expectEqual(prefix.len + 9, why.len);
+    try std.testing.expect(why[why.len - 1] == '\'');
+}
+
+test "privateFailure names the file for an open and not for a write" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const a = arena_state.allocator();
+    var c: Ctx = .{ .arena = a, .env = .empty, .strict = false, .self_exe = "" };
+    var step: PrivateStep = .open;
+    const missing = "/nonexistent-eessi-arch-guard-dir/it's";
+    const open_err = if (writePrivate(missing, "x", 0o600, &step)) |_| return error.TestUnexpectedResult else |e| e;
+    try std.testing.expectEqual(PrivateStep.open, step);
+    try std.testing.expectEqualStrings(
+        "[Errno 2] No such file or directory: \"" ++ missing ++ "\"",
+        privateFailure(&c, open_err, missing, step),
+    );
+    const exists_err = if (writePrivate("/dev/null", "x", 0o600, &step)) |_| return error.TestUnexpectedResult else |e| e;
+    try std.testing.expectEqualStrings("[Errno 17] File exists: '/dev/null'", privateFailure(&c, exists_err, "/dev/null", step));
+    sys.last_errno = .INTR;
+    try std.testing.expectEqualStrings("[Errno 4] Interrupted system call", privateFailure(&c, error.Unexpected, "/dev/null", .close));
+    try std.testing.expectEqualStrings("InterruptedError", osErrorClass(.INTR));
+}
+
+test "runCaptured reports a relative program as not found when the working directory is removed" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const a = arena_state.allocator();
+    var c: Ctx = .{ .arena = a, .env = .empty, .strict = false, .self_exe = "" };
+    var gone = try main_mod.RemovedCwd.enter();
+    defer gone.restore();
+    var why: []const u8 = "";
+    try std.testing.expectError(error.CannotRun, runCaptured(&c, &.{"./tools/archdetect"}, .empty, null, false, &why));
+    try std.testing.expectEqualStrings("[Errno 2] No such file or directory: './tools/archdetect'", why);
+}
+
+test "cpuinfo lines are read as Python strips, splits and counts digits" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const a = arena_state.allocator();
+
+    try std.testing.expectEqual(@as(?usize, 1), processorId("\u{a0}processor\t: 1\u{3000}").?.id);
+    try std.testing.expectEqual(@as(?usize, 1), processorId("processor : \u{661}").?.id);
+    try std.testing.expectEqual(@as(?usize, 12), processorId("PROCESSOR: \u{ff11}\u{ff12}").?.id);
+    try std.testing.expectEqual(@as(?usize, 7), processorId("processor : 0007\x1f").?.id);
+    try std.testing.expectEqual(@as(?usize, null), processorId("processor : 99999999999999999999999").?.id);
+    try std.testing.expect(processorId("processor :") == null);
+    try std.testing.expect(processorId("processor : 1x") == null);
+    try std.testing.expect(processorId("processor\u{a0}: 1") == null);
+    try std.testing.expect(processorId("processor : \u{a0}1") == null);
+
+    const field = cpuField(a, "\u{2003}model\u{a0}name\u{205f}:\u{1680}Xeon\u{202f}").?;
+    try std.testing.expectEqualStrings("model_name", field.norm);
+    try std.testing.expectEqualStrings("model\u{a0}name", field.raw);
+    try std.testing.expectEqualStrings("Xeon", field.value);
+    try std.testing.expectEqualStrings("cache_size", normKey(a, "Cache\u{3000}\u{a0}Size"));
+
+    const flags = cpuField(a, "flags\u{a0}: fpu\u{a0}avx2\u{3000}fma").?;
+    try std.testing.expectEqualStrings("flags", flags.norm);
+    var tokens = tokenSet(a, flags.value);
+    try std.testing.expect(tokens.contains("avx2"));
+    try std.testing.expect(tokens.contains("fma"));
+    try std.testing.expect(!tokens.contains("fpu\u{a0}avx2"));
+
+    var both: CpuSet = .{};
+    both.add(0);
+    both.add(1);
+    const shared = scopeCpuinfo(a, "processor : 0\nflags : avx2\u{a0}fma\n\nprocessor : \u{661}\nflags\u{a0}: avx2 fma waitpkg\n", both).?;
+    try std.testing.expectEqualStrings("processor : 0\nflags : avx2 fma\n", shared);
+}
+
+test "readCpuFlags rejects a FIFO with buffered cpuinfo" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const a = arena_state.allocator();
+    var cwd_buf: [sys.path_max]u8 = undefined;
+    const here = try fsx.realpath(fsx.cwd, ".", &cwd_buf);
+    const base = try std.fmt.allocPrint(
+        a,
+        "{s}/.zig-cache/eag-flags-fifo-{d}",
+        .{ here, linux.getpid() },
+    );
+    var zb: [sys.path_max:0]u8 = undefined;
+    _ = linux.mkdirat(fsx.cwd, (try sys.z(&zb, base)).ptr, 0o700);
+    defer fsx.deleteTree(a, fsx.cwd, base) catch {};
+    const path = try std.fmt.allocPrint(a, "{s}/cpuinfo.fifo", .{base});
+    try std.testing.expectEqual(
+        linux.E.SUCCESS,
+        linux.errno(
+            linux.mknodat(
+                fsx.cwd,
+                (try sys.z(&zb, path)).ptr,
+                0o010000 | 0o600,
+                0,
+            ),
+        ),
+    );
+    const keeper = try sys.openat(fsx.cwd, path, .{ .NONBLOCK = true }, 0);
+    defer sys.close(keeper);
+    const writer = try sys.openat(
+        fsx.cwd,
+        path,
+        .{ .ACCMODE = .WRONLY, .NONBLOCK = true },
+        0,
+    );
+    try sys.writeAll(writer, "flags : avx2 waitpkg\n");
+    sys.close(writer);
+    try std.testing.expectEqual(@as(usize, 0), readCpuFlags(a, path).len);
+}
+
+test "cpuinfo words fold the long s to an s as a Python regular expression does" {
+    try std.testing.expectEqual(@as(?usize, 11), foldedWord("proce\u{17f}\u{17f}or: 1", "processor"));
+    try std.testing.expectEqual(@as(?usize, 9), foldedWord("PROCESSOR: 1", "processor"));
+    try std.testing.expectEqual(@as(?usize, null), foldedWord("proces", "processor"));
+    try std.testing.expectEqual(@as(?usize, null), foldedWord("proce\xc5ssor", "processor"));
+    try std.testing.expectEqual(@as(?usize, 6), foldedWord("flag\u{17f}: x", "flags"));
+    try std.testing.expectEqual(@as(?usize, 1), processorId("proce\u{17f}\u{17f}or\t: 1").?.id);
+    try std.testing.expectEqual(@as(?usize, 3), processorId("PROCE\u{17f}sor: 3").?.id);
 }
 
 test "prepareCpuinfo writes scoped cpuinfo under TMPDIR" {
@@ -2576,10 +2901,53 @@ test "prepareCpuinfo writes scoped cpuinfo under TMPDIR" {
     try env.put(a, "SLURM_CPU_BIND_LIST", "1");
 
     var c: Ctx = .{ .arena = a, .env = env, .strict = false, .self_exe = "" };
-    const prepared = prepareCpuinfo(&c, env);
+    var failure: TempFailure = .{};
+    const prepared = try prepareCpuinfo(&c, env, &failure);
     defer if (prepared.cleanup) |p| unlinkPath(p);
     const expected_prefix = try std.fmt.allocPrint(a, "{s}/eessi-arch-guard-cpu-", .{tmp_dir});
     try std.testing.expect(std.mem.startsWith(u8, prepared.path, expected_prefix));
+}
+
+test "tempCpuFile names the refused path as Python's mkstemp error does" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const a = arena_state.allocator();
+    var c: Ctx = .{ .arena = a, .env = .empty, .strict = false, .self_exe = "" };
+    c.temp_dir = .{ .path = "/nonexistent-eag-dir" };
+    var failure: TempFailure = .{};
+    try std.testing.expectError(error.TempFile, tempCpuFile(&c, .empty, "x", &failure));
+    try std.testing.expectEqualStrings("FileNotFoundError", failure.class);
+    const prefix = "[Errno 2] No such file or directory: '/nonexistent-eag-dir/eessi-arch-guard-cpu-";
+    try std.testing.expect(std.mem.startsWith(u8, failure.text, prefix));
+    try std.testing.expectEqual(prefix.len + 8 + 1, failure.text.len);
+    try std.testing.expect(std.mem.endsWith(u8, failure.text, "'"));
+}
+
+test "tempCpuFile writes a private file once and a short write is not an error" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const a = arena_state.allocator();
+    var cwd_buf: [sys.path_max]u8 = undefined;
+    const here = try fsx.realpath(fsx.cwd, ".", &cwd_buf);
+    const base = try std.fmt.allocPrint(a, "{s}/.zig-cache/eag-tempcpu-{d}", .{ here, linux.getpid() });
+    var zb: [sys.path_max:0]u8 = undefined;
+    _ = linux.mkdirat(fsx.cwd, (try sys.z(&zb, base)).ptr, 0o700);
+    defer fsx.deleteTree(a, fsx.cwd, base) catch {};
+    var c: Ctx = .{ .arena = a, .env = .empty, .strict = false, .self_exe = "" };
+    c.temp_dir = .{ .path = base };
+    var failure: TempFailure = .{};
+    const path = try tempCpuFile(&c, .empty, "processor : 0\n", &failure);
+    defer unlinkPath(path);
+    const back = readFile(a, path, 100) orelse return error.TestUnexpectedResult;
+    try std.testing.expectEqualStrings("processor : 0\n", back);
+}
+
+test "closeFd reports the errno of a failed close as os.close raises it" {
+    const fd = try sys.openat(fsx.cwd, "/dev/null", .{}, 0);
+    try std.testing.expectEqual(@as(?linux.E, null), closeFd(fd));
+    try std.testing.expectEqual(@as(?linux.E, .BADF), closeFd(fd));
+    try std.testing.expectEqualStrings("OSError", osErrorClass(.BADF));
+    try std.testing.expectEqualStrings("[Errno 9] Bad file descriptor", sys.describeErrno(.BADF));
 }
 
 test "scopeCpuinfoWithBase maps LXCFS renumbered blocks and keeps gapped logical IDs" {
@@ -2632,6 +3000,82 @@ test "scopeCpuinfoWithBase maps LXCFS renumbered blocks and keeps gapped logical
     try std.testing.expect(std.mem.find(u8, gapped, "processor : 2\n") != null);
     try std.testing.expect(std.mem.find(u8, gapped, "avx512f") != null);
     try std.testing.expect(std.mem.find(u8, gapped, "waitpkg") == null);
+}
+
+test "a field name is lower-cased as Python lower-cases it" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const a = arena_state.allocator();
+    try std.testing.expectEqualStrings("key", normKey(a, "\u{212A}ey"));
+    try std.testing.expectEqualStrings("i\u{307}sa", normKey(a, "\u{130}SA"));
+    try std.testing.expectEqualStrings("\u{17f}ize", normKey(a, "\u{17f}IZE"));
+    try std.testing.expectEqualStrings("\u{3b1}\u{3c2}_\u{3c3}", normKey(a, "\u{391}\u{3a3}\u{2003}\u{3a3}"));
+    const first = cpuField(a, "\u{212A}ey : v").?;
+    const second = cpuField(a, "Key : v").?;
+    try std.testing.expectEqualStrings(first.norm, second.norm);
+    try std.testing.expectEqualStrings("\u{212A}ey", first.raw);
+}
+
+test "scopeCpuinfoWithBase intersects repeated flags lines on a kept processor" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const a = arena_state.allocator();
+    const cpuinfo =
+        \\processor : 0
+        \\vendor_id : GenuineIntel
+        \\flags : avx2 fma avx512f waitpkg
+        \\flags : avx2 fma
+        \\features : sve sve2
+        \\features : sve
+        \\
+        \\processor : 1
+        \\vendor_id : GenuineIntel
+        \\flags : avx2 fma avx512f waitpkg
+        \\features : sve sve2
+        \\
+    ;
+    var only_0: CpuSet = .{};
+    only_0.add(0);
+    const scoped = scopeCpuinfoWithBase(a, cpuinfo, only_0, null).?;
+    try std.testing.expect(std.mem.indexOf(u8, scoped, "processor : 0\n") != null);
+    try std.testing.expect(std.mem.indexOf(u8, scoped, "processor : 1\n") == null);
+    try std.testing.expect(std.mem.indexOf(u8, scoped, "flags : avx2 fma\n") != null);
+    try std.testing.expect(std.mem.indexOf(u8, scoped, "features : sve\n") != null);
+    try std.testing.expect(std.mem.indexOf(u8, scoped, "waitpkg") == null);
+    try std.testing.expect(std.mem.indexOf(u8, scoped, "avx512f") == null);
+    try std.testing.expect(std.mem.indexOf(u8, scoped, "sve2") == null);
+}
+
+test "scopeCpuinfoWithBase reads a header with a long s as a field, as Python does" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const a = arena_state.allocator();
+    var both: CpuSet = .{};
+    both.add(0);
+    both.add(1);
+    const plain =
+        \\processor : 0
+        \\vendor_id : GenuineIntel
+        \\flags : avx2 fma
+        \\
+        \\processor : 1
+        \\vendor_id : GenuineIntel
+        \\flags : avx2 fma
+        \\
+    ;
+    try std.testing.expectEqual(@as(?[]const u8, null), scopeCpuinfoWithBase(a, plain, both, null));
+    const long_s =
+        \\processor : 0
+        \\vendor_id : GenuineIntel
+        \\flags : avx2 fma
+        \\
+        \\proceſſor : 1
+        \\vendor_id : GenuineIntel
+        \\flags : avx2 fma
+        \\
+    ;
+    const scoped = scopeCpuinfoWithBase(a, long_s, both, null).?;
+    try std.testing.expectEqualStrings("processor : 0\nvendor_id : GenuineIntel\nflags : avx2 fma\n", scoped);
 }
 
 test "cgroupCpusFrom narrows wider sched affinity on cgroup v2 layouts" {
@@ -2769,6 +3213,23 @@ test "root cpuset walk does not read relative to cwd" {
     try std.testing.expect(writePrivateNew(relative, "7\n", 0o600));
     defer unlinkPath(relative);
     try std.testing.expect(walkCpuset(arena_state.allocator(), "/", "/") == null);
+    // dirname("//job") is "/", so this walk must not open the relative file either.
+    try std.testing.expect(walkCpuset(arena_state.allocator(), "//job", "/") == null);
+}
+
+test "cpuset file is read as Python strips and parses it" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const a = arena_state.allocator();
+    const base = try cgroupFixture(a, "pad");
+    defer fsx.deleteTree(a, fsx.cwd, base) catch {};
+    const inner = try std.fmt.allocPrint(a, "{s}/job", .{base});
+    try writeUnder(a, try std.fmt.allocPrint(a, "{s}/cpuset.cpus.effective", .{base}), "6\n");
+    try writeUnder(a, try std.fmt.allocPrint(a, "{s}/cpuset.cpus.effective", .{inner}), "\u{a0}1\u{2003}\n\u{3000}");
+    try expectCpus(walkCpuset(a, inner, base), &.{1});
+    const blank = try std.fmt.allocPrint(a, "{s}/blank", .{base});
+    try writeUnder(a, try std.fmt.allocPrint(a, "{s}/cpuset.cpus.effective", .{blank}), "\u{a0}\n\u{3000}");
+    try expectCpus(walkCpuset(a, blank, base), &.{6});
 }
 
 test "cgroup v1 cpuset mounted off the default path" {
@@ -2791,6 +3252,27 @@ test "cgroup v1 cpuset mounted off the default path" {
     try writeUnder(a, try std.fmt.allocPrint(a, "{s}/cpuset/job:42/cpuset.cpus.effective", .{cg}), "0\n");
     try writeUnder(a, try std.fmt.allocPrint(a, "{s}/job:42/cpuset.cpus.effective", .{cg}), "1\n");
     try expectCpus(cgroupCpusFrom(a, proc_file, cg), &.{ 4, 5 });
+}
+
+test "controllers are split as Python splits them" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const a = arena_state.allocator();
+    const base = try cgroupFixture(a, "ctl");
+    defer fsx.deleteTree(a, fsx.cwd, base) catch {};
+    const joined = try std.fmt.allocPrint(a, "{s}/joined", .{base});
+    const padded = try std.fmt.allocPrint(a, "{s}/padded", .{base});
+    const glued = try std.fmt.allocPrint(a, "{s}/glued", .{base});
+    const bad = try std.fmt.allocPrint(a, "{s}/bad", .{base});
+    try writeUnder(a, try std.fmt.allocPrint(a, "{s}/cgroup.controllers", .{joined}), "cpu\u{a0}cpuset\u{2003}memory\n");
+    try writeUnder(a, try std.fmt.allocPrint(a, "{s}/cgroup.controllers", .{padded}), "\u{3000}cpuset\u{1680}\x1f\n");
+    try writeUnder(a, try std.fmt.allocPrint(a, "{s}/cgroup.controllers", .{glued}), "cpuset\u{200b}memory cpu\n");
+    try writeUnder(a, try std.fmt.allocPrint(a, "{s}/cgroup.controllers", .{bad}), "cpu cpuset\xff memory\n");
+    try std.testing.expect(controllersAllow(a, joined));
+    try std.testing.expect(controllersAllow(a, padded));
+    try std.testing.expect(!controllersAllow(a, glued));
+    try std.testing.expect(!controllersAllow(a, bad));
+    try std.testing.expect(controllersAllow(a, try std.fmt.allocPrint(a, "{s}/missing", .{base})));
 }
 
 test "nested cgroup stops at the cpuset mount" {
@@ -2882,6 +3364,28 @@ test "parseCpuSpec unions a mask_cpu list" {
     @memcpy(listed[0..4], "0x2,");
     @memcpy(listed[4..], &high);
     try std.testing.expect(parseCpuSpec(&listed) == null);
+}
+
+test "parseCpuSpec reads a mask and its padding as Python's int and strip do" {
+    try expectCpus(parseCpuSpec("0x_2"), &.{1});
+    try expectCpus(parseCpuSpec("0x0_2"), &.{1});
+    try expectCpus(parseCpuSpec("0x\u{662}"), &.{1});
+    try expectCpus(parseCpuSpec("0x\u{ff12}"), &.{1});
+    try expectCpus(parseCpuSpec("0x\u{1d7d0}"), &.{1});
+    try expectCpus(parseCpuSpec("\u{a0}0x2\u{3000}"), &.{1});
+    try expectCpus(parseCpuSpec("0x2\u{a0},0x4"), &.{ 1, 2 });
+    try expectCpus(parseCpuSpec("0x2\x0b,0x4"), &.{ 1, 2 });
+    try expectCpus(parseCpuSpec("0x2 \t,0x4"), &.{ 1, 2 });
+    try expectCpus(parseCpuSpec("0x2\u{85},0x4"), &.{ 1, 2 });
+    try std.testing.expect(parseCpuSpec("0x\u{662}\x1f,0x4") == null);
+    try std.testing.expect(parseCpuSpec("0x2\x1f,0x4") == null);
+    try std.testing.expect(parseCpuSpec("0x2_") == null);
+    try std.testing.expect(parseCpuSpec("0x__2") == null);
+    try std.testing.expect(parseCpuSpec("0x_") == null);
+    try std.testing.expect(parseCpuSpec("0x2__0") == null);
+    try std.testing.expect(parseCpuSpec("0x 2") == null);
+    try std.testing.expect(parseCpuSpec("0x\xff2") == null);
+    try std.testing.expect(parseCpuSpec("0x\u{a0}2") == null);
 }
 
 test "resolvePath searches default_path and empty colon entries" {

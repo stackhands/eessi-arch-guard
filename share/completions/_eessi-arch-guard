@@ -1,0 +1,27 @@
+#compdef eessi-arch-guard
+_arguments \
+    '--shell[print bash assignments]' \
+    '--strict[exit 78 on a failed decision]' \
+    '--dry-run[show the decision without changing anything]' \
+    '--json[print one line of JSON]' \
+    '--chain=[run an existing task prolog first]:path:_files' \
+    '--timeout=[bound the decision, in seconds]:seconds:' \
+    '--syslog=[send decision events]:target:' \
+    '--restore[read a restore request on stdin]' \
+    '--check-submit[check LOADEDMODULES against a target]' \
+    '--partition=[site partition to map to a target]:name:' \
+    '--constraint=[site constraint that must select the target]:name:' \
+    '--eb-stack=[eb-stack executable]:path:_files' \
+    '--target=[EESSI CPU target to check against]:target:' \
+    '--check-mount[check the cvmfs mount and the module path order]' \
+    '--repo=[EESSI repository path]:path:_files' \
+    '--site=[site module directory]:path:_files' \
+    '--eessi=[EESSI module directory]:path:_files' \
+    '--modulepath=[module path to inspect]:path:' \
+    '--mountinfo=[mount table to read]:file:_files' \
+    '--require-input[refuse install paths that are unset]' \
+    '--check-revision[report the cvmfs client revision]' \
+    '--stat=[cvmfs_config stat output]:file:_files' \
+    '--min=[oldest acceptable revision]:revision:' \
+    '(-h --help)'{-h,--help}'[print the usage text]' \
+    '--version[print the version]'

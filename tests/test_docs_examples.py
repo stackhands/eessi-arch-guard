@@ -8,6 +8,8 @@ import subprocess
 import tempfile
 import unittest
 
+import private_tmp  # noqa: F401
+
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 DIATAXIS_ROOT = ROOT / "docs" / "orgmode"
 DOCS_EXAMPLES = ROOT / "docs" / "examples"
@@ -74,7 +76,7 @@ class DocsExamplesTests(unittest.TestCase):
                 command,
                 cwd=ROOT,
                 shell=True,
-                text=True,
+                encoding="utf-8",
                 capture_output=True,
                 check=False,
             )
@@ -124,7 +126,7 @@ class DocsExamplesTests(unittest.TestCase):
             proc = subprocess.run(
                 [str(script), str(job)],
                 cwd=ROOT,
-                text=True,
+                encoding="utf-8",
                 capture_output=True,
                 env=env,
                 check=False,

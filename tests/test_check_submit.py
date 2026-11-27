@@ -2,19 +2,13 @@
 
 from __future__ import annotations
 
-import contextlib
-import io
 import json
 import stat
 import subprocess
-import sys
 import tempfile
 import unittest
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
-
-import eessi_arch_guard as guard  # noqa: E402
 import harness  # noqa: E402
 
 try:
@@ -33,6 +27,16 @@ SCHEMA = (
 
 ZEN4 = "x86_64/amd/zen4"
 ZEN2 = "x86_64/amd/zen2"
+
+
+def _check_submit(env: dict, *args: str) -> subprocess.CompletedProcess:
+    return subprocess.run(
+        [*harness.GUARD_ARGV, "--check-submit", *args],
+        capture_output=True,
+        encoding="utf-8",
+        env=env,
+        check=False,
+    )
 
 
 def _snapshot(root: Path) -> tuple[str, ...]:
@@ -68,38 +72,9 @@ raise SystemExit(1 if missing else 0)
 
 
 class CheckSubmitTests(unittest.TestCase):
-    def test_site_map_requires_matching_partition_and_constraint(self) -> None:
-        settings = {
-            "submit_target.partition.cpu": ZEN4,
-            "submit_target.constraint.zen4": ZEN4,
-            "submit_target.constraint.zen2": ZEN2,
-        }
-        self.assertEqual(guard.submit_target(settings, "cpu", "zen4"), (ZEN4, None))
-        target, error = guard.submit_target(settings, "cpu", "zen2")
-        self.assertIsNone(target)
-        self.assertIn("different targets", error or "")
-        target, error = guard.submit_target(settings, "missing", "")
-        self.assertIsNone(target)
-        self.assertIn("no submit_target.partition.missing", error or "")
 
-    def test_site_map_names_bad_target_values(self) -> None:
-        settings = {
-            "submit_target.partition.cpu": "x86_64/amd/zen4 ",
-            "submit_target.constraint.zen4": "x86_64/amd/zen4\n",
-        }
-        target, error = guard.submit_target(settings, "cpu", "")
-        self.assertIsNone(target)
-        self.assertIn("invalid target", error or "")
-        self.assertIn("x86_64/amd/zen4 ", error or "")
 
-        settings = {
-            "submit_target.partition.cpu": ZEN4,
-            "submit_target.constraint.zen4": "x86_64/amd/zen4\n",
-        }
-        target, error = guard.submit_target(settings, "cpu", "zen4")
-        self.assertIsNone(target)
-        self.assertIn("invalid target", error or "")
-        self.assertIn("x86_64/amd/zen4", error or "")
+
 
     def test_check_submit_names_missing_module_without_changing_tree(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -112,25 +87,20 @@ class CheckSubmitTests(unittest.TestCase):
             log = root / "eb-stack.log"
             env = {
                 "PATH": "/usr/bin:/bin",
+                "TMPDIR": tmp,
+                "HOME": str(root / "home"),
                 "EESSI_PREFIX": str(prefix),
                 "EESSI_OS_TYPE": "linux",
                 "LOADEDMODULES": "EESSI/2025.06:R/4.4.2:OnlyOther/1.0",
                 "EESSI_TEST_EB_STACK_LOG": str(log),
             }
-            settings = {
-                "submit_target.partition.cpu": ZEN4,
-                "submit_target.constraint.zen4": ZEN4,
-            }
             before = _snapshot(prefix)
-            stdout = io.StringIO()
-            stderr = io.StringIO()
-            with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
-                code = guard.check_submit(env, settings, "cpu", "zen4", str(fake))
-            self.assertEqual(code, 1)
-            self.assertEqual(stdout.getvalue(), "")
-            self.assertIn("loaded module absent", stderr.getvalue())
-            self.assertIn("OnlyOther/1.0", stderr.getvalue())
-            self.assertNotIn("R/4.4.2", stderr.getvalue())
+            proc = _check_submit(env, "--target", ZEN4, "--eb-stack", str(fake))
+            self.assertEqual(proc.returncode, 1, proc.stderr)
+            self.assertEqual(proc.stdout, "")
+            self.assertIn("loaded module absent", proc.stderr)
+            self.assertIn("OnlyOther/1.0", proc.stderr)
+            self.assertNotIn("R/4.4.2", proc.stderr)
             self.assertEqual(_snapshot(prefix), before)
             invocation = log.read_text(encoding="utf-8")
             self.assertIn("stack arch --arch " + ZEN4, invocation)
@@ -153,22 +123,16 @@ class CheckSubmitTests(unittest.TestCase):
             fake = _fake_eb_stack(root)
             env = {
                 "PATH": "/usr/bin:/bin",
+                "TMPDIR": tmp,
+                "HOME": str(root / "home"),
                 "EESSI_PREFIX": str(prefix),
                 "EESSI_OS_TYPE": "linux",
                 "LOADEDMODULES": "EESSI/2025.06:2025:Compiler/GCCcore/15.2.0:R/4.4.2",
                 "EESSI_TEST_EB_STACK_LOG": str(root / "eb-stack.log"),
             }
-            stdout = io.StringIO()
-            with contextlib.redirect_stdout(stdout):
-                code = guard.check_submit(
-                    env,
-                    {"submit_target.partition.cpu": ZEN4},
-                    "cpu",
-                    "",
-                    str(fake),
-                )
-            self.assertEqual(code, 0)
-            self.assertIn("3 loaded module(s) available", stdout.getvalue())
+            proc = _check_submit(env, "--target", ZEN4, "--eb-stack", str(fake))
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            self.assertIn("3 loaded module(s) available", proc.stdout)
 
     def _user_tree_case(self, root: Path, env_extra: dict) -> tuple[int, str]:
         prefix = root / "prefix"
@@ -179,6 +143,7 @@ class CheckSubmitTests(unittest.TestCase):
         fake = _fake_eb_stack(root)
         env = {
             "PATH": "/usr/bin:/bin",
+            "TMPDIR": str(root),
             "EESSI_PREFIX": str(prefix),
             "EESSI_OS_TYPE": "linux",
             "EESSI_VERSION": "2026.06",
@@ -186,12 +151,8 @@ class CheckSubmitTests(unittest.TestCase):
             "EESSI_TEST_EB_STACK_LOG": str(root / "eb-stack.log"),
         }
         env.update(env_extra)
-        stderr = io.StringIO()
-        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(stderr):
-            code = guard.check_submit(
-                env, {"submit_target.partition.cpu": ZEN4}, "cpu", "", str(fake)
-            )
-        return code, stderr.getvalue()
+        proc = _check_submit(env, "--target", ZEN4, "--eb-stack", str(fake))
+        return proc.returncode, proc.stderr
 
     @staticmethod
     def _install(base: Path, target: str, module: str) -> None:
@@ -269,6 +230,7 @@ class CheckSubmitTests(unittest.TestCase):
             fake = _fake_eb_stack(root)
             env = {
                 "PATH": "/usr/bin:/bin",
+                "TMPDIR": tmp,
                 "HOME": str(root / "home"),
                 "EESSI_PREFIX": str(prefix),
                 "EESSI_OS_TYPE": "linux",
@@ -276,22 +238,19 @@ class CheckSubmitTests(unittest.TestCase):
                 "LOADEDMODULES": "EESSI/2026.06:R/4.4.2:Mine/1.0",
                 "EESSI_TEST_EB_STACK_LOG": str(root / "eb-stack.log"),
             }
-            stderr = io.StringIO()
-            with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(stderr):
-                code = guard.check_submit(env, None, "", "", str(fake), target_arg=ZEN4)
-            self.assertEqual(code, 1)
-            self.assertIn("Mine/1.0", stderr.getvalue())
-            self.assertNotIn("R/4.4.2", stderr.getvalue())
+            proc = _check_submit(env, "--target", ZEN4, "--eb-stack", str(fake))
+            self.assertEqual(proc.returncode, 1, proc.stderr)
+            self.assertIn("Mine/1.0", proc.stderr)
+            self.assertNotIn("R/4.4.2", proc.stderr)
             self.assertIn("stack arch --arch " + ZEN4, (root / "eb-stack.log").read_text())
 
     def test_target_is_refused_with_a_partition_or_an_unsafe_value(self) -> None:
         for partition, target in (("cpu", ZEN4), ("", "../zen4"), ("", "/abs")):
             with self.subTest(partition=partition, target=target):
-                stderr = io.StringIO()
-                with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(stderr):
-                    code = guard.check_submit({}, None, partition, "", "", target_arg=target)
-                self.assertEqual(code, 2)
-                self.assertIn("--target", stderr.getvalue())
+                extra = ["--partition", partition] if partition else []
+                proc = _check_submit({}, "--target", target, *extra)
+                self.assertEqual(proc.returncode, 2, proc.stdout + proc.stderr)
+                self.assertIn("--target", proc.stderr)
 
     def test_cli_target_runs_without_a_site_config(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -303,6 +262,7 @@ class CheckSubmitTests(unittest.TestCase):
             fake = _fake_eb_stack(root)
             env = {
                 "PATH": "/usr/bin:/bin",
+                "TMPDIR": tmp,
                 "HOME": str(root / "home"),
                 "LANG": "C",
                 "LC_ALL": "C",
@@ -323,7 +283,7 @@ class CheckSubmitTests(unittest.TestCase):
                     str(fake),
                 ],
                 capture_output=True,
-                text=True,
+                encoding="utf-8",
                 env=env,
                 check=False,
             )
@@ -343,6 +303,7 @@ class CheckSubmitTests(unittest.TestCase):
             fake = _fake_eb_stack(root)
             env = {
                 "PATH": "/usr/bin:/bin",
+                "TMPDIR": tmp,
                 "HOME": "/tmp",
                 "LANG": "C",
                 "LC_ALL": "C",
@@ -367,7 +328,7 @@ class CheckSubmitTests(unittest.TestCase):
                         str(fake),
                     ],
                     capture_output=True,
-                    text=True,
+                    encoding="utf-8",
                     env=env,
                     check=False,
                 )
@@ -385,24 +346,7 @@ class CheckSubmitTests(unittest.TestCase):
             finally:
                 subprocess.check_call(["sudo", "rm", "-f", str(conf)])
 
-    def test_cli_arguments_are_opt_in(self) -> None:
-        plain = guard.parse_args([])
-        self.assertFalse(plain.check_submit)
-        args = guard.parse_args(
-            [
-                "--check-submit",
-                "--partition",
-                "cpu",
-                "--constraint=zen4",
-                "--eb-stack",
-                "/opt/bin/eb-stack",
-            ]
-        )
-        self.assertTrue(args.check_submit)
-        self.assertEqual(args.partition, "cpu")
-        self.assertEqual(args.constraint, "zen4")
-        self.assertEqual(args.eb_stack, "/opt/bin/eb-stack")
-        self.assertTrue(guard.parse_args(["--check-submit", "--json"]).json)
+
 
     def test_json_reports_missing_modules_with_schema_version_1(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -414,27 +358,19 @@ class CheckSubmitTests(unittest.TestCase):
             fake = _fake_eb_stack(root)
             env = {
                 "PATH": "/usr/bin:/bin",
+                "TMPDIR": tmp,
+                "HOME": str(root / "home"),
                 "EESSI_PREFIX": str(prefix),
                 "EESSI_OS_TYPE": "linux",
                 "LOADEDMODULES": "EESSI/2025.06:R/4.4.2:OnlyOther/1.0",
                 "EESSI_TEST_EB_STACK_LOG": str(root / "eb-stack.log"),
             }
-            stdout = io.StringIO()
-            stderr = io.StringIO()
-            with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
-                code = guard.check_submit(
-                    env,
-                    {"submit_target.partition.cpu": ZEN4},
-                    "cpu",
-                    "",
-                    str(fake),
-                    True,
-                )
-            self.assertEqual(code, 1)
-            payload = json.loads(stdout.getvalue())
+            proc = _check_submit(env, "--json", "--target", ZEN4, "--eb-stack", str(fake))
+            self.assertEqual(proc.returncode, 1, proc.stderr)
+            payload = json.loads(proc.stdout)
             self.assertEqual(payload["schema_version"], 1)
             self.assertEqual(payload["kind"], "check-submit")
-            self.assertEqual(payload["partition"], "cpu")
+            self.assertIsNone(payload["partition"])
             self.assertIsNone(payload["constraint"])
             self.assertEqual(payload["target"], ZEN4)
             self.assertEqual(payload["loaded"], 2)
@@ -442,20 +378,17 @@ class CheckSubmitTests(unittest.TestCase):
             self.assertIsNone(payload["message"])
             self.assertEqual(payload["exit"], 1)
             self.assertEqual(payload["exit_semantic"], "missing")
-            self.assertEqual(stdout.getvalue(), json.dumps(payload, sort_keys=True) + "\n")
-            self.assertIn("OnlyOther/1.0", stderr.getvalue())
-            self.assertNotIn("loaded module(s) available", stdout.getvalue())
+            self.assertEqual(proc.stdout, json.dumps(payload, sort_keys=True) + "\n")
+            self.assertIn("OnlyOther/1.0", proc.stderr)
+            self.assertNotIn("loaded module(s) available", proc.stdout)
             if jsonschema is not None:
                 schema = json.loads(SCHEMA.read_text(encoding="utf-8"))
                 jsonschema.Draft202012Validator(schema).validate(payload)
 
     def test_json_invalid_partition_is_exit_semantic_invalid(self) -> None:
-        stdout = io.StringIO()
-        stderr = io.StringIO()
-        with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
-            code = guard.check_submit({}, {}, "bad name", "", "", True)
-        self.assertEqual(code, 2)
-        payload = json.loads(stdout.getvalue())
+        proc = _check_submit({"PATH": "/usr/bin:/bin"}, "--json", "--partition", "bad name")
+        self.assertEqual(proc.returncode, 2, proc.stderr)
+        payload = json.loads(proc.stdout)
         self.assertEqual(payload["schema_version"], 1)
         self.assertEqual(payload["exit_semantic"], "invalid")
         self.assertEqual(payload["exit"], 2)
@@ -463,7 +396,7 @@ class CheckSubmitTests(unittest.TestCase):
         self.assertIsNone(payload["loaded"])
         self.assertEqual(payload["missing"], [])
         self.assertIn("safe partition", payload["message"])
-        self.assertIn("safe partition", stderr.getvalue())
+        self.assertIn("safe partition", proc.stderr)
 
     def test_unknown_target_is_invalid_even_without_app_modules(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -471,50 +404,38 @@ class CheckSubmitTests(unittest.TestCase):
             prefix = root / "prefix"
             env = {
                 "PATH": "/usr/bin:/bin",
+                "TMPDIR": tmp,
+                "HOME": str(root / "home"),
                 "EESSI_PREFIX": str(prefix),
                 "EESSI_OS_TYPE": "linux",
                 "LOADEDMODULES": "EESSI/2025.06",
             }
-            stdout = io.StringIO()
-            stderr = io.StringIO()
-            with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
-                code = guard.check_submit(
-                    env,
-                    {"submit_target.partition.cpu": "x86_64/amd/zen404"},
-                    "cpu",
-                    "",
-                    "/usr/bin/false",
-                    True,
-                )
-            self.assertEqual(code, 2)
-            payload = json.loads(stdout.getvalue())
+            proc = _check_submit(
+                env, "--json", "--target", "x86_64/amd/zen404", "--eb-stack", "/usr/bin/false"
+            )
+            self.assertEqual(proc.returncode, 2, proc.stderr)
+            payload = json.loads(proc.stdout)
             self.assertEqual(payload["exit_semantic"], "invalid")
             self.assertIn("x86_64/amd/zen404", payload["message"] or "")
-            self.assertIn("x86_64/amd/zen404", stderr.getvalue())
+            self.assertIn("x86_64/amd/zen404", proc.stderr)
 
     def test_duplicate_loaded_modules_are_invalid(self) -> None:
-        stdout = io.StringIO()
-        stderr = io.StringIO()
-        with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
-            code = guard.check_submit(
-                {
-                    "PATH": "/usr/bin:/bin",
-                    "EESSI_PREFIX": "/tmp/prefix",
-                    "EESSI_OS_TYPE": "linux",
-                    "LOADEDMODULES": "EESSI/2025.06:R/4.4.2:R/4.4.2",
-                },
-                {"submit_target.partition.cpu": ZEN4},
-                "cpu",
-                "",
-                "/usr/bin/false",
-                True,
-            )
-        self.assertEqual(code, 2)
-        payload = json.loads(stdout.getvalue())
-        self.assertEqual(payload["exit_semantic"], "invalid")
-        self.assertIn("duplicate", payload["message"] or "")
-        self.assertIn("R/4.4.2", payload["message"] or "")
-        self.assertIn("R/4.4.2", stderr.getvalue())
+        with tempfile.TemporaryDirectory() as tmp:
+            env = {
+                "PATH": "/usr/bin:/bin",
+                "TMPDIR": tmp,
+                "HOME": str(Path(tmp) / "home"),
+                "EESSI_PREFIX": str(Path(tmp) / "prefix"),
+                "EESSI_OS_TYPE": "linux",
+                "LOADEDMODULES": "EESSI/2025.06:R/4.4.2:R/4.4.2",
+            }
+            proc = _check_submit(env, "--json", "--target", ZEN4, "--eb-stack", "/usr/bin/false")
+            self.assertEqual(proc.returncode, 2, proc.stderr)
+            payload = json.loads(proc.stdout)
+            self.assertEqual(payload["exit_semantic"], "invalid")
+            self.assertIn("duplicate", payload["message"] or "")
+            self.assertIn("R/4.4.2", payload["message"] or "")
+            self.assertIn("R/4.4.2", proc.stderr)
 
     def test_duplicate_or_malformed_eessi_loaded_modules_are_invalid(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -550,9 +471,10 @@ class CheckSubmitTests(unittest.TestCase):
                             str(fake),
                         ],
                         capture_output=True,
-                        text=True,
+                        encoding="utf-8",
                         env={
                             "PATH": "/usr/bin:/bin",
+                            "TMPDIR": tmp,
                             "HOME": str(root / "home"),
                             "LANG": "C",
                             "LC_ALL": "C",
@@ -587,6 +509,7 @@ class CheckSubmitTests(unittest.TestCase):
             try:
                 env = {
                     "PATH": "/usr/bin:/bin",
+                    "TMPDIR": tmp,
                     "HOME": "/tmp",
                     "LANG": "C",
                     "LC_ALL": "C",
@@ -606,7 +529,7 @@ class CheckSubmitTests(unittest.TestCase):
                         str(fake),
                     ],
                     capture_output=True,
-                    text=True,
+                    encoding="utf-8",
                     env=env,
                     check=False,
                 )
@@ -616,6 +539,13 @@ class CheckSubmitTests(unittest.TestCase):
                 self.assertEqual(payload["kind"], "check-submit")
                 self.assertEqual(payload["missing"], ["OnlyOther/1.0"])
                 self.assertEqual(payload["exit_semantic"], "missing")
+                self.assertEqual(payload["partition"], "cpu")
+                self.assertIsNone(payload["constraint"])
+                self.assertEqual(payload["target"], ZEN4)
+                self.assertEqual(payload["loaded"], 2)
+                self.assertIsNone(payload["message"])
+                self.assertEqual(payload["exit"], 1)
+                self.assertEqual(proc.stdout, json.dumps(payload, sort_keys=True) + "\n")
                 self.assertIn("stack arch --arch " + ZEN4, (root / "eb-stack.log").read_text())
                 self.assertIn("--unsupported", (root / "eb-stack.log").read_text())
                 self.assertIn("OnlyOther/1.0", proc.stderr)
@@ -644,7 +574,7 @@ class CheckSubmitTests(unittest.TestCase):
                     "cpu",
                 ],
                 capture_output=True,
-                text=True,
+                encoding="utf-8",
                 env=env,
                 check=False,
             )
@@ -724,7 +654,7 @@ with open({str(env_log)!r}, "w", encoding="utf-8") as handle:
                         str(fake),
                     ],
                     capture_output=True,
-                    text=True,
+                    encoding="utf-8",
                     env=env,
                     check=False,
                 )
@@ -753,6 +683,7 @@ with open({str(env_log)!r}, "w", encoding="utf-8") as handle:
             try:
                 env = {
                     "PATH": "/usr/bin:/bin",
+                    "TMPDIR": tmp,
                     "HOME": str(root / "home"),
                     "LANG": "C",
                     "LC_ALL": "C",
@@ -773,7 +704,7 @@ with open({str(env_log)!r}, "w", encoding="utf-8") as handle:
                         str(fake),
                     ],
                     capture_output=True,
-                    text=True,
+                    encoding="utf-8",
                     env=env,
                     check=False,
                 )
@@ -864,7 +795,7 @@ with open({str(env_log)!r}, "w", encoding="utf-8") as handle:
         finally:
             subprocess.check_call(["sudo", "rm", "-f", str(conf)])
 
-    def test_cli_quotes_invalid_configured_target_like_python(self) -> None:
+    def test_cli_quotes_invalid_configured_target(self) -> None:
         conf = harness.PROGRAM.with_name("eessi-arch-guard.conf")
         conf.write_text("submit_target.partition.cpu = X86_64/amd/zen4\n", encoding="utf-8")
         subprocess.check_call(["sudo", "chown", "root:root", str(conf)])
@@ -899,13 +830,13 @@ class CheckSubmitEmptyTargetTests(unittest.TestCase):
                 proc = subprocess.run(
                     [*harness.GUARD_ARGV, *argv],
                     capture_output=True,
-                    text=True,
+                    encoding="utf-8",
                     check=False,
                 )
                 self.assertEqual(proc.returncode, 2, proc.stdout + proc.stderr)
                 self.assertIn(expected, proc.stderr)
 
-    def test_cli_eb_stack_lookup_matches_shutil_which_when_path_unset(self) -> None:
+    def test_cli_eb_stack_lookup_uses_default_path_when_path_unset(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             prefix = root / "prefix"
@@ -914,6 +845,7 @@ class CheckSubmitEmptyTargetTests(unittest.TestCase):
             (mod_dir / "4.4.2.lua").write_text("--\n", encoding="utf-8")
             base_env = {
                 "HOME": str(root / "home"),
+                "TMPDIR": tmp,
                 "LANG": "C",
                 "LC_ALL": "C",
                 "EESSI_PREFIX": str(prefix),
@@ -948,7 +880,7 @@ class CheckSubmitEmptyTargetTests(unittest.TestCase):
                         self.assertEqual(payload["message"], expected_msg)
 
 
-class CheckSubmitZigParityTests(unittest.TestCase):
+class CheckSubmitFailureTests(unittest.TestCase):
     def test_early_invalid_input_reports_loaded_null(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -964,7 +896,7 @@ class CheckSubmitZigParityTests(unittest.TestCase):
             proc = subprocess.run(
                 [*harness.GUARD_ARGV, "--check-submit", "--json", "--target", ZEN4],
                 capture_output=True,
-                text=True,
+                encoding="utf-8",
                 env=env_missing_prefix,
                 check=False,
             )
@@ -993,7 +925,7 @@ class CheckSubmitZigParityTests(unittest.TestCase):
                     str(root / "no-such-eb-stack"),
                 ],
                 capture_output=True,
-                text=True,
+                encoding="utf-8",
                 env=env_missing_eb,
                 check=False,
             )
@@ -1001,7 +933,7 @@ class CheckSubmitZigParityTests(unittest.TestCase):
             self.assertIsNone(json.loads(proc_eb.stdout)["loaded"])
 
 
-    def test_eb_stack_silent_failure_and_exec_error_match_python(self) -> None:
+    def test_eb_stack_silent_failure_and_exec_error_are_reported(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             prefix = root / "prefix"
@@ -1019,6 +951,7 @@ class CheckSubmitZigParityTests(unittest.TestCase):
 
             env = {
                 "PATH": "/usr/bin:/bin",
+                "TMPDIR": tmp,
                 "HOME": str(root / "home"),
                 "LANG": "C",
                 "LC_ALL": "C",
@@ -1037,7 +970,7 @@ class CheckSubmitZigParityTests(unittest.TestCase):
                     str(silent),
                 ],
                 capture_output=True,
-                text=True,
+                encoding="utf-8",
                 env=env,
                 check=False,
             )
@@ -1056,7 +989,7 @@ class CheckSubmitZigParityTests(unittest.TestCase):
                     str(bad_exec),
                 ],
                 capture_output=True,
-                text=True,
+                encoding="utf-8",
                 env=env,
                 check=False,
             )

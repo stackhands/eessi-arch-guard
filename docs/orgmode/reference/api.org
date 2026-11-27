@@ -16,7 +16,7 @@ A declaration's doc comment is its description.
 
    api/zig/index
 #+end_export
-The Python API covers every public module, class and function, read from the source by sphinx-autoapi without importing it:
+The Python package is a launcher for the binary; its API, read from the source by sphinx-autoapi without importing it:
 
 #+begin_export rst
 .. toctree::

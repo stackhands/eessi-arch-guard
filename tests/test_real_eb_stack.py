@@ -40,6 +40,7 @@ class RealEbStackCheckSubmit(unittest.TestCase):
         env = {
             "PATH": "/usr/bin:/bin",
             "HOME": tmp.name,
+            "TMPDIR": tmp.name,
             "LANG": "C",
             "LC_ALL": "C",
             "EESSI_PREFIX": str(prefix),
@@ -57,7 +58,7 @@ class RealEbStackCheckSubmit(unittest.TestCase):
                 EB_STACK,
             ],
             capture_output=True,
-            text=True,
+            encoding="utf-8",
             env=env,
             check=False,
         )

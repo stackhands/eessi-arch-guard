@@ -9,6 +9,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
+import private_tmp  # noqa: F401
+
 ROOT = Path(__file__).resolve().parent.parent
 ZIG = shutil.which("zig")
 ZIG_API = ROOT / "docs" / "tools" / "zig_api.zig"
@@ -39,7 +41,7 @@ class ZigApiTests(unittest.TestCase):
             cwd=ROOT,
             env=env,
             capture_output=True,
-            text=True,
+            encoding="utf-8",
             check=False,
         )
         self.assertEqual(proc.returncode, 0, proc.stderr + proc.stdout)

@@ -39,7 +39,7 @@ def mismatch() -> int:
     print("case: mismatch")
     print("loaded: %s" % support.ZEN4)
     print("node cpuinfo: zen2")
-    print("command: python3 -I src/eessi_arch_guard.py")
+    print("command: eessi-arch-guard")
     support.show(proc, site.root)
     if proc.returncode != 0:
         return proc.returncode
@@ -67,7 +67,7 @@ def again() -> int:
     prefix = ROOT_PATH.read_text(encoding="ascii")
     proc = support.run(env)
     print("case: again")
-    print("command: python3 -I src/eessi_arch_guard.py")
+    print("command: eessi-arch-guard")
     support.show(proc, prefix)
     if proc.returncode != 0 or proc.stdout or proc.stderr:
         print("expected a silent match", file=sys.stderr)

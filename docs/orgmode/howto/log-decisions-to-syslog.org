@@ -57,7 +57,7 @@ case: syslog-reload
 syslog: journald
 loaded: x86_64/amd/zen4
 node cpuinfo: zen2
-command: python3 -I src/eessi_arch_guard.py
+command: eessi-arch-guard
 exit: 0
 --- stdout ---
 export EBROOTR=$PREFIX/prefix/software/linux/x86_64/amd/zen2/software/R/4.4.2
